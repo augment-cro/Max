@@ -22,10 +22,18 @@ import {
   loadActiveVersion,
 } from "../lib/documentVersions";
 import { ensureDocAccess } from "../lib/access";
+import { normalizeUploadFilename } from "../lib/filenameUtf8";
 import { singleFileUpload } from "../lib/upload";
 
 export const documentsRouter = Router();
 const ALLOWED_TYPES = new Set(["pdf", "docx", "doc"]);
+
+// Hard cap on /download-zip request size. Each entry triggers a parallel
+// loadActiveVersion + downloadFile + JSZip.file(...) that holds the full
+// file bytes in memory until the zip is generated; without this guard a
+// caller can crash the Cloud Run instance with a single large request
+// (50 × ~5 MB ≈ 250 MB headroom, comfortable on 2Gi memory).
+const MAX_ZIP_DOCUMENTS = 50;
 
 // GET /single-documents
 documentsRouter.get("/", requireAuth, async (req, res) => {
@@ -160,6 +168,13 @@ documentsRouter.post("/download-zip", requireAuth, async (req, res) => {
 
   if (!Array.isArray(document_ids) || document_ids.length === 0)
     return void res.status(400).json({ detail: "document_ids is required" });
+
+  if (document_ids.length > MAX_ZIP_DOCUMENTS)
+    return void res.status(400).json({
+      code: "ZIP_DOCUMENT_LIMIT",
+      max_documents: MAX_ZIP_DOCUMENTS,
+      detail: `Cannot download more than ${MAX_ZIP_DOCUMENTS} documents at once`,
+    });
 
   const db = createServerSupabase();
   const { data: rawDocs, error } = await db
@@ -411,6 +426,8 @@ documentsRouter.post(
     if (!file)
       return void res.status(400).json({ detail: "file is required" });
 
+    const uploadFilename = normalizeUploadFilename(file.originalname);
+
     const { data: doc } = await db
       .from("documents")
       .select("id, filename, file_type, user_id, project_id")
@@ -424,8 +441,8 @@ documentsRouter.post(
 
     // Reject if the uploaded file's extension doesn't match the document's
     // declared type — otherwise every downstream viewer/extractor breaks.
-    const suffix = file.originalname.includes(".")
-      ? file.originalname.split(".").pop()!.toLowerCase()
+    const suffix = uploadFilename.includes(".")
+      ? uploadFilename.split(".").pop()!.toLowerCase()
       : "";
     if (doc.file_type && suffix && doc.file_type !== suffix) {
       return void res.status(400).json({
@@ -440,7 +457,7 @@ documentsRouter.post(
       userId,
       documentId,
       versionSlug,
-      file.originalname,
+      uploadFilename,
     );
     const contentType =
       suffix === "pdf"
@@ -481,7 +498,7 @@ documentsRouter.post(
         pdfStoragePath = pdfKey;
       } catch (err) {
         console.error(
-          `[versions/upload] DOCX→PDF conversion failed for ${file.originalname}:`,
+          `[versions/upload] DOCX→PDF conversion failed for ${uploadFilename}:`,
           err,
         );
       }
@@ -507,7 +524,7 @@ documentsRouter.post(
       typeof req.body?.display_name === "string" &&
       req.body.display_name.trim()
         ? req.body.display_name.trim().slice(0, 200)
-        : file.originalname;
+        : uploadFilename;
 
     const { data: versionRow, error: verErr } = await db
       .from("document_versions")
@@ -1017,7 +1034,7 @@ async function handleDocumentUpload(
     const responseDoc = await processDocumentBytes({
       userId,
       projectId,
-      filename: file.originalname,
+      filename: normalizeUploadFilename(file.originalname),
       content: file.buffer,
       db,
     });

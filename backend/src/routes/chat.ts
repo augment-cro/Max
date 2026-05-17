@@ -606,6 +606,14 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    // Opt this response (and any future request to the same origin) out of
+    // HTTP/3. Cloud Run advertises QUIC via Alt-Svc; Chrome then keeps a
+    // long-lived UDP/443 flow open for the SSE stream, which middleboxes
+    // (corp VPN, hotel Wi-Fi, NAT rebind on Wi-Fi↔LTE handover) like to drop
+    // mid-answer with net::ERR_QUIC_PROTOCOL_ERROR after 60-180s. Clearing
+    // Alt-Svc forces Chrome back to HTTP/2 over TCP, where the same path
+    // survives because TCP keeps a stateful connection middleboxes respect.
+    res.setHeader("Alt-Svc", "clear");
     res.flushHeaders();
 
     // Keep the underlying socket open for the duration of the stream.

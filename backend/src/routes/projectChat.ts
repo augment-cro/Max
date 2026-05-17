@@ -179,6 +179,9 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    // Force HTTP/2 over TCP for this SSE stream — see chat.ts for the full
+    // rationale (Chrome QUIC drops mid-stream when middleboxes cut UDP/443).
+    res.setHeader("Alt-Svc", "clear");
     res.flushHeaders();
 
     // Disable Node's default 2-min request socket timeout — extended-thinking

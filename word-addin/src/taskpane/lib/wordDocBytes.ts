@@ -1,3 +1,5 @@
+import { normalizeFilenameForDisplay } from "./filenameUtf8";
+
 /* global Office */
 
 /**
@@ -87,10 +89,18 @@ function deriveFilename(): string {
     try {
         const raw = Office.context.document.url;
         if (raw && typeof raw === "string") {
-            const segs = raw.split(/[\\/]/);
-            const last = segs[segs.length - 1] || "";
-            const cleaned = last.split("?")[0].split("#")[0];
-            if (cleaned) {
+            let base = "";
+            try {
+                const u = new URL(raw);
+                const seg = u.pathname.split("/").filter(Boolean);
+                base = seg.length ? seg[seg.length - 1]! : "";
+            } catch {
+                const segs = raw.split(/[\\/]/);
+                base = segs[segs.length - 1] || "";
+            }
+            base = base.split("?")[0].split("#")[0];
+            if (base) {
+                const cleaned = normalizeFilenameForDisplay(base);
                 return cleaned.toLowerCase().endsWith(".docx")
                     ? cleaned
                     : `${cleaned}.docx`;

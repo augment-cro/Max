@@ -24,6 +24,7 @@ import {
     rejectAllChanges,
 } from "../hooks/useWordDoc";
 import { useTranslation } from "../i18n/I18nProvider";
+import { normalizeFilenameForDisplay } from "../lib/filenameUtf8";
 
 // Custom renderers for the assistant markdown. The default ReactMarkdown
 // elements lean on Tailwind's `prose` plugin, which now handles 90 % of
@@ -598,7 +599,7 @@ function CreatedDocCard({
             <FileText className="h-4 w-4 text-gray-500 shrink-0" />
             <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-gray-900 truncate">
-                    {doc.filename}
+                    {normalizeFilenameForDisplay(doc.filename)}
                 </div>
                 <div className="text-[10px] text-gray-500">
                     {t("createdDoc.savedBackup")}
@@ -653,7 +654,7 @@ export default function ChatMessage({ msg }: { msg: ChatMessageData }) {
                                     className="flex items-center gap-1"
                                 >
                                     <FileText className="h-3 w-3" />
-                                    {f.filename}
+                                    {normalizeFilenameForDisplay(f.filename)}
                                 </li>
                             ))}
                         </ul>

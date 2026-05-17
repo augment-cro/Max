@@ -35,13 +35,22 @@
     "workflowPlaceholder": "Opišite što dodati ili promijeniti — stupce, upite ili upute radnog tijeka…",
     "workflowSubmit": "Primijeni",
     "workflowRunning": "Primjena…",
-    "tabularTitle": "Dodaj stupce pomoću AI",
-    "tabularPlaceholder": "Opišite koje stupce izdvojiti iz svakog dokumenta…",
-    "tabularSubmit": "Generiraj",
-    "tabularRunning": "Generiranje…",
+    "tabularTitle": "Uredi stupce pomoću AI",
+    "tabularPlaceholder": "Dodaj, promijeni ili obriši stupce — npr. „dodaj stupac Trajanje“…",
+    "tabularSubmit": "Primijeni",
+    "tabularRunning": "Primjena…",
     "error": "Nešto je pošlo po krivu. Pokušajte ponovno.",
+    "statusThinking": "Razmatram trenutne stupce…",
+    "statusSearching": "Pretražujem web…",
+    "statusApplying": "Primjenjujem promjene…",
+    "clarifyHeader": "Treba mi pojašnjenje",
+    "clarifyAnswerPlaceholder": "Napišite odgovor na pitanje iznad…",
+    "results": "rezultata",
+    "cancel": "Otkaži",
+    "dismiss": "Odbaci",
     "expand": "Prikaži",
-    "collapse": "Sakrij"
+    "collapse": "Sakrij",
+    "dragHandle": "Povuci za premjestiti"
   },
   "messageActions": {
     "print": "Ispiši",
@@ -49,7 +58,7 @@
     "flagTooltip": "Neprimjeren odgovor",
     "unflagTooltip": "Ukloni oznaku",
     "documentTitle": "Odgovor Max asistenta",
-    "brandLabel": "Max — pravni AI asistent",
+    "brandLabel": "Max — AI asistent",
     "generatedOn": "Generirano",
     "watermark": "Povjerljivo · Za internu uporabu",
     "marketingTagline": "Pouzdana umjetna inteligencija za pravnu izvrsnost",
@@ -75,12 +84,117 @@
     "signUp": "Registracija",
     "signInWithEulex": "Prijavite se putem EULEX-a",
     "redirecting": "Preusmjeravanje...",
-    "orContinueWith": "ili nastavite putem",
-    "google": "Google",
-    "linkedIn": "LinkedIn",
     "noAccount": "Prijavite se s vašim EULEX računom. Nemate ga?",
     "createAccount": "Otvorite račun",
     "legalNotice": "Prijavom potvrđujete da prihvaćate <terms>uvjete korištenja</terms> i <privacy>politiku privatnosti</privacy> na eulex.ai te da imate najmanje 18 godina."
+  },
+  "landing": {
+    "nav": {
+      "logIn": "Prijava",
+      "signUp": "Otvorite račun",
+      "openApp": "Otvorite aplikaciju",
+      "signInWithEulex": "Prijavite se putem EULEX-a"
+    },
+    "hero": {
+      "eyebrow": "Pravna AI platforma",
+      "title": "Sve što vodeće platforme nude,\nu Eulex.ai okruženju.",
+      "tagline": "Integrirana hrvatska i europska pravna baza.",
+      "subtitle": "Max čita vaše dokumente, citira doslovno i piše uz vas — od prvog nacrta do potpisa.",
+      "primaryCta": "Prijavite se putem EULEX-a",
+      "secondaryCta": "Saznajte više",
+      "imageCaption": "Max — čita, citira i piše uz vas"
+    },
+    "signin": {
+      "eyebrow": "Pristup uz EULEX",
+      "title": "Prijavite se i krenite.",
+      "subtitle": "Postojeći EULEX korisnici ulaze direktno u Max. Nemate račun? Otvorite ga za par sekundi.",
+      "legalNotice": "Prijavom potvrđujete da prihvaćate uvjete korištenja i politiku privatnosti na eulex.ai.",
+      "noAccount": "Nemate EULEX račun?",
+      "createAccount": "Otvorite ga ovdje",
+      "imageAlt": "Max sučelje"
+    },
+    "demo": {
+      "eyebrow": "Max u praksi",
+      "title": "Pitanje. Dokument. Citat.\nNa jednom ekranu.",
+      "description": "Postavite pitanje na hrvatskom ili engleskom, Max otvara vaše dokumente, izvlači relevantan odlomak i citira ga točno — uključujući stranicu i članak. Bez nagađanja, bez izmišljenih izvora."
+    },
+    "features": {
+      "title": "Sve što Harvey i Legora nude,\ndorađeno za hrvatsku i europsku praksu.",
+      "subtitle": "Plaćate isključivo kontekst. Token, transparentne cijene.",
+      "assistant": {
+        "title": "Asistent",
+        "description": "Chat koji čita vaše dokumente, citira doslovno i pokreće višestepene radne tokove. Sastavlja i uređuje ugovore od nacrta do potpisa. Priključite vlastite Claude, Gemini, OpenAI ili Mistral ključeve."
+      },
+      "projects": {
+        "title": "Projekti",
+        "description": "Radni prostori vezani uz predmet. Učitajte kreditne ugovore, ugovore o kupoprodaji, najmove i due diligence pakete — asistent zadržava kontekst kroz svaki razgovor i svaki dokument."
+      },
+      "tabular": {
+        "title": "Tablični pregled",
+        "description": "Ekstrakcija podataka kroz stotine dokumenata istovremeno. Svaka ćelija citirana je natrag na stranicu i odlomak — bez haluciniranih odgovora, bez mrtvih linkova."
+      },
+      "workflows": {
+        "title": "Radni tokovi",
+        "description": "Provjerene upute spakirane kao predlošci koje cijeli ured dijeli — CP popisi, sažeci kreditnih ugovora, pregledi promjene kontrole. Jedan klik i mlađi član tima pokreće ga sam."
+      }
+    },
+    "selfhost": {
+      "eyebrow": "Otvoreni kod. Vaša infrastruktura.",
+      "title": "Pokrenite u oblaku.\nIli klonirajte repo.",
+      "tagline": "Hostirano u pouzdanom oblaku. Vašem ili našem.",
+      "items": {
+        "deploy": {
+          "title": "Self-hostable by design.",
+          "description": "Deployajte unutar vlastite infrastrukture. Dokumenti nikada ne napuštaju vaš perimetar. Compliance, rezidenčnost podataka i povlastica ostaju pod vašom kontrolom."
+        },
+        "cost": {
+          "title": "Nula licencnih troškova.",
+          "description": "Bez vendor lock-ina. Bez godišnjih per-seat cijena koje rastu svake godine. Plaćate isključivo model API troškove — koristite Claude, Gemini ili OpenAI s vlastitim ključevima."
+        },
+        "fork": {
+          "title": "Forknite. Proširite. Prilagodite.",
+          "description": "Dodajte praks-specifične radne tokove, integrirajte vlastiti DMS, ugradite interni sustav citiranja. Kod je vaš da ga oblikujete."
+        },
+        "audit": {
+          "title": "Revidirajte svaki redak.",
+          "description": "Nema crnih kutija oko toga kako se grade promptovi, kako se parsiraju citati ili kako teku podaci. Otvoreni kod, otvoreno inženjerstvo promptova."
+        }
+      },
+      "cta": "GitHub repozitorij"
+    },
+    "why": {
+      "title": "Vaš ured. Vaši ključevi.\nVaši podaci.",
+      "items": {
+        "byok": {
+          "title": "Integrirana hrvatska i europska pravna baza.",
+          "description": "Max povezuje vaše dokumente s relevantnim hrvatskim i europskim izvorima, uz citate koje možete provjeriti i obraniti."
+        },
+        "eulex": {
+          "title": "Sigurna EULEX prijava.",
+          "description": "Jedinstvena prijava putem vašeg EULEX računa. Bez novih lozinki, bez pratećih sustava — pristup pod kontrolom vašeg ureda."
+        },
+        "integrations": {
+          "title": "Word, Drive, OneDrive, Box.",
+          "description": "Microsoft Word dodatak za rad direktno u dokumentu, plus konektori za Google Drive, OneDrive i Box. Vaši dokumenti ostaju gdje već jesu."
+        },
+        "bilingual": {
+          "title": "Hrvatski i engleski.",
+          "description": "Cijelo sučelje, citati i radni tokovi rade na oba jezika. Modeli razumiju i odgovaraju na jeziku na kojem im se obratite."
+        }
+      }
+    },
+    "cta": {
+      "title": "Počnite danas.",
+      "subtitle": "Otvorite besplatni EULEX račun. Bez ugovora, bez kreditne kartice — počnite za 60 sekundi.",
+      "primary": "Prijavite se putem EULEX-a",
+      "secondary": "Otvorite račun"
+    },
+    "footer": {
+      "tagline": "Max — pravna AI platforma vašeg ureda.",
+      "privacy": "Privatnost",
+      "terms": "Uvjeti",
+      "contact": "Kontakt"
+    }
   },
   "signup": {
     "title": "Otvorite račun",
@@ -155,10 +269,10 @@
     "title": "Konektori",
     "hideForm": "Sakrij obrazac",
     "addConnector": "Dodaj konektor",
-    "description": "Konektori povezuju vanjske alate s Maxom putem Model Context Protocola (MCP) — pravne baze podataka, web istraživanje, interne API-je organizacije i drugo. Alati otkriveni iz svakog konektora postaju dostupni chat asistentu.",
+    "description": "Konektori povezuju vanjske alate s Maxom putem <link>Model Context Protocola</link> (MCP) — pravnih baza podataka, web istraživanja, internih API-ja organizacije i drugog. Alati otkriveni iz svakog konektora postaju dostupni chat asistentu pod nazivom <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code>.",
     "trustWarning": {
       "title": "Dodajte samo konektore kojima vjerujete",
-      "description": "Operator konektora može vidjeti sve što Max šalje u pozivima alata — vaše upite, isječke dokumenata i odgovor samog alata. Prilagođena zaglavlja (uključujući Authorization tokene) šalju se sa svakim zahtjevom."
+      "description": "Operator konektora može vidjeti sve što Max šalje u pozivima alata — vaše upite, isječke dokumenata i odgovor samog alata. Prilagođena zaglavlja (uključujući <code>Authorization</code> tokene) šalju se sa svakim zahtjevom."
     },
     "loadingServers": "Učitavanje servera…",
     "noConnectors": "Još nema konfiguriranih konektora.",
@@ -176,7 +290,7 @@
       "oauthDiscover": "OAuth (automatsko otkrivanje)",
       "oauthDiscoverDesc": "Za servere sukladne specifikaciji. Prijavit ćete se putem skočnog prozora — bez lijepljenja tokena.",
       "customHeaders": "Prilagođena zaglavlja (neobvezno)",
-      "customHeadersHint": "Šalju se sa svakim zahtjevom. Uobičajena upotreba: Authorization → Bearer <token>.",
+      "customHeadersHint": "Šalju se sa svakim zahtjevom. Uobičajena upotreba: <code>Authorization</code> → <code>Bearer &lt;token&gt;</code>.",
       "headerName": "Naziv zaglavlja",
       "headerValue": "Vrijednost",
       "addHeader": "Dodaj zaglavlje",
@@ -196,6 +310,8 @@
       "nameContainedSecret": "Naziv je sadržavao nešto nalik na tajnu — prikazano je maskirano. Uredite server da popravite.",
       "unknownError": "Nepoznata pogreška",
       "discoveredTools": "Otkriveno {count} alat{count, plural, one {} few {a} other {a}}",
+      "toolMore": "Više",
+      "toolLess": "Manje",
       "hide": "Sakrij",
       "show": "Prikaži",
       "deleteServer": "Obriši server",
@@ -536,6 +652,7 @@
     "addAnotherColumn": "Dodaj još jedan stupac",
     "delete": "Obriši",
     "cancel": "Odustani",
+    "saving": "Spremanje…",
     "saveChanges": "Spremi promjene",
     "addColumns": "Dodaj stupce"
   },
@@ -579,6 +696,9 @@
     "tabularReview": "Tablični pregled",
     "projects": "Predmeti",
     "documents": "Dokumenti",
+    "chats": "Razgovori",
+    "chat": "Razgovor",
+    "columns": "Stupci",
     "renameReview": "preimenovati ovaj tablični pregled",
     "deleteReview": "obrisati ovaj tablični pregled",
     "addSubfolder": "Dodaj podmapu",
@@ -593,7 +713,21 @@
     "newSubfolderInside": "Nova podmapa unutar",
     "renameFolder": "Preimenuj mapu",
     "deleteFolder": "Obriši mapu",
-    "folderName": "Naziv mape"
+    "folderName": "Naziv mape",
+    "searchPlaceholder": "Pretraži…",
+    "peopleWithAccess": "Osobe s pristupom",
+    "uploadDocumentFirst": "Najprije prenesi dokument",
+    "dropFilesHere": "Ispusti PDF ili DOCX datoteke ovdje",
+    "projectNotFound": "Predmet nije pronađen",
+    "createNew": "+ Novi",
+    "tabularEmptyDescription": "Izdvojite podatke iz dokumenata predmeta u tablice pomoću umjetne inteligencije.",
+    "tabularEmptyCreateNew": "+ Novi pregled",
+    "assistantEmptyDescription": "Postavi pitanja i dobij odgovore utemeljene na dokumentima ovog predmeta.",
+    "assistantEmptyCreateNew": "+ Novi razgovor",
+    "downloadLimitTitle": "Granica preuzimanja",
+    "downloadLimitBody": "U jednoj ZIP arhivi odjednom možeš preuzeti najviše {max} dokumenata. Smanji odabir ili preuzmi u više koraka.",
+    "downloadFailedTitle": "Preuzimanje nije uspjelo",
+    "downloadFailedBody": "Dokumenti se nisu mogli preuzeti. Pokušaj ponovo za trenutak."
   },
   "tabularReview": {
     "untitledReview": "Pregled bez naslova",

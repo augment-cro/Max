@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/willchen96/mike/schemas/workflow.schema.json",
   "title": "Max Workflow",
-  "description": "Proposed declarative workflow/prompt pack definition for Max workflows.",
+  "description": "Declarative workflow/prompt-pack definition for Max.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "title", "type", "prompt_md"],

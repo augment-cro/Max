@@ -11,12 +11,17 @@ import {
     Square,
     X,
 } from "lucide-react";
-import { uploadDocumentBlob, type McpServer } from "../lib/api";
+import {
+    uploadDocumentBlob,
+    type BuiltinMcpServer,
+    type McpServer,
+} from "../lib/api";
+import { normalizeFilenameForDisplay } from "../lib/filenameUtf8";
 import { getOpenDocumentBytes } from "../lib/wordDocBytes";
 import { getSelectionState, type WordSelectionState } from "../hooks/useWordDoc";
 import EditModeToggle from "./EditModeToggle";
 import DocumentPickerModal, { type DocRef } from "./DocumentPickerModal";
-import McpStatusButton from "./McpStatusButton";
+import McpToggleButton from "./McpToggleButton";
 import { useTranslation } from "../i18n/I18nProvider";
 import ProjectPickerModal from "./ProjectPickerModal";
 import WorkflowPickerModal, {
@@ -59,13 +64,13 @@ interface Props {
     pendingWorkflow?: { id: string; title: string } | null;
     onClearPendingWorkflow?: () => void;
     /**
-     * MCP connectors auto-loaded by MainLayout. Forwarded so the inline
-     * status pill can sit next to the Workflow ("Tijek") button — this
-     * gives the user one-glance confirmation that grounding sources are
-     * live, right where they're composing the prompt that will use them.
+     * MCP connectors — matches Max web assistant: Plug icon + dropdown toggles
+     * for built-ins and user connectors; backend honours `enabled` on each chat.
      */
-    mcpServers: McpServer[];
+    mcpUserServers: McpServer[];
+    mcpBuiltinServers: BuiltinMcpServer[];
     mcpLoading: boolean;
+    mcpRefresh: () => Promise<void>;
 }
 
 export default function ChatInput({
@@ -79,8 +84,10 @@ export default function ChatInput({
     isFirstMessageInChat,
     pendingWorkflow,
     onClearPendingWorkflow,
-    mcpServers,
+    mcpUserServers,
+    mcpBuiltinServers,
     mcpLoading,
+    mcpRefresh,
 }: Props) {
     const [text, setText] = useState("");
     const [files, setFiles] = useState<AttachedFile[]>([]);
@@ -195,9 +202,10 @@ export default function ChatInput({
                 filename,
                 projectId: activeProjectId,
             });
+            const displayName = normalizeFilenameForDisplay(result.filename);
             setFiles((prev) => [
                 ...prev,
-                { document_id: result.id, filename: result.filename },
+                { document_id: result.id, filename: displayName },
             ]);
         } catch (err) {
             setUploadError(
@@ -275,15 +283,21 @@ export default function ChatInput({
                         filename,
                         projectId: activeProjectId,
                     });
+                    const displayName = normalizeFilenameForDisplay(
+                        result.filename,
+                    );
                     allFiles.push({
                         document_id: result.id,
-                        filename: result.filename,
+                        filename: displayName,
                     });
                     // Surface the attached chip so the user sees what
                     // Max just received — the chip clears with the
                     // rest of the form state right below.
                     setFiles([
-                        { document_id: result.id, filename: result.filename },
+                        {
+                            document_id: result.id,
+                            filename: displayName,
+                        },
                     ]);
                 } catch (err) {
                     // Log but do not abort — the user can still chat
@@ -395,16 +409,11 @@ export default function ChatInput({
                         {t("chat.workflow")}
                     </button>
 
-                    {/* MCP connector pill, sized to match the buttons in
-                        this row. Only renders when at least one connector
-                        exists (button returns null otherwise), so the
-                        toolbar stays uncluttered for users who haven't
-                        configured any. The popover opens upward — there's
-                        no vertical space below this row. */}
-                    <McpStatusButton
-                        servers={mcpServers}
+                    <McpToggleButton
+                        userServers={mcpUserServers}
+                        builtinServers={mcpBuiltinServers}
                         loading={mcpLoading}
-                        inline
+                        onRefresh={mcpRefresh}
                     />
                 </div>
 
@@ -445,7 +454,7 @@ export default function ChatInput({
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded-md"
                             >
                                 <span className="truncate max-w-[160px]">
-                                    {f.filename}
+                                    {normalizeFilenameForDisplay(f.filename)}
                                 </span>
                                 <button
                                     type="button"
@@ -463,7 +472,7 @@ export default function ChatInput({
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded-md"
                             >
                                 <span className="truncate max-w-[160px]">
-                                    {r.filename}
+                                    {normalizeFilenameForDisplay(r.filename)}
                                 </span>
                                 <button
                                     type="button"

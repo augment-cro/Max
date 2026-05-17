@@ -35,13 +35,22 @@
     "workflowPlaceholder": "Describe what to add or change — columns, prompts, or the workflow instructions…",
     "workflowSubmit": "Apply",
     "workflowRunning": "Applying…",
-    "tabularTitle": "Add columns with AI",
-    "tabularPlaceholder": "Describe which columns to extract from each document…",
-    "tabularSubmit": "Generate",
-    "tabularRunning": "Generating…",
+    "tabularTitle": "Edit columns with AI",
+    "tabularPlaceholder": "Add, change or remove columns — e.g. \"add a column for Term\"…",
+    "tabularSubmit": "Apply",
+    "tabularRunning": "Applying…",
     "error": "Something went wrong. Try again.",
+    "statusThinking": "Reviewing existing columns…",
+    "statusSearching": "Searching the web…",
+    "statusApplying": "Applying changes…",
+    "clarifyHeader": "I need a quick clarification",
+    "clarifyAnswerPlaceholder": "Type your answer to the question above…",
+    "results": "results",
+    "cancel": "Cancel",
+    "dismiss": "Dismiss",
     "expand": "Show",
-    "collapse": "Hide"
+    "collapse": "Hide",
+    "dragHandle": "Drag to move"
   },
   "messageActions": {
     "print": "Print",
@@ -75,12 +84,117 @@
     "signUp": "Sign up",
     "signInWithEulex": "Sign in with EULEX",
     "redirecting": "Redirecting...",
-    "orContinueWith": "or continue with",
-    "google": "Google",
-    "linkedIn": "LinkedIn",
     "noAccount": "Sign in with your EULEX account. Don't have one?",
     "createAccount": "Create account",
     "legalNotice": "By signing in, you accept the <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy> on eulex.ai and confirm that you are 18 years of age or older."
+  },
+  "landing": {
+    "nav": {
+      "logIn": "Log in",
+      "signUp": "Create account",
+      "openApp": "Open app",
+      "signInWithEulex": "Sign in with EULEX"
+    },
+    "hero": {
+      "eyebrow": "Legal AI platform",
+      "title": "Everything the incumbents ship,\ninside the Eulex.ai environment.",
+      "tagline": "Integrated Croatian and European legal content.",
+      "subtitle": "Max reads your documents, cites verbatim and writes with you — from first draft to signature.",
+      "primaryCta": "Sign in with EULEX",
+      "secondaryCta": "Learn more",
+      "imageCaption": "Max — reads, cites and writes with you"
+    },
+    "signin": {
+      "eyebrow": "EULEX access",
+      "title": "Sign in and get started.",
+      "subtitle": "Existing EULEX users go straight into Max. No account? Create one in seconds.",
+      "legalNotice": "By signing in, you accept the terms of service and privacy policy on eulex.ai.",
+      "noAccount": "No EULEX account?",
+      "createAccount": "Create one here",
+      "imageAlt": "Max interface"
+    },
+    "demo": {
+      "eyebrow": "Max in practice",
+      "title": "Question. Document. Citation.\nOn a single screen.",
+      "description": "Ask in English or Croatian, Max opens your documents, extracts the relevant passage and quotes it exactly — including page and article. No guessing, no fabricated sources."
+    },
+    "features": {
+      "title": "Everything Harvey and Legora ship,\nrefined for Croatian and European practice.",
+      "subtitle": "You pay for context only. Token-transparent pricing.",
+      "assistant": {
+        "title": "Assistant",
+        "description": "A chat that reads your documents, cites verbatim and runs multi-step workflows. Drafts and edits contracts end-to-end. Plug in your own Claude, Gemini, OpenAI or Mistral keys."
+      },
+      "projects": {
+        "title": "Projects",
+        "description": "Matter-scoped workspaces. Upload credit agreements, SPAs, leases and diligence packs — the assistant keeps full context across every conversation and every document."
+      },
+      "tabular": {
+        "title": "Tabular review",
+        "description": "Data extraction across hundreds of documents in parallel. Every cell cited back to a page and passage — no hallucinated answers, no dead links."
+      },
+      "workflows": {
+        "title": "Workflows",
+        "description": "Proven prompts packaged as firm-wide templates — CP checklists, credit agreement summaries, change-of-control reviews. One click and a junior runs it solo."
+      }
+    },
+    "selfhost": {
+      "eyebrow": "Open source. Your infrastructure.",
+      "title": "Start in the cloud.\nOr clone the repo.",
+      "tagline": "Hosted in trusted cloud. Yours or ours.",
+      "items": {
+        "deploy": {
+          "title": "Self-hostable by design.",
+          "description": "Deploy inside your own infrastructure. Documents never leave your perimeter. Compliance, data residency and privilege stay under your control."
+        },
+        "cost": {
+          "title": "Zero license cost.",
+          "description": "No vendor lock-in. No per-seat pricing that rises every year. You pay only the model API costs — use Claude, Gemini or OpenAI with your own keys."
+        },
+        "fork": {
+          "title": "Fork it. Extend it. Own it.",
+          "description": "Add practice-specific workflows, integrate your DMS, wire in your own citation engine. The codebase is yours to shape."
+        },
+        "audit": {
+          "title": "Audit every line.",
+          "description": "No black boxes around how prompts are built, how citations are parsed, or how data flows. Open code, open prompt-engineering."
+        }
+      },
+      "cta": "GitHub repository"
+    },
+    "why": {
+      "title": "Your firm. Your keys.\nYour data.",
+      "items": {
+        "byok": {
+          "title": "Integrated Croatian and European legal content.",
+          "description": "Max connects your documents with relevant Croatian and European sources, with citations you can verify and defend."
+        },
+        "eulex": {
+          "title": "Secure EULEX sign-in.",
+          "description": "Single sign-on through your EULEX account. No new passwords, no parallel systems — access stays under your firm's control."
+        },
+        "integrations": {
+          "title": "Word, Drive, OneDrive, Box.",
+          "description": "Microsoft Word add-in for working directly inside the document, plus connectors for Google Drive, OneDrive and Box. Your documents stay where they already live."
+        },
+        "bilingual": {
+          "title": "Croatian and English.",
+          "description": "The full interface, citations and workflows work in both languages. Models understand and reply in the language you address them in."
+        }
+      }
+    },
+    "cta": {
+      "title": "Start today.",
+      "subtitle": "Open a free EULEX account. No contract, no credit card — up and running in 60 seconds.",
+      "primary": "Sign in with EULEX",
+      "secondary": "Create account"
+    },
+    "footer": {
+      "tagline": "Max — your firm's legal AI platform.",
+      "privacy": "Privacy",
+      "terms": "Terms",
+      "contact": "Contact"
+    }
   },
   "signup": {
     "title": "Create Account",
@@ -155,10 +269,10 @@
     "title": "Connectors",
     "hideForm": "Hide form",
     "addConnector": "Add connector",
-    "description": "Connectors plug external tools into Max via the Model Context Protocol (MCP) — legal-data sources, web research, internal company APIs, and so on. Tools discovered from each connector become available to the chat assistant.",
+    "description": "Connectors plug external tools into Max via the <link>Model Context Protocol</link> (MCP) — legal-data sources, web research, internal company APIs, and so on. Tools discovered from each connector become available to the chat assistant under the <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code> name.",
     "trustWarning": {
       "title": "Only add connectors you trust",
-      "description": "A connector's operator can see anything Max sends in tool calls — your prompts, document excerpts, and the tool's own response. Custom headers (including Authorization tokens) are sent on every request."
+      "description": "A connector's operator can see anything Max sends in tool calls — your prompts, document excerpts, and the tool's own response. Custom headers (including <code>Authorization</code> tokens) are sent on every request."
     },
     "loadingServers": "Loading servers…",
     "noConnectors": "No connectors configured yet.",
@@ -176,7 +290,7 @@
       "oauthDiscover": "OAuth (auto-discover)",
       "oauthDiscoverDesc": "For spec-conformant servers. You'll sign in via a popup — no token to paste.",
       "customHeaders": "Custom headers (optional)",
-      "customHeadersHint": "Sent on every request. Common usage: Authorization → Bearer <token>.",
+      "customHeadersHint": "Sent on every request. Common usage: <code>Authorization</code> → <code>Bearer &lt;token&gt;</code>.",
       "headerName": "Header name",
       "headerValue": "Value",
       "addHeader": "Add header",
@@ -196,6 +310,8 @@
       "nameContainedSecret": "Name contained what looks like a secret — displayed redacted. Edit the server to fix.",
       "unknownError": "Unknown error",
       "discoveredTools": "Discovered {count} tool{count, plural, one {} other {s}}",
+      "toolMore": "More",
+      "toolLess": "Less",
       "hide": "Hide",
       "show": "Show",
       "deleteServer": "Delete server",
@@ -536,6 +652,7 @@
     "addAnotherColumn": "Add another column",
     "delete": "Delete",
     "cancel": "Cancel",
+    "saving": "Saving…",
     "saveChanges": "Save changes",
     "addColumns": "Add columns"
   },
@@ -579,6 +696,9 @@
     "tabularReview": "Tabular Review",
     "projects": "Projects",
     "documents": "Documents",
+    "chats": "Chats",
+    "chat": "Chat",
+    "columns": "Columns",
     "renameReview": "rename this tabular review",
     "deleteReview": "delete this tabular review",
     "addSubfolder": "Add Subfolder",
@@ -593,7 +713,21 @@
     "newSubfolderInside": "New subfolder inside",
     "renameFolder": "Rename folder",
     "deleteFolder": "Delete folder",
-    "folderName": "Folder name"
+    "folderName": "Folder name",
+    "searchPlaceholder": "Search…",
+    "peopleWithAccess": "People with access",
+    "uploadDocumentFirst": "Upload a document first",
+    "dropFilesHere": "Drop PDF or DOCX files here",
+    "projectNotFound": "Project not found",
+    "createNew": "+ Create New",
+    "tabularEmptyDescription": "Extract data from project documents into tables using AI.",
+    "tabularEmptyCreateNew": "+ Create New",
+    "assistantEmptyDescription": "Ask questions and get answers grounded in the documents in this project.",
+    "assistantEmptyCreateNew": "+ Create New",
+    "downloadLimitTitle": "Download limit",
+    "downloadLimitBody": "You can download at most {max} documents in one ZIP. Select fewer files or download in several batches.",
+    "downloadFailedTitle": "Download failed",
+    "downloadFailedBody": "The documents could not be downloaded. Try again in a moment."
   },
   "tabularReview": {
     "untitledReview": "Untitled Review",

@@ -8,15 +8,22 @@ import ChatInput from "./ChatInput";
 import ChatHistoryList from "./ChatHistoryList";
 import ChatMessageView from "./ChatMessage";
 import MikeLogo from "./MikeLogo";
-import type { McpServer } from "../lib/api";
+import type { BuiltinMcpServer, McpServer } from "../lib/api";
 import { useTranslation } from "../i18n/I18nProvider";
 
 interface Props {
-    mcpServers: McpServer[];
+    mcpUserServers: McpServer[];
+    mcpBuiltinServers: BuiltinMcpServer[];
     mcpLoading: boolean;
+    mcpRefresh: () => Promise<void>;
 }
 
-export default function ChatPanel({ mcpServers, mcpLoading }: Props) {
+export default function ChatPanel({
+    mcpUserServers,
+    mcpBuiltinServers,
+    mcpLoading,
+    mcpRefresh,
+}: Props) {
     const { messages, chatId, isStreaming, error, send, stop, reset, loadChat } =
         useChat();
     const {
@@ -101,8 +108,10 @@ export default function ChatPanel({ mcpServers, mcpLoading }: Props) {
                 onNewChat={reset}
                 pendingWorkflow={pendingWorkflow}
                 onClearPendingWorkflow={() => consumePendingWorkflow()}
-                mcpServers={mcpServers}
+                mcpUserServers={mcpUserServers}
+                mcpBuiltinServers={mcpBuiltinServers}
                 mcpLoading={mcpLoading}
+                mcpRefresh={mcpRefresh}
             />
 
             <ChatHistoryList

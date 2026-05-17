@@ -34,6 +34,8 @@ import {
     updateTabularReview,
     getDocumentUrl,
     downloadDocumentsZip,
+    ZipDocumentLimitError,
+    MAX_ZIP_DOWNLOAD_DOCUMENTS,
     createProjectFolder,
     renameProjectFolder,
     deleteProjectFolder,
@@ -278,7 +280,7 @@ export function ProjectPage({ projectId }: Props) {
     const tProject = useTranslations("projectPage");
     const tDelete = useTranslations("confirmDelete");
     const locale = useLocale();
-    const { confirm: confirmDialog, dialog: confirmDialogEl } =
+    const { confirm: confirmDialog, alert: alertDialog, dialog: confirmDialogEl } =
         useConfirmDialog();
     const [project, setProject] = useState<MikeProject | null>(null);
     const [folders, setFolders] = useState<MikeFolder[]>([]);
@@ -735,13 +737,42 @@ export function ProjectPage({ projectId }: Props) {
     async function handleDownloadSelectedDocs() {
         setActionsOpen(false);
         const ids = [...selectedDocIds];
-        if (ids.length === 1) { await downloadDoc(ids[0]); return; }
-        const blob = await downloadDocumentsZip(ids);
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "documents.zip";
-        a.click();
-        URL.revokeObjectURL(a.href);
+        if (ids.length === 1) {
+            await downloadDoc(ids[0]);
+            return;
+        }
+        if (ids.length > MAX_ZIP_DOWNLOAD_DOCUMENTS) {
+            await alertDialog({
+                title: tProject("downloadLimitTitle"),
+                message: tProject("downloadLimitBody", {
+                    max: MAX_ZIP_DOWNLOAD_DOCUMENTS,
+                }),
+            });
+            return;
+        }
+        try {
+            const blob = await downloadDocumentsZip(ids);
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "documents.zip";
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } catch (e) {
+            if (e instanceof ZipDocumentLimitError) {
+                await alertDialog({
+                    title: tProject("downloadLimitTitle"),
+                    message: tProject("downloadLimitBody", {
+                        max: e.max,
+                    }),
+                });
+            } else {
+                console.error("downloadDocumentsZip failed", e);
+                await alertDialog({
+                    title: tProject("downloadFailedTitle"),
+                    message: tProject("downloadFailedBody"),
+                });
+            }
+        }
     }
 
     async function handleRemoveSelectedFromFolder() {
@@ -1137,7 +1168,7 @@ export function ProjectPage({ projectId }: Props) {
             <div className="flex-1 overflow-y-auto bg-white">
                 <div className="flex items-start justify-between px-8 py-4">
                     <div className="flex items-center gap-1.5 text-2xl font-medium font-serif">
-                        <span className="text-gray-400">Projects</span>
+                        <span className="text-gray-400">{tProject("projects")}</span>
                         <span className="text-gray-300">›</span>
                         <div className="h-6 w-40 rounded bg-gray-100 animate-pulse" />
                     </div>
@@ -1174,7 +1205,7 @@ export function ProjectPage({ projectId }: Props) {
     if (!project) {
         return (
             <div className="flex h-full items-center justify-center">
-                <p className="text-gray-400">Project not found</p>
+                <p className="text-gray-400">{tProject("projectNotFound")}</p>
             </div>
         );
     }
@@ -1301,12 +1332,12 @@ export function ProjectPage({ projectId }: Props) {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <HeaderSearchBtn value={search} onChange={setSearch} placeholder="Search…" />
+                    <HeaderSearchBtn value={search} onChange={setSearch} placeholder={tProject("searchPlaceholder")} />
                     <button
                         onClick={() => setPeopleModalOpen(true)}
                         className="flex h-8 w-8 items-center justify-center text-sm text-gray-500 transition-colors hover:text-gray-900 cursor-pointer"
-                        title="People with access"
-                        aria-label="People with access"
+                        title={tProject("peopleWithAccess")}
+                        aria-label={tProject("peopleWithAccess")}
                     >
                         <Users className="h-4 w-4" />
                     </button>
@@ -1318,7 +1349,7 @@ export function ProjectPage({ projectId }: Props) {
                             }`}
                         >
                             {creatingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                            Chat
+                            {tProject("chat")}
                         </button>
                     </div>
                     <div className="relative group">
@@ -1333,7 +1364,7 @@ export function ProjectPage({ projectId }: Props) {
                         </button>
                         {docs.length === 0 && (
                             <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-10 hidden group-hover:flex items-center whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg">
-                                Upload a document first
+                                {tProject("uploadDocumentFirst")}
                             </div>
                         )}
                     </div>
@@ -1400,7 +1431,7 @@ export function ProjectPage({ projectId }: Props) {
                                 className="flex-1 flex cursor-pointer flex-col items-center justify-center py-24 text-center"
                             >
                                 <Upload className="h-8 w-8 text-gray-200 mb-3" />
-                                <p className="text-sm text-gray-400">Drop PDF or DOCX files here</p>
+                                <p className="text-sm text-gray-400">{tProject("dropFilesHere")}</p>
                             </div>
                         ) : (
                             <div
@@ -1595,18 +1626,18 @@ export function ProjectPage({ projectId }: Props) {
                                 />
                             </div>
                             <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
-                                Chats
+                                {tProject("chats")}
                             </div>
-                            <div className="ml-auto w-32 shrink-0 text-left">Created</div>
+                            <div className="ml-auto w-32 shrink-0 text-left">{tProject("created")}</div>
                             <div className="w-8 shrink-0" />
                         </div>
                         {chats.length === 0 ? (
                             <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
                                 <MessageSquare className="h-8 w-8 text-gray-300 mb-4" />
-                                <p className="text-2xl font-medium font-serif text-gray-900">Assistant</p>
-                                <p className="mt-1 text-xs text-gray-400 max-w-xs">Ask questions and get answers grounded in the documents in this project.</p>
+                                <p className="text-2xl font-medium font-serif text-gray-900">{tProject("assistant")}</p>
+                                <p className="mt-1 text-xs text-gray-400 max-w-xs">{tProject("assistantEmptyDescription")}</p>
                                 <button onClick={() => handleNewChat()} className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md">
-                                    + Create New
+                                    {tProject("assistantEmptyCreateNew")}
                                 </button>
                             </div>
                         ) : (
@@ -1682,20 +1713,20 @@ export function ProjectPage({ projectId }: Props) {
                                 />
                             </div>
                             <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
-                                Name
+                                {tProject("name")}
                             </div>
-                            <div className="ml-auto w-24 shrink-0 text-left">Columns</div>
-                            <div className="w-24 shrink-0 text-left">Documents</div>
-                            <div className="w-32 shrink-0 text-left">Created</div>
+                            <div className="ml-auto w-24 shrink-0 text-left">{tProject("columns")}</div>
+                            <div className="w-24 shrink-0 text-left">{tProject("documents")}</div>
+                            <div className="w-32 shrink-0 text-left">{tProject("created")}</div>
                             <div className="w-8 shrink-0" />
                         </div>
                         {projectReviews.length === 0 ? (
                             <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
                                 <Table2 className="h-8 w-8 text-gray-300 mb-4" />
                                 <p className="text-2xl font-medium font-serif text-gray-900">{tProject("tabularReviews")}</p>
-                                <p className="mt-1 text-xs text-gray-400 max-w-xs">Extract data from project documents into tables using AI.</p>
+                                <p className="mt-1 text-xs text-gray-400 max-w-xs">{tProject("tabularEmptyDescription")}</p>
                                 <button onClick={handleNewReview} disabled={creatingReview || docs.length === 0} className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md disabled:opacity-40">
-                                    + Create New
+                                    {tProject("tabularEmptyCreateNew")}
                                 </button>
                             </div>
                         ) : (

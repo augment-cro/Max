@@ -196,6 +196,7 @@
     "mcp": {
         "title": "Connectors",
         "aria": "MCP connectors",
+        "toggleAria": "Manage connectors for this chat",
         "loading": "Loading connectors…",
         "status": "{enabled} of {total} connectors active",
         "on": "on",
@@ -203,6 +204,8 @@
         "error": "error",
         "reauth": "needs sign-in",
         "untitled": "Untitled",
+        "defaultBadge": "Default",
+        "manageConnectors": "Manage connectors",
         "manageHint": "Manage in the Max web app."
     }
 }

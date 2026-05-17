@@ -5,7 +5,7 @@
 #      gcloud builds submit \
 #        --region=europe-west1 \
 #        --config=cloudbuild.yaml \
-#        --project=mikeoss-495610
+#        --project=YOUR_GCP_PROJECT
 #
 #  IMPORTANT: --region pins the Cloud Build *workers* (and source bucket)
 #  to europe-west1, matching where Artifact Registry and Cloud Run live.
@@ -34,10 +34,10 @@ substitutions:
     _BACKEND_SERVICE: mike-backend
     # The public URL the frontend (and the Word manifest) live at.
     # Override with --substitutions if you ever rename the service.
-    _FRONTEND_URL: https://mike-frontend-cc6nrgescq-ew.a.run.app
+    _FRONTEND_URL: https://your-frontend-url
     # The public URL the backend exposes — baked into the frontend at
     # build time as NEXT_PUBLIC_API_BASE_URL.
-    _BACKEND_URL: https://mike-backend-cc6nrgescq-ew.a.run.app
+    _BACKEND_URL: https://your-backend-url
 
 options:
     logging: CLOUD_LOGGING_ONLY
@@ -125,10 +125,34 @@ steps:
           - "${PROJECT_ID}"
           - --quiet
 
-    # ── 3. Backend: docker build + push + deploy ────────────────────────
+    # ── 3. Backend: stage mike/mcp.json, then docker build + push + deploy ──
+    #
+    # The backend Dockerfile's `COPY mike ./mike` reads from the backend
+    # build context. The repo's mike/ folder lives at the *root* (outside
+    # backend/), so we have to copy mike/mcp.json into backend/mike/ before
+    # invoking the Docker build. Without this step the build fails with:
+    #   "COPY failed: file not found in build context: stat mike: file does not exist"
+    # (matches the staging that scripts/deploy.sh does for the local path).
+    - id: backend-stage-mike
+      name: ubuntu
+      waitFor: ["-"]
+      entrypoint: bash
+      args:
+          - -c
+          - |
+              set -euo pipefail
+              if [ ! -f mike/mcp.json ]; then
+                  echo "ERROR: mike/mcp.json not found at repo root" >&2
+                  exit 1
+              fi
+              mkdir -p backend/mike
+              cp mike/mcp.json backend/mike/mcp.json
+              echo "--- staged ---"
+              ls -la backend/mike/
+
     - id: backend-build
       name: gcr.io/cloud-builders/docker
-      waitFor: ["-"]  # parallel with the addin/frontend chain
+      waitFor: [backend-stage-mike]
       dir: backend
       args:
           - build

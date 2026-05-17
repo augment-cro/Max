@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Loader2, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { ColumnConfig, ColumnFormat } from "../shared/types";
@@ -39,6 +40,17 @@ export function TREditColumnMenu({
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [generating, setGenerating] = useState(false);
+    const buttonRef = useRef<HTMLButtonElement | null>(null);
+    const popoverRef = useRef<HTMLDivElement | null>(null);
+    const [pos, setPos] = useState<{
+        top: number;
+        right: number;
+    } | null>(null);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         if (!open) {
@@ -49,6 +61,55 @@ export function TREditColumnMenu({
             setTagInput("");
         }
     }, [column.name, column.prompt, column.format, column.tags, open]);
+
+    // Compute popover position relative to the kebab button. Using
+    // position: fixed + a portal sidesteps any ancestor stacking
+    // context (sticky table headers, transformed sidebars, etc.)
+    // that would otherwise clip the menu or push it under chrome.
+    useLayoutEffect(() => {
+        if (!open) {
+            setPos(null);
+            return;
+        }
+        const updatePos = () => {
+            const btn = buttonRef.current;
+            if (!btn) return;
+            const rect = btn.getBoundingClientRect();
+            setPos({
+                top: rect.bottom + 6,
+                right: Math.max(8, window.innerWidth - rect.right),
+            });
+        };
+        updatePos();
+        window.addEventListener("resize", updatePos);
+        window.addEventListener("scroll", updatePos, true);
+        return () => {
+            window.removeEventListener("resize", updatePos);
+            window.removeEventListener("scroll", updatePos, true);
+        };
+    }, [open]);
+
+    // Close on outside click / Escape — required because the popover
+    // now lives in a portal so the parent's stopPropagation no longer
+    // covers it implicitly.
+    useEffect(() => {
+        if (!open) return;
+        const onDown = (e: MouseEvent) => {
+            const target = e.target as Node;
+            if (buttonRef.current?.contains(target)) return;
+            if (popoverRef.current?.contains(target)) return;
+            setOpen(false);
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setOpen(false);
+        };
+        document.addEventListener("mousedown", onDown);
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("keydown", onKey);
+        };
+    }, [open]);
 
     function commitTag() {
         const tag = tagInput.trim();
@@ -88,7 +149,6 @@ export function TREditColumnMenu({
             setSaving(false);
         }
     }
-    console.log(tags);
 
     async function handleDelete() {
         setDeleting(true);
@@ -114,32 +174,22 @@ export function TREditColumnMenu({
         }
     }
 
-    return (
-        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (disabled) return;
-                    setOpen((v) => !v);
-                }}
-                disabled={disabled}
-                className={`flex h-4 w-4 items-center justify-center rounded transition-colors ${
-                    disabled
-                        ? "text-gray-300 cursor-default"
-                        : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                }`}
-            >
-                <MoreHorizontal className="h-4 w-4" />
-            </button>
-
-            {open && (
-                <div
-                    className="absolute right-0 top-full z-20 mt-1.5 w-72 rounded-xl border border-gray-100 bg-white p-3 shadow-lg"
-                    onClick={(e) => e.stopPropagation()}
-                >
+    const popover = open && pos && mounted
+        ? createPortal(
+              <div
+                  ref={popoverRef}
+                  style={{
+                      position: "fixed",
+                      top: pos.top,
+                      right: pos.right,
+                      zIndex: 9999,
+                  }}
+                  className="w-72 rounded-xl border border-gray-100 bg-white p-3 shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
+              >
                     <div className="flex items-center justify-between mb-3">
                         <p className="text-sm font-medium text-gray-800">
-                            Edit Column
+                            {t("editColumn")}
                         </p>
                         <button
                             type="button"
@@ -150,7 +200,7 @@ export function TREditColumnMenu({
                         </button>
                     </div>
                     <label className="text-xs font-medium text-gray-800">
-                        Label
+                        {t("columnName")}
                     </label>
                     <input
                         type="text"
@@ -162,7 +212,7 @@ export function TREditColumnMenu({
                     {/* Format */}
                     <div className="mt-3">
                         <label className="text-xs font-medium text-gray-800">
-                            Format
+                            {t("format")}
                         </label>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -242,7 +292,7 @@ export function TREditColumnMenu({
                                     onKeyDown={handleTagKeyDown}
                                     onBlur={commitTag}
                                     placeholder={
-                                        tags.length === 0 ? "Add tags…" : ""
+                                        tags.length === 0 ? t("addTag") : ""
                                     }
                                     className="min-w-[60px] flex-1 bg-transparent text-xs text-gray-700 placeholder-gray-300 focus:outline-none"
                                 />
@@ -254,7 +304,7 @@ export function TREditColumnMenu({
                     <div className="mt-3">
                         <div className="flex items-center justify-between">
                             <label className="text-xs font-medium text-gray-800">
-                                Prompt
+                                {t("prompt")}
                             </label>
                             <button
                                 type="button"
@@ -267,7 +317,7 @@ export function TREditColumnMenu({
                                 ) : (
                                     <Plus className="h-3 w-3" />
                                 )}
-                                Auto-generate
+                                {t("autoGeneratePrompt")}
                             </button>
                         </div>
                         <textarea
@@ -286,7 +336,7 @@ export function TREditColumnMenu({
                             className="inline-flex items-center gap-1.5 text-xs text-red-500 transition-colors hover:text-red-600 disabled:text-red-300"
                         >
                             <Trash2 className="h-3.5 w-3.5" />
-                            Delete
+                            {t("delete")}
                         </button>
                         <button
                             type="button"
@@ -300,11 +350,33 @@ export function TREditColumnMenu({
                             }
                             className="rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-40"
                         >
-                            {saving ? "Saving…" : "Save"}
+                            {saving ? t("saving") : t("saveChanges")}
                         </button>
                     </div>
-                </div>
-            )}
+              </div>,
+              document.body,
+          )
+        : null;
+
+    return (
+        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+                ref={buttonRef}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (disabled) return;
+                    setOpen((v) => !v);
+                }}
+                disabled={disabled}
+                className={`flex h-4 w-4 items-center justify-center rounded transition-colors ${
+                    disabled
+                        ? "text-gray-300 cursor-default"
+                        : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                }`}
+            >
+                <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {popover}
         </div>
     );
 }

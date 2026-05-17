@@ -337,23 +337,23 @@ export default function McpServersPage() {
                     </Button>
                 </div>
                 <p className="text-sm text-gray-500 max-w-2xl">
-                    Connectors plug external tools into Max via the{" "}
-                    <a
-                        href="https://modelcontextprotocol.io"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                    >
-                        Model Context Protocol
-                    </a>{" "}
-                    (MCP) &mdash; legal-data sources, web research, internal
-                    company APIs, and so on. Tools discovered from each
-                    connector become available to the chat assistant under
-                    the{" "}
-                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-                        mcp__&lt;slug&gt;__&lt;tool&gt;
-                    </code>{" "}
-                    name.
+                    {t.rich("description", {
+                        link: (chunks) => (
+                            <a
+                                href="https://modelcontextprotocol.io"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline"
+                            >
+                                {chunks}
+                            </a>
+                        ),
+                        code: (chunks) => (
+                            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                                {chunks}
+                            </code>
+                        ),
+                    })}
                 </p>
             </div>
 
@@ -366,14 +366,13 @@ export default function McpServersPage() {
                         {t("trustWarning.title")}
                     </p>
                     <p className="text-xs mt-1 leading-relaxed">
-                        A connector&rsquo;s operator can see anything Max
-                        sends in tool calls &mdash; your prompts, document
-                        excerpts, and the tool&rsquo;s own response. Custom
-                        headers (including{" "}
-                        <code className="bg-amber-100 px-1 py-0.5 rounded">
-                            Authorization
-                        </code>{" "}
-                        tokens) are sent on every request.
+                        {t.rich("trustWarning.description", {
+                            code: (chunks) => (
+                                <code className="bg-amber-100 px-1 py-0.5 rounded">
+                                    {chunks}
+                                </code>
+                            ),
+                        })}
                     </p>
                 </div>
             </div>
@@ -583,15 +582,13 @@ function AddForm({
                     {t("addForm.customHeaders")}
                 </label>
                 <p className="text-xs text-gray-400 mb-2">
-                    Sent on every request. Common usage:{" "}
-                    <code className="bg-gray-100 px-1 py-0.5 rounded">
-                        Authorization
-                    </code>{" "}
-                    →{" "}
-                    <code className="bg-gray-100 px-1 py-0.5 rounded">
-                        Bearer &lt;token&gt;
-                    </code>
-                    .
+                    {t.rich("addForm.customHeadersHint", {
+                        code: (chunks) => (
+                            <code className="bg-gray-100 px-1 py-0.5 rounded">
+                                {chunks}
+                            </code>
+                        ),
+                    })}
                 </p>
                 <div className="space-y-2">
                     {draft.headers.map((h, idx) => (
@@ -912,6 +909,7 @@ function ToolListItem({
     name: string;
     description: string;
 }) {
+    const t = useTranslations("connectors");
     const [expanded, setExpanded] = useState(false);
     const trimmed = description.trim();
     const isLong = trimmed.length > 160;
@@ -928,7 +926,7 @@ function ToolListItem({
                         onClick={() => setExpanded((v) => !v)}
                         className="text-gray-400 hover:text-gray-600 text-[11px] shrink-0"
                     >
-                        {expanded ? "Less" : "More"}
+                        {expanded ? t("card.toolLess") : t("card.toolMore")}
                     </button>
                 )}
             </div>

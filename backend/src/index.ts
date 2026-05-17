@@ -19,6 +19,7 @@ import { searchRouter } from "./routes/search";
 import { integrationsRouter } from "./routes/integrations";
 import { chatSharesRouter } from "./routes/chatShares";
 import { adminMaxRouter } from "./routes/adminMax";
+import { statsRouter } from "./routes/stats";
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -30,14 +31,9 @@ const ALLOWED_ORIGINS = [
   // taskpane origin (https://localhost:3002) to the backend on :3001 — needs CORS.
   "https://localhost:3002",
   "https://127.0.0.1:3002",
-  // Production: custom CNAME on top of Cloud Run.
+  // Production: set FRONTEND_URL env var to your deployed frontend origin.
+  // The env-var branch below handles it automatically.
   "https://max.eulex.ai",
-  // Cloud Run also exposes the same service under two run.app URL forms:
-  //   - hash-based   : https://mike-frontend-cc6nrgescq-ew.a.run.app
-  //   - project-num  : https://mike-frontend-516192556389.europe-west1.run.app
-  // Both kept allow-listed for direct access / health checks / DNS fallback.
-  "https://mike-frontend-cc6nrgescq-ew.a.run.app",
-  "https://mike-frontend-516192556389.europe-west1.run.app",
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
 ];
 
@@ -94,6 +90,7 @@ app.use("/adminmax", adminMaxRouter);
 // /share/:token* (recipient side), so it must mount at the root.
 app.use("/", chatSharesRouter);
 
+app.use("/stats", statsRouter);
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Catch-all 404 — keeps unmatched paths inside Express so CORS headers

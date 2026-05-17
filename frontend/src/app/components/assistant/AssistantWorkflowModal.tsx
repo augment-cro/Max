@@ -106,7 +106,7 @@ export function AssistantWorkflowModal({
     return createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 backdrop-blur-xs">
             <div
-                className={`w-full rounded-2xl bg-white shadow-2xl flex flex-col h-[600px] ${selected ? "max-w-4xl" : "max-w-2xl"}`}
+                className={`w-full rounded-2xl bg-white shadow-2xl flex flex-col h-[600px] font-sans [&_button]:font-sans ${selected ? "max-w-4xl" : "max-w-2xl"}`}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-4 shrink-0 border-b border-gray-100">
@@ -148,20 +148,22 @@ export function AssistantWorkflowModal({
                     <div
                         className={`overflow-y-auto ${selected ? "w-80 shrink-0" : "flex-1"}`}
                     >
-                        {/* Search */}
-                        <div className="px-4 pt-3 pb-2 shrink-0">
-                            <div className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1">
-                                <Search className="h-3 w-3 text-gray-400 shrink-0" />
+                        {/* Search — širinu i stil držimo identično ProjectPickeru
+                             (SelectAssistantProjectModal) da modali budu vizualno
+                             usklađeni. */}
+                        <div className="px-4 pt-1 pb-2 shrink-0">
+                            <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                                 <input
                                     type="text"
                                     placeholder={t("searchPlaceholder")}
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
-                                    className="flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 outline-none"
+                                    className="flex-1 bg-transparent text-sm text-gray-700 placeholder:text-gray-400 outline-none"
                                 />
                                 {search && (
                                     <button onClick={() => setSearch("")} className="text-gray-400 hover:text-gray-600">
-                                        <X className="h-3 w-3" />
+                                        <X className="h-3.5 w-3.5" />
                                     </button>
                                 )}
                             </div>

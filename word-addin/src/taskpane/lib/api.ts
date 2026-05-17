@@ -435,12 +435,8 @@ export async function getTabularReview(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// MCP servers (read + auto-enable on plugin load)
-//
-// Backend already filters by `enabled: true` when building the per-request
-// MCP tool set (`backend/src/lib/mcp/servers.ts`), so the add-in only needs
-// to (a) flip any `enabled: false` rows to `true` once on sign-in, and
-// (b) display the resulting status to the user.
+// MCP servers — Max web parity (`McpToggleButton`): built-ins + user rows,
+// toggles PATCH `enabled`; backend builds per-request MCP tool lists from flags.
 // ---------------------------------------------------------------------------
 
 export interface McpServer {
@@ -454,6 +450,12 @@ export interface McpServer {
     oauth_authorized: boolean;
 }
 
+export interface BuiltinMcpServer {
+    slug: string;
+    name: string;
+    enabled: boolean;
+}
+
 export async function listMcpServers(): Promise<McpServer[]> {
     const res = await apiFetch(`${API_BASE}/user/mcp-servers`, {
         headers: { Accept: "application/json", ...authHeader() },
@@ -461,6 +463,35 @@ export async function listMcpServers(): Promise<McpServer[]> {
     });
     if (!res.ok) throw new Error(`mcp-servers ${res.status}`);
     return (await res.json()) as McpServer[];
+}
+
+export async function listBuiltinMcpServers(): Promise<BuiltinMcpServer[]> {
+    const res = await apiFetch(`${API_BASE}/builtin-mcp-servers`, {
+        headers: { Accept: "application/json", ...authHeader() },
+        cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`builtin-mcp-servers ${res.status}`);
+    return (await res.json()) as BuiltinMcpServer[];
+}
+
+export async function updateBuiltinMcpServer(
+    slug: string,
+    payload: { enabled: boolean },
+): Promise<{ slug: string; enabled: boolean }> {
+    const res = await apiFetch(
+        `${API_BASE}/builtin-mcp-servers/${encodeURIComponent(slug)}`,
+        {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                ...authHeader(),
+            },
+            body: JSON.stringify(payload),
+        },
+    );
+    if (!res.ok) throw new Error(`builtin-mcp-servers ${res.status}`);
+    return (await res.json()) as { slug: string; enabled: boolean };
 }
 
 export async function updateMcpServer(

@@ -50,6 +50,39 @@ export function resolveDefaultMainModel(apiKeys?: UserApiKeys): string {
     return DEFAULT_MAIN_MODEL;
 }
 
+/**
+ * Pick a frontier-tier model for the AI Column Suggester (the floating
+ * AI prompt above tabular reviews).
+ *
+ * Why this exists separately from `tabular_model`:
+ *   - `tabular_model` is used for per-cell extraction — a narrow,
+ *     well-bounded task that even small / self-hosted models handle
+ *     fine. We let users save costs by routing it to `localllm-main`.
+ *   - The column SUGGESTER, however, is an agentic flow that has to:
+ *       1. parse a free-form user instruction,
+ *       2. optionally web-search,
+ *       3. emit a tool call with strict JSON shape,
+ *       4. obey strong language directives (HR / EN),
+ *       5. follow few-shot examples to the letter.
+ *     Smaller / OSS models routinely fail step 4 (drop language) and
+ *     step 5 (ignore examples), which is exactly the "why is the LLM
+ *     answering in English?" bug we kept hitting.
+ *
+ * So here we *deliberately* skip `localllm-main` and any cheap-tier
+ * variants, and pick the strongest available frontier model from
+ * whatever provider keys are wired up.
+ */
+export function resolveColumnSuggesterModel(apiKeys?: UserApiKeys): string {
+    if (apiKeys?.claude?.trim()) return "claude-sonnet-4-6";
+    if (apiKeys?.gemini?.trim()) return "gemini-3.1-pro-preview";
+    if (apiKeys?.mistral?.trim()) return "mistral-large-latest";
+    if (apiKeys?.openai?.trim()) return "gpt-5.5";
+    // Last resort — only fall back to localllm if literally nothing
+    // else is configured; otherwise honor DEFAULT_MAIN_MODEL.
+    if (process.env.VLLM_BASE_URL?.trim()) return "localllm-main";
+    return DEFAULT_MAIN_MODEL;
+}
+
 // Title generation is a lightweight task — routed to the default title model
 // (Claude Sonnet) which prod always has wired via Secret Manager, then falls
 // back through cheaper per-provider models.

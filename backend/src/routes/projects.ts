@@ -8,6 +8,7 @@ import {
 import { downloadFile, uploadFile, storageKey } from "../lib/storage";
 import { docxToPdf, convertedPdfKey } from "../lib/convert";
 import { checkProjectAccess } from "../lib/access";
+import { normalizeUploadFilename } from "../lib/filenameUtf8";
 import { singleFileUpload } from "../lib/upload";
 
 export const projectsRouter = Router();
@@ -615,7 +616,7 @@ export async function handleDocumentUpload(
   const file = req.file;
   if (!file) return void res.status(400).json({ detail: "file is required" });
 
-  const filename = file.originalname;
+  const filename = normalizeUploadFilename(file.originalname);
   const suffix = filename.includes(".")
     ? filename.split(".").pop()!.toLowerCase()
     : "";

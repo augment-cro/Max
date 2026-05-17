@@ -44,7 +44,7 @@ export function SelectAssistantProjectModal({ open, onClose }: Props) {
 
     return createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 backdrop-blur-xs">
-            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px]">
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px] font-sans [&_button]:font-sans">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4">
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">

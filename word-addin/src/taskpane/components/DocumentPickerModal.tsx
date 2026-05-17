@@ -13,6 +13,7 @@ import {
     type ApiDocument,
 } from "../lib/api";
 import { useTranslation } from "../i18n/I18nProvider";
+import { normalizeFilenameForDisplay } from "../lib/filenameUtf8";
 
 export interface DocRef {
     /** undefined for the live Word document — handled at send time. */
@@ -218,7 +219,9 @@ export default function DocumentPickerModal({
                                                     className="accent-mike-500"
                                                 />
                                                 <span className="text-xs text-gray-700 truncate flex-1">
-                                                    {d.filename}
+                                                    {normalizeFilenameForDisplay(
+                                                        d.filename,
+                                                    )}
                                                 </span>
                                             </label>
                                         </li>

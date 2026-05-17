@@ -21,6 +21,7 @@ import {
     type OpenAIToolSchema,
 } from "./llm";
 import { resolveDefaultMainModel } from "./userSettings";
+import { extractPdfWithGemini } from "./pdfOcr";
 import { findMcpServerForTool } from "./mcp/servers";
 import type { LoadedMcpServer } from "./mcp/types";
 import {
@@ -796,7 +797,34 @@ export function buildMessages(
     return formatted;
 }
 
-export async function extractPdfText(buf: ArrayBuffer): Promise<string> {
+/**
+ * Primary PDF text extraction path. Uses Gemini multimodal OCR
+ * (`extractPdfWithGemini`) so scanned / image-based PDFs work the
+ * same as text-layer PDFs — the old pdfjs-dist path silently returned
+ * "" for scans, which the model downstream couldn't tell apart from a
+ * truly empty document.
+ *
+ * If Gemini fails or no API key is configured we fall back to
+ * pdfjs-dist as a defense-in-depth measure so we still get *something*
+ * for text-layer PDFs even when Gemini is unreachable.
+ */
+export async function extractPdfText(
+    buf: ArrayBuffer,
+    apiKey?: string | null,
+): Promise<string> {
+    const geminiText = await extractPdfWithGemini(buf, {
+        apiKey,
+        pageMarker: "plain",
+    });
+    if (geminiText.trim().length > 0) return geminiText;
+
+    console.warn(
+        "[extractPdfText] Gemini OCR returned empty, falling back to pdfjs-dist",
+    );
+    return extractPdfTextWithPdfJs(buf);
+}
+
+async function extractPdfTextWithPdfJs(buf: ArrayBuffer): Promise<string> {
     try {
         const pdfjsLib = await import(
             "pdfjs-dist/legacy/build/pdf.mjs" as string
@@ -1302,7 +1330,7 @@ async function readDocumentContent(
     write: (s: string) => void,
     docIndex?: DocIndex,
     db?: ReturnType<typeof createServerSupabase>,
-    opts?: { emitEvents?: boolean },
+    opts?: { emitEvents?: boolean; geminiApiKey?: string | null },
 ): Promise<string> {
     const emitEvents = opts?.emitEvents ?? true;
     console.log(`[read_document] called with docLabel="${docLabel}"`);
@@ -1390,7 +1418,7 @@ async function readDocumentContent(
         }
         let text: string;
         if (docInfo.file_type === "pdf") {
-            text = await extractPdfText(raw);
+            text = await extractPdfText(raw, opts?.geminiApiKey);
             console.log(
                 `[read_document] pdf extracted length=${text.length} for filename="${docInfo.filename}"`,
             );
@@ -1508,6 +1536,7 @@ async function findInDocumentContent(params: {
     write: (s: string) => void;
     docIndex?: DocIndex;
     db?: ReturnType<typeof createServerSupabase>;
+    geminiApiKey?: string | null;
 }): Promise<string> {
     const {
         docLabel,
@@ -1518,6 +1547,7 @@ async function findInDocumentContent(params: {
         write,
         docIndex,
         db,
+        geminiApiKey,
     } = params;
 
     if (!query || !query.trim()) {
@@ -1549,7 +1579,7 @@ async function findInDocumentContent(params: {
         write,
         docIndex,
         db,
-        { emitEvents: false },
+        { emitEvents: false, geminiApiKey },
     );
     if (!text || text === "Document could not be read.") {
         write(
@@ -1734,6 +1764,14 @@ export async function runToolCalls(
      */
     client?: "web" | "word",
     editMode?: "track" | "comments",
+    /**
+     * User-resolved API keys (already merged with env fallbacks). Only the
+     * Gemini key is consumed today — by `read_document` / `fetch_documents`
+     * to drive Gemini-based PDF OCR via `extractPdfWithGemini`. When
+     * undefined we still work, falling back to `process.env.GEMINI_API_KEY`
+     * inside the OCR helper.
+     */
+    apiKeys?: import("./llm").UserApiKeys,
 ): Promise<{
     toolResults: unknown[];
     docsRead: { filename: string; document_id?: string }[];
@@ -1819,7 +1857,14 @@ export async function runToolCalls(
             const rawDocId = args.doc_id as string;
             const docId =
                 resolveDocLabel(rawDocId, docStore, docIndex) ?? rawDocId;
-            const content = await readDocumentContent(docId, docStore, write, docIndex, db);
+            const content = await readDocumentContent(
+                docId,
+                docStore,
+                write,
+                docIndex,
+                db,
+                { geminiApiKey: apiKeys?.gemini ?? null },
+            );
             const filename = docStore.get(docId)?.filename;
             const documentId = docIndex?.[docId]?.document_id;
             if (filename) docsRead.push({ filename, document_id: documentId });
@@ -1841,6 +1886,7 @@ export async function runToolCalls(
                 write,
                 docIndex,
                 db,
+                geminiApiKey: apiKeys?.gemini ?? null,
             });
             const filename = docStore.get(docId)?.filename;
             if (filename) {
@@ -1882,7 +1928,14 @@ export async function runToolCalls(
             );
             const parts: string[] = [];
             for (const docId of docIds) {
-                const content = await readDocumentContent(docId, docStore, write, docIndex, db);
+                const content = await readDocumentContent(
+                    docId,
+                    docStore,
+                    write,
+                    docIndex,
+                    db,
+                    { geminiApiKey: apiKeys?.gemini ?? null },
+                );
                 const filename = docStore.get(docId)?.filename ?? docId;
                 parts.push(`--- ${filename} (${docId}) ---\n${content}`);
                 if (docStore.get(docId)) {
@@ -3012,6 +3065,7 @@ export async function runLLMStream(params: {
                     mcpServers,
                     client,
                     editModeForClient,
+                    params.apiKeys,
                 );
             for (const r of docsRead) {
                 events.push({

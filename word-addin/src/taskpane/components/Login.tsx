@@ -2,8 +2,16 @@ import React, { useCallback, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import MikeLogo from "./MikeLogo";
 import { useTranslation } from "../i18n/I18nProvider";
+import {
+    getTaskpaneOrigin,
+    openInDefaultBrowser,
+} from "../lib/officeUi";
 
-const FRONTEND_PAIR_HINT_URL = "/account/word";
+const FRONTEND_PAIR_HINT_PATH = "/account/word";
+
+function getPairHintUrl(): string {
+    return `${getTaskpaneOrigin()}${FRONTEND_PAIR_HINT_PATH}`;
+}
 
 /**
  * Pairing-code login screen for the Word add-in.
@@ -144,9 +152,18 @@ export default function Login() {
 
                 <p className="text-xs text-gray-400 text-center">
                     {t("login.openMike")} →{" "}
-                    <code className="bg-gray-100 px-1.5 py-0.5 rounded">
-                        {FRONTEND_PAIR_HINT_URL}
-                    </code>
+                    <a
+                        href={getPairHintUrl()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            openInDefaultBrowser(getPairHintUrl());
+                        }}
+                        className="bg-gray-100 px-1.5 py-0.5 rounded hover:bg-gray-200 hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline"
+                    >
+                        {FRONTEND_PAIR_HINT_PATH}
+                    </a>
                 </p>
             </div>
         </div>

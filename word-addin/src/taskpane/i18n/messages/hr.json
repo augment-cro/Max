@@ -36,7 +36,7 @@
         "ready": "Spreman za pomoć",
         "intro": "Postavi pitanje, priloži klauzulu ili označi tekst u Wordu. Max će odgovoriti ovdje i može ubaciti praćene izmjene ili komentare natrag u dokument.",
         "browseWorkflows": "Pregledaj tijekove →",
-        "placeholder": "Pitaj Mikea nešto…",
+        "placeholder": "Pitaj Maxa nešto…",
         "send": "Pošalji",
         "stop": "Zaustavi",
         "history": "Nedavni razgovori",
@@ -196,6 +196,7 @@
     "mcp": {
         "title": "Konektori",
         "aria": "MCP konektori",
+        "toggleAria": "Upravljanje konektorima za ovaj razgovor",
         "loading": "Učitavanje konektora…",
         "status": "Aktivno {enabled} od {total} konektora",
         "on": "uključeno",
@@ -203,6 +204,8 @@
         "error": "greška",
         "reauth": "potrebna prijava",
         "untitled": "Bez naziva",
+        "defaultBadge": "Zadano",
+        "manageConnectors": "Upravljanje konektorima",
         "manageHint": "Upravljanje u Max web aplikaciji."
     }
 }

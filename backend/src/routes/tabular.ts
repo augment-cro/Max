@@ -11,7 +11,11 @@ import {
     type TabularCellStore,
 } from "../lib/chatTools";
 import { completeText, streamChatWithTools } from "../lib/llm";
-import { getUserApiKeys, getUserModelSettings } from "../lib/userSettings";
+import {
+    getUserApiKeys,
+    getUserModelSettings,
+    resolveColumnSuggesterModel,
+} from "../lib/userSettings";
 import {
     checkProjectAccess,
     ensureReviewAccess,
@@ -23,6 +27,10 @@ import {
     parseUiLocale,
     type UiLocale,
 } from "../lib/uiLocale";
+import {
+    streamColumnSuggestion,
+    type ColumnSuggesterEvent,
+} from "../lib/columnSuggester";
 
 function formatPromptSuffix(format?: string, tags?: string[]): string {
     switch (format) {
@@ -320,7 +328,21 @@ tabularRouter.post("/prompt", requireAuth, async (req, res) => {
     }
 });
 
-// POST /tabular-review/ai-suggest-columns — suggest additional columns (client merges into review)
+// POST /tabular-review/ai-suggest-columns — agentic column editing via SSE
+//
+// The endpoint streams Server-Sent Events so the UI can show progress
+// while the model thinks / web-searches / drafts. The model picks ONE
+// of two terminal tools:
+//   - apply_columns(columns)        → SSE `result` event with the full
+//                                     new columns_config (replaces, not
+//                                     merges, on the client side).
+//   - ask_clarification(question)   → SSE `clarify` event; the user
+//                                     answers and resubmits.
+//
+// Web search (Tavily/Exa/Parallel/You) is offered as an additional
+// tool — useful for instructions that reference live regulation or
+// case law (e.g. "add a column that checks GDPR Art. 28 compliance").
+// Available only when the deployment has at least one provider key.
 tabularRouter.post("/ai-suggest-columns", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
     const userEmail = res.locals.userEmail as string | undefined;
@@ -343,7 +365,7 @@ tabularRouter.post("/ai-suggest-columns", requireAuth, async (req, res) => {
     const db = createServerSupabase();
     const { data: review, error } = await db
         .from("tabular_reviews")
-        .select("id, user_id, project_id, columns_config")
+        .select("id, user_id, project_id, columns_config, title")
         .eq("id", review_id)
         .single();
     if (error || !review)
@@ -353,48 +375,69 @@ tabularRouter.post("/ai-suggest-columns", requireAuth, async (req, res) => {
         return void res.status(404).json({ detail: "Review not found" });
 
     const uiLocale = parseUiLocale(req);
-    const { title_model, api_keys } = await getUserModelSettings(userId, db);
+    const { api_keys } = await getUserModelSettings(userId, db);
+    // We DELIBERATELY do not use `tabular_model` here. That setting is
+    // tuned for per-cell extraction (often `localllm-main` for cost) —
+    // but the column suggester is a multi-step agentic flow with strong
+    // language directives (HR/EN), tool calls, and few-shot examples
+    // that smaller / OSS models routinely fail to follow. We always
+    // pick the strongest available frontier model. See
+    // `resolveColumnSuggesterModel` for the decision tree.
+    const model = resolveColumnSuggesterModel(api_keys);
+    console.info(
+        `[ai-suggest-columns] user=${userId} locale=${uiLocale} model=${model}`,
+    );
 
-    const languageDirective =
-        uiLocale === "hr"
-            ? "VAŽNO: Sva polja \"name\", \"prompt\" i \"tags\" piši ISKLJUČIVO na standardnom hrvatskom jeziku (hrvatska pravna terminologija). Ne koristi engleski, srpski ni bosanski."
-            : "IMPORTANT: Write all \"name\", \"prompt\" and \"tags\" values in clear international English. Do not switch to another language even if the user instruction is in another language.";
+    let projectName: string | null = null;
+    if (review.project_id) {
+        const { data: proj } = await db
+            .from("projects")
+            .select("title")
+            .eq("id", review.project_id)
+            .single();
+        projectName = (proj?.title as string | null) ?? null;
+    }
 
-    const system = `You design extraction columns for legal tabular review in Max. The user wants NEW columns to add.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    // Force HTTP/2 over TCP for this SSE stream — see chat.ts for the full
+    // rationale (Chrome QUIC drops mid-stream when middleboxes cut UDP/443).
+    res.setHeader("Alt-Svc", "clear");
+    res.flushHeaders();
 
-Return ONLY valid JSON: {"columns":[{ "name": string, "prompt": string, "format": string, "tags"?: string[] }]}
-
-"format" must be one of: text, bulleted_list, number, percentage, monetary_amount, currency, yes_no, date, tag.
-For format "tag", include "tags" as a non-empty array of allowed tag strings.
-
-Do not duplicate existing columns unless the user explicitly asks to replace — typically suggest net-new columns only.
-
-${localeContextForLlm(uiLocale)}
-
-${languageDirective}`;
-
-    const userMsg = `EXISTING columns_config:\n${JSON.stringify(columns_config)}\n\nUSER INSTRUCTION:\n${instruction.trim()}`;
+    const writeEvent = (event: ColumnSuggesterEvent) => {
+        try {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+        } catch (err) {
+            console.warn("[ai-suggest-columns] write failed", err);
+        }
+    };
 
     try {
-        const raw = await completeText({
-            model: title_model,
-            systemPrompt: system,
-            user: `${userMsg}\n\n${languageDirective}`,
-            maxTokens: 4096,
+        await streamColumnSuggestion({
+            instruction: instruction.trim(),
+            currentColumns: columns_config,
+            uiLocale,
+            model,
             apiKeys: api_keys,
+            write: writeEvent,
+            reviewTitle: (review.title as string | null) ?? null,
+            projectName,
         });
-        const cleaned = raw
-            .replace(/^```(?:json)?\n?/i, "")
-            .replace(/\n?```$/, "")
-            .trim();
-        const parsed = JSON.parse(cleaned) as { columns?: unknown };
-        if (!Array.isArray(parsed.columns)) {
-            return void res.status(502).json({ detail: "Invalid AI response" });
+    } catch (err) {
+        console.error("[tabular/ai-suggest-columns] fatal", err);
+        const message = err instanceof Error ? err.message : String(err);
+        writeEvent({ type: "error", message });
+        writeEvent({ type: "done" });
+    } finally {
+        try {
+            res.write("data: [DONE]\n\n");
+        } catch {
+            /* ignore — client disconnected */
         }
-        res.json({ columns: parsed.columns });
-    } catch (e) {
-        console.error("[tabular/ai-suggest-columns]", e);
-        res.status(502).json({ detail: "AI column suggestion failed" });
+        res.end();
     }
 });
 
@@ -658,6 +701,38 @@ tabularRouter.patch("/:reviewId", requireAuth, async (req, res) => {
         const activeColumns = Array.isArray(req.body.columns_config)
             ? req.body.columns_config
             : (updatedReview.columns_config ?? []);
+
+        // When the columns_config changes, drop cells whose column_index
+        // no longer exists in the new config — otherwise the AI prompt
+        // ("obriši stupac X") would leave orphan rows in tabular_cells
+        // that referencing code (chat tools, regenerate, exports) still
+        // sees. Only run when the caller actually changed columns_config.
+        if (Array.isArray(req.body.columns_config)) {
+            const activeIndexes = new Set<number>(
+                (activeColumns as { index: number }[]).map((c) => c.index),
+            );
+            const existingIndexes = new Set<number>(
+                (existingCells ?? []).map(
+                    (cell: Record<string, unknown>) =>
+                        cell.column_index as number,
+                ),
+            );
+            const removedIndexes = [...existingIndexes].filter(
+                (i) => !activeIndexes.has(i),
+            );
+            if (removedIndexes.length > 0) {
+                const { error: deleteColsError } = await db
+                    .from("tabular_cells")
+                    .delete()
+                    .eq("review_id", reviewId)
+                    .in("column_index", removedIndexes);
+                if (deleteColsError)
+                    return void res
+                        .status(500)
+                        .json({ detail: deleteColsError.message });
+            }
+        }
+
         const newCells = documentIds.flatMap((documentId) =>
             activeColumns
                 .filter(
@@ -805,6 +880,11 @@ tabularRouter.post(
             .eq("document_id", document_id)
             .eq("column_index", column_index);
 
+        const { tabular_model, api_keys } = await getUserModelSettings(
+            userId,
+            db,
+        );
+
         let markdown = "";
         if (docActive) {
             const buf = await downloadFile(docActive.storage_path);
@@ -812,7 +892,7 @@ tabularRouter.post(
                 try {
                     markdown =
                         (doc.file_type as string) === "pdf"
-                            ? await extractPdfMarkdown(buf)
+                            ? await extractPdfMarkdown(buf, api_keys.gemini)
                             : await extractDocxMarkdown(buf);
                 } catch (err) {
                     console.error(
@@ -822,11 +902,6 @@ tabularRouter.post(
                 }
             }
         }
-
-        const { tabular_model, api_keys } = await getUserModelSettings(
-            userId,
-            db,
-        );
         const uiLocale = parseUiLocale(req);
         const result = await queryGemini(
             tabular_model,
@@ -929,6 +1004,9 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    // Force HTTP/2 over TCP for this SSE stream — see chat.ts for the full
+    // rationale (Chrome QUIC drops mid-stream when middleboxes cut UDP/443).
+    res.setHeader("Alt-Svc", "clear");
     res.flushHeaders();
 
     const write = (line: string) => res.write(line);
@@ -947,7 +1025,7 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
                         try {
                             markdown =
                                 (doc.file_type as string) === "pdf"
-                                    ? await extractPdfMarkdown(buf)
+                                    ? await extractPdfMarkdown(buf, api_keys.gemini)
                                     : await extractDocxMarkdown(buf);
                         } catch (err) {
                             console.error(
@@ -1228,6 +1306,7 @@ Rules:
 - Omit <CITATIONS> if you make no citations
 - Do not fabricate cell content
 - Answer in clear, concise prose. You may use markdown formatting.
+- Do not use emojis in your responses.
 
 ${localeContextForLlm(uiLocale)}`;
 
@@ -1375,6 +1454,9 @@ tabularRouter.post("/:reviewId/chat", requireAuth, async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    // Force HTTP/2 over TCP for this SSE stream — see chat.ts for the full
+    // rationale (Chrome QUIC drops mid-stream when middleboxes cut UDP/443).
+    res.setHeader("Alt-Svc", "clear");
     res.flushHeaders();
     const write = (line: string) => res.write(line);
 
@@ -1509,12 +1591,19 @@ async function queryGemini(
     const suffix = formatPromptSuffix(format as never, tags);
     const fullPrompt = `${columnPrompt}${suffix} If not found, state "Not Found". Leave all reasoning and explanation in the "reasoning" field only.`;
 
+    const languageDirective =
+        uiLocale === "hr"
+            ? 'VAŽNO: Polja "summary" i "reasoning" piši ISKLJUČIVO na standardnom hrvatskom jeziku (hrvatska pravna terminologija). Citati iz dokumenta (unutar [[page:…||quote:…]]) moraju ostati na izvornom jeziku dokumenta.'
+            : 'IMPORTANT: Write "summary" and "reasoning" values in clear international English. Quotes inside [[page:…||quote:…]] must remain in the document\'s original language.';
+
     const EXTRACTION_SYSTEM = `You are a legal document analyst. Return ONLY valid JSON:
 {"summary": string, "flag": "green"|"grey"|"yellow"|"red", "reasoning": string}
 
 The "summary" and "reasoning" field values may use markdown formatting (bullets, bold, italics, etc.) — the values are still plain JSON strings (escape newlines as \\n), but the text inside will be rendered as markdown in the UI.
 
 The "summary" field must contain only the extracted value with inline citations — no explanation or reasoning. Every factual claim in "summary" must be followed immediately by a citation in the format [[page:N||quote:exact quoted text]], where N is the page number and the quote is a short verbatim excerpt (≤ 25 words). The quote must be narrowly scoped to the specific claim it supports — extract only the exact words that support that statement, not the surrounding sentence or paragraph. Do not have multiple claims share the same long quote; if two different statements need different evidence, give each its own short, narrowly-scoped quote. All reasoning and explanation belongs in "reasoning" only, which may also contain citations.
+
+${languageDirective}
 
 ${localeContextForLlm(uiLocale)}`;
 
@@ -1681,6 +1770,11 @@ async function queryGeminiAllColumns(
         })
         .join("\n");
 
+    const languageDirective =
+        uiLocale === "hr"
+            ? 'VAŽNO: Polja "summary" i "reasoning" piši ISKLJUČIVO na standardnom hrvatskom jeziku (hrvatska pravna terminologija). Citati iz dokumenta (unutar [[page:…||quote:…]]) moraju ostati na izvornom jeziku dokumenta.'
+            : 'IMPORTANT: Write "summary" and "reasoning" values in clear international English. Quotes inside [[page:…||quote:…]] must remain in the document\'s original language.';
+
     const SYSTEM = `You are a legal document analyst. Extract information for each column listed below.
 
 For each column, output exactly one minified JSON object on its own line (no line breaks inside the JSON), then a newline. Process columns in order and output each result as soon as you finish it.
@@ -1693,7 +1787,11 @@ Rules:
 - "flag": green = standard/favorable, yellow = needs attention, red = problematic/unfavorable, grey = neutral/not found
 - "reasoning": brief explanation of the extraction
 - The "summary" and "reasoning" string VALUES may use markdown (bullets, bold, italics, etc.) — escape newlines as \\n inside the JSON string. This markdown is rendered in the UI.
-- Output ONLY the JSON lines themselves. Do NOT wrap the response in markdown code fences (e.g. \`\`\`json), and do not add any preamble or summary.`;
+- Output ONLY the JSON lines themselves. Do NOT wrap the response in markdown code fences (e.g. \`\`\`json), and do not add any preamble or summary.
+
+${languageDirective}
+
+${localeContextForLlm(uiLocale)}`;
 
     const USER = `Document: ${filename}\n\n${documentText.slice(0, 120_000)}\n\n---\nColumns to extract:\n${columnsDesc}`;
 
@@ -1730,7 +1828,7 @@ Rules:
     try {
         await streamChatWithTools({
             model,
-            systemPrompt: SYSTEM + "\n\n" + localeContextForLlm(uiLocale),
+            systemPrompt: SYSTEM,
             messages: [{ role: "user", content: USER }],
             tools: [],
             apiKeys,
@@ -1757,7 +1855,36 @@ Rules:
     await Promise.all(pending);
 }
 
-async function extractPdfMarkdown(buf: ArrayBuffer): Promise<string> {
+/**
+ * Tabular review path's PDF text extractor. Backed by Gemini multimodal
+ * OCR so scanned PDFs (image-based, no text layer) work the same as
+ * native text PDFs. Returns Markdown with `## Page N` headers because
+ * that's what `queryGemini` already feeds the downstream tabular model
+ * — keep that contract stable so per-cell prompts don't shift when this
+ * helper changes.
+ *
+ * Falls back to pdfjs-dist if Gemini is unreachable / no key configured,
+ * so text-layer PDFs still extract something rather than failing the
+ * whole review run.
+ */
+async function extractPdfMarkdown(
+    buf: ArrayBuffer,
+    apiKey?: string | null,
+): Promise<string> {
+    const { extractPdfWithGemini } = await import("../lib/pdfOcr");
+    const geminiText = await extractPdfWithGemini(buf, {
+        apiKey,
+        pageMarker: "heading",
+    });
+    if (geminiText.trim().length > 0) return geminiText;
+
+    console.warn(
+        "[extractPdfMarkdown] Gemini OCR returned empty, falling back to pdfjs-dist",
+    );
+    return extractPdfMarkdownWithPdfJs(buf);
+}
+
+async function extractPdfMarkdownWithPdfJs(buf: ArrayBuffer): Promise<string> {
     try {
         const pdfjsLib = await import(
             "pdfjs-dist/legacy/build/pdf.mjs" as string

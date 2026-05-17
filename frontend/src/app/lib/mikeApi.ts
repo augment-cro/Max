@@ -85,7 +85,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (response.status === 401) {
         try {
             const body = await response.clone().json();
-            if (body?.code === "TOKEN_EXPIRED") {
+            if (body?.code === "TOKEN_EXPIRED" || !authHeaders.Authorization) {
                 const refreshed = await refreshAccessToken();
                 if (refreshed) {
                     response = await fetch(`${API_BASE}${path}`, {
@@ -399,6 +399,19 @@ export async function getDocumentUrl(
     return apiRequest(`/single-documents/${documentId}/url${qs}`);
 }
 
+/** Must stay in sync with `MAX_ZIP_DOCUMENTS` in backend `documents.ts`. */
+export const MAX_ZIP_DOWNLOAD_DOCUMENTS = 50;
+
+export class ZipDocumentLimitError extends Error {
+    readonly max: number;
+
+    constructor(max: number) {
+        super("ZIP_DOCUMENT_LIMIT");
+        this.name = "ZipDocumentLimitError";
+        this.max = max;
+    }
+}
+
 export async function downloadDocumentsZip(
     documentIds: string[],
 ): Promise<Blob> {
@@ -413,8 +426,30 @@ export async function downloadDocumentsZip(
         body: JSON.stringify({ document_ids: documentIds }),
     });
     if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `API error: ${response.status}`);
+        const text = await response.text();
+        let body: unknown;
+        try {
+            body = JSON.parse(text) as unknown;
+        } catch {
+            body = null;
+        }
+        if (
+            body !== null &&
+            typeof body === "object" &&
+            (body as { code?: unknown }).code === "ZIP_DOCUMENT_LIMIT"
+        ) {
+            const rawMax = (body as { max_documents?: unknown }).max_documents;
+            if (typeof rawMax === "number" && Number.isFinite(rawMax))
+                throw new ZipDocumentLimitError(rawMax);
+        }
+        throw new Error(
+            (body !== null &&
+            typeof body === "object" &&
+            typeof (body as { detail?: unknown }).detail === "string"
+                ? String((body as { detail: string }).detail).trim()
+                : text.trim()) ||
+                `API error: ${response.status}`,
+        );
     }
     return response.blob();
 }
@@ -770,23 +805,119 @@ export async function generateTabularColumnPrompt(
     });
 }
 
-export async function suggestTabularColumnsWithAi(
-    reviewId: string,
-    instruction: string,
-    columns_config: unknown[],
-): Promise<{
-    columns: Array<{
-        name: string;
-        prompt: string;
-        format: string;
-        tags?: string[];
-    }>;
-}> {
-    return apiRequest(`/tabular-review/ai-suggest-columns`, {
+export type AiColumnDraft = {
+    name: string;
+    prompt: string;
+    format: string;
+    tags?: string[];
+};
+
+export type AiColumnSuggesterEvent =
+    | {
+          type: "status";
+          phase: "thinking" | "searching" | "applying";
+          message?: string;
+      }
+    | {
+          type: "web_search_started";
+          query: string;
+          provider: string;
+      }
+    | {
+          type: "web_search_result";
+          provider: string;
+          query: string;
+          results: Array<{
+              title: string;
+              url: string;
+              snippet: string;
+              published_date?: string | null;
+          }>;
+          error?: string | null;
+      }
+    | { type: "clarify"; question: string }
+    | {
+          type: "result";
+          columns: AiColumnDraft[];
+          explanation?: string | null;
+      }
+    | { type: "error"; message: string }
+    | { type: "done" };
+
+/**
+ * SSE-streaming variant of the column suggester. The backend emits a
+ * sequence of `status` / `web_search_*` events and ends with EXACTLY
+ * one of `result` (apply the new columns) or `clarify` (surface a
+ * follow-up question to the user), followed by `done`.
+ *
+ * Caller passes an `onEvent` callback for live UI updates and an
+ * optional `signal` to cancel an in-flight request.
+ */
+export async function streamSuggestTabularColumnsWithAi(args: {
+    reviewId: string;
+    instruction: string;
+    columns_config: unknown[];
+    onEvent: (event: AiColumnSuggesterEvent) => void;
+    signal?: AbortSignal;
+}): Promise<void> {
+    const { reviewId, instruction, columns_config, onEvent, signal } = args;
+    const authHeaders = getAuthHeader();
+    const res = await fetch(`${API_BASE}/tabular-review/ai-suggest-columns`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ review_id: reviewId, instruction, columns_config }),
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            ...getUiLocaleHeader(),
+            ...authHeaders,
+        },
+        body: JSON.stringify({
+            review_id: reviewId,
+            instruction,
+            columns_config,
+        }),
+        signal,
     });
+    if (!res.ok || !res.body) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(
+            `ai-suggest-columns failed (${res.status}): ${txt.slice(0, 300)}`,
+        );
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        // SSE events are separated by a blank line. Split on \n\n,
+        // keep the last (possibly incomplete) chunk in `buf` for the
+        // next iteration.
+        let sep: number;
+        while ((sep = buf.indexOf("\n\n")) !== -1) {
+            const rawEvent = buf.slice(0, sep);
+            buf = buf.slice(sep + 2);
+            const dataLine = rawEvent
+                .split("\n")
+                .find((l) => l.startsWith("data:"));
+            if (!dataLine) continue;
+            const payload = dataLine.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+                const event = JSON.parse(payload) as AiColumnSuggesterEvent;
+                onEvent(event);
+            } catch (err) {
+                console.warn(
+                    "[streamSuggestTabularColumnsWithAi] invalid JSON",
+                    err,
+                    payload.slice(0, 200),
+                );
+            }
+        }
+    }
 }
 
 export async function uploadReviewDocument(

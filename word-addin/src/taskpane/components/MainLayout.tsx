@@ -23,15 +23,16 @@ export default function MainLayout() {
     const [activeTab, setActiveTab] = useState<TabId>("chat");
     const { logout } = useAuth();
     const t = useTranslation();
-    // Auto-enable any user MCP connectors that are off. The status pill
-    // is rendered by ChatInput inside the bottom toolbar (next to the
-    // workflow picker) — having it floating in the top-right competed
-    // for visual space with Office's own task-pane chrome and the
-    // sign-out button, and users were misreading it as Office UI.
+    // MCP connector toggles live in ChatInput (Plug icon, Max web parity).
     //
     // Gated by `true` because MainLayout only mounts after auth (App.tsx
     // renders <Login /> otherwise).
-    const { servers: mcpServers, loading: mcpLoading } = useMcpServers(true);
+    const {
+        userServers: mcpUserServers,
+        builtinServers: mcpBuiltinServers,
+        loading: mcpLoading,
+        refresh: mcpRefresh,
+    } = useMcpServers(true);
 
     // Cross-tab switch event from WorkflowsTab → "Use in chat" handoff,
     // and from ProjectsTab → "select" focusing the chat composer. Other
@@ -84,15 +85,17 @@ export default function MainLayout() {
               tab. Conditional render unmounts the chat panel and the user
               loses their messages every time they switch.
 
-              Only ChatPanel currently needs the MCP connectors list (to
-              render the toolbar pill); the other tabs ignore the props.
+              Only ChatPanel currently needs MCP connector state (Plug menu
+              in the composer); the other tabs ignore the props.
             */}
             <main className="flex-1 min-h-0 overflow-hidden">
                 <div hidden={activeTab !== "chat"} className="h-full">
                     <ErrorBoundary>
                         <ChatPanel
-                            mcpServers={mcpServers}
+                            mcpUserServers={mcpUserServers}
+                            mcpBuiltinServers={mcpBuiltinServers}
                             mcpLoading={mcpLoading}
+                            mcpRefresh={mcpRefresh}
                         />
                     </ErrorBoundary>
                 </div>

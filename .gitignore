@@ -26,9 +26,23 @@ next-env.d.ts
 .vercel
 coverage
 
+# Third-party / identity-provider code that lives on external systems.
 vanjske_datoteke/
+
+# External / vendor source kept locally but not part of the open-source release.
+vanjski kod/
+
+# Private deployment and one-off operational scripts — not for public release.
+scripts/
+
+# Deployment-specific MCP sidecar services (e.g. Cloud Run wrappers around
+# third-party MCP servers). Operator-specific infra, not part of the core release.
+mcp-sidecars/
 
 # Word add-in production bundle is emitted by `cd word-addin && npm run build`
 # directly into the frontend's public folder. Treat it as a build artifact —
 # rebuild it on every deploy.
 frontend/public/word-addin/
+
+# IDE / editor workspace files
+.cursor/
