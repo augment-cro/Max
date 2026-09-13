@@ -22,8 +22,8 @@ import {
 } from "@/app/lib/mikeApi";
 import type { MikeWorkflow } from "../shared/types";
 import {
-    BUILT_IN_WORKFLOWS,
-    BUILT_IN_IDS,
+    useBuiltinWorkflows,
+    isBuiltinWorkflowId,
     getLocalizedPractice,
     getLocalizedWorkflowTitle,
 } from "./builtinWorkflows";
@@ -36,6 +36,7 @@ import { RowActions } from "../shared/RowActions";
 import { MikeIcon } from "@/components/chat/mike-icon";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslations } from "next-intl";
+import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 
 type Tab = "all" | "builtin" | "custom" | "hidden";
 
@@ -45,6 +46,9 @@ const NAME_COL_W = "w-[300px] shrink-0";
 export function WorkflowList() {
     const t = useTranslations("workflowsPage");
     const tCommon = useTranslations("common");
+    const tDelete = useTranslations("confirmDelete");
+    const { confirm: confirmDialog, dialog: confirmDialogEl } =
+        useConfirmDialog();
     const tRowActions = useTranslations("rowActions");
     const tBuiltinTitles = useTranslations("builtinWorkflows");
     const tBuiltinPractices = useTranslations("builtinPractices");
@@ -57,6 +61,7 @@ export function WorkflowList() {
     ];
     const router = useRouter();
     const { user } = useAuth();
+    const builtIns = useBuiltinWorkflows();
     const [custom, setCustom] = useState<MikeWorkflow[]>([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<MikeWorkflow | null>(null);
@@ -127,10 +132,10 @@ export function WorkflowList() {
         return () => document.removeEventListener("mousedown", handleClick);
     }, []);
 
-    const hiddenBuiltins = BUILT_IN_WORKFLOWS.filter((wf) =>
+    const hiddenBuiltins = builtIns.filter((wf) =>
         hiddenBuiltinIds.includes(wf.id),
     );
-    const visibleBuiltins = BUILT_IN_WORKFLOWS.filter(
+    const visibleBuiltins = builtIns.filter(
         (wf) => !hiddenBuiltinIds.includes(wf.id),
     );
     const all = [...visibleBuiltins, ...custom];
@@ -191,9 +196,29 @@ export function WorkflowList() {
     async function handleBulkRemove() {
         const ids = [...selectedIds];
         setActionsOpen(false);
+        const builtinIds = ids.filter((id) => isBuiltinWorkflowId(id));
+        // Only delete workflows the user actually OWNS. Shared-to-me
+        // workflows are non-builtin UUIDs too, but the server delete is
+        // owner-scoped (0-row no-op), so removing them optimistically just
+        // made them reappear on reload (issue #120).
+        const ownedById = new Map(custom.map((w) => [w.id, w]));
+        const customIds = ids.filter(
+            (id) =>
+                !isBuiltinWorkflowId(id) &&
+                ownedById.get(id)?.is_owner !== false,
+        );
+        // Confirm the destructive custom-workflow delete (builtin "hide" is
+        // reversible and needs no prompt).
+        if (customIds.length > 0) {
+            const ok = await confirmDialog({
+                title: tDelete("workflowsTitle"),
+                message: tDelete("workflowsBody", { count: customIds.length }),
+                confirmLabel: tDelete("deleteAction"),
+                destructive: true,
+            });
+            if (!ok) return;
+        }
         setSelectedIds([]);
-        const builtinIds = ids.filter((id) => BUILT_IN_IDS.has(id));
-        const customIds = ids.filter((id) => !BUILT_IN_IDS.has(id));
         if (builtinIds.length > 0) {
             setHiddenBuiltinIds((prev) => [
                 ...prev,
@@ -204,10 +229,17 @@ export function WorkflowList() {
             );
         }
         if (customIds.length > 0) {
-            await Promise.all(
-                customIds.map((id) => deleteWorkflow(id).catch(() => {})),
+            // Remove only the rows whose delete actually succeeded, so a
+            // server failure doesn't leave a phantom-removed row (#120).
+            const results = await Promise.all(
+                customIds.map((id) =>
+                    deleteWorkflow(id)
+                        .then(() => id)
+                        .catch(() => null),
+                ),
             );
-            setCustom((prev) => prev.filter((w) => !customIds.includes(w.id)));
+            const deleted = new Set(results.filter((id): id is string => !!id));
+            setCustom((prev) => prev.filter((w) => !deleted.has(w.id)));
         }
     }
 
@@ -221,11 +253,11 @@ export function WorkflowList() {
 
     const getTypeMeta = (type: MikeWorkflow["type"]) =>
         type === "tabular"
-            ? { label: t("typeTabular"), Icon: Table2, className: "text-violet-700" }
+            ? { label: t("typeTabular"), Icon: Table2, className: "text-foreground" }
             : {
                   label: t("typeAssistant"),
                   Icon: MessageSquare,
-                  className: "text-blue-700",
+                  className: "text-foreground",
               };
 
     const typeFilterButton = (
@@ -234,8 +266,8 @@ export function WorkflowList() {
                 onClick={() => setTypeFilterOpen((o) => !o)}
                 className={`flex items-center gap-1 text-xs font-medium transition-colors ${
                     typeFilter
-                        ? "text-gray-700 hover:text-gray-900"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "text-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
                 }`}
             >
                 {typeFilter
@@ -246,20 +278,20 @@ export function WorkflowList() {
                 <ChevronDown className="h-3 w-3" />
             </button>
             {typeFilterOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-20 w-40 rounded-xl border border-gray-100 bg-white shadow-lg overflow-hidden">
+                <div className="absolute right-0 top-full mt-1.5 z-20 w-40 rounded-xl border border-border bg-surface-elevated overflow-hidden">
                     <button
                         onClick={() => {
                             setTypeFilter(null);
                             setTypeFilterOpen(false);
                         }}
-                        className="flex items-center justify-between w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                        className="flex items-center justify-between w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                     >
                         {t("allTypes")}
                         {!typeFilter && (
-                            <Check className="h-3.5 w-3.5 text-gray-400" />
+                            <Check className="h-3.5 w-3.5 text-muted-foreground/70" />
                         )}
                     </button>
-                    <div className="border-t border-gray-100" />
+                    <div className="border-t border-border" />
                     {(["assistant", "tabular"] as const).map((t) => {
                         const { label, Icon, className } = getTypeMeta(t);
                         return (
@@ -269,7 +301,7 @@ export function WorkflowList() {
                                     setTypeFilter(t);
                                     setTypeFilterOpen(false);
                                 }}
-                                className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-gray-50 transition-colors"
+                                className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent transition-colors"
                             >
                                 <span
                                     className={`inline-flex items-center gap-1.5 font-medium ${className}`}
@@ -278,7 +310,7 @@ export function WorkflowList() {
                                     {label}
                                 </span>
                                 {typeFilter === t && (
-                                    <Check className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                    <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                                 )}
                             </button>
                         );
@@ -294,8 +326,8 @@ export function WorkflowList() {
                 onClick={() => setPracticeFilterOpen((o) => !o)}
                 className={`flex items-center gap-1 text-xs font-medium transition-colors ${
                     practiceFilter
-                        ? "text-gray-700 hover:text-gray-900"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "text-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
                 }`}
             >
                 {practiceFilter
@@ -304,21 +336,21 @@ export function WorkflowList() {
                 <ChevronDown className="h-3 w-3" />
             </button>
             {practiceFilterOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-20 w-52 rounded-xl border border-gray-100 bg-white shadow-lg overflow-hidden">
+                <div className="absolute right-0 top-full mt-1.5 z-20 w-52 rounded-xl border border-border bg-surface-elevated overflow-hidden">
                     <button
                         onClick={() => {
                             setPracticeFilter(null);
                             setPracticeFilterOpen(false);
                         }}
-                        className="flex items-center justify-between w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                        className="flex items-center justify-between w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                     >
                         {t("allPractices")}
                         {!practiceFilter && (
-                            <Check className="h-3.5 w-3.5 text-gray-400" />
+                            <Check className="h-3.5 w-3.5 text-muted-foreground/70" />
                         )}
                     </button>
                     {practices.length > 0 && (
-                        <div className="border-t border-gray-100" />
+                        <div className="border-t border-border" />
                     )}
                     {practices.map((p) => (
                         <button
@@ -327,13 +359,13 @@ export function WorkflowList() {
                                 setPracticeFilter(p);
                                 setPracticeFilterOpen(false);
                             }}
-                            className="flex items-center justify-between w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center justify-between w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <span className="truncate pr-2">
                                 {getLocalizedPractice(p, tBuiltinPractices)}
                             </span>
                             {practiceFilter === p && (
-                                <Check className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                             )}
                         </button>
                     ))}
@@ -348,24 +380,24 @@ export function WorkflowList() {
                 <div ref={actionsRef} className="relative">
                     <button
                         onClick={() => setActionsOpen((v) => !v)}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                        className="flex items-center gap-1 text-xs font-medium text-foreground hover:text-foreground transition-colors"
                     >
                         {tCommon("actions")}
                         <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     {actionsOpen && (
-                        <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-gray-100 bg-white shadow-lg z-50 overflow-hidden">
+                        <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-border bg-surface-elevated z-50 overflow-hidden">
                             {activeTab === "hidden" ? (
                                 <button
                                     onClick={handleBulkUnhide}
-                                    className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+                                    className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent transition-colors"
                                 >
                                     {tRowActions("unhide")}
                                 </button>
                             ) : (
                                 <button
                                     onClick={handleBulkRemove}
-                                    className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                    className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 transition-colors"
                                 >
                                     {tCommon("delete")}
                                 </button>
@@ -380,10 +412,10 @@ export function WorkflowList() {
     );
 
     return (
-        <div className="flex flex-col flex-1 overflow-hidden bg-white">
+        <div className="flex flex-col h-full flex-1 overflow-hidden bg-background">
             {/* Page header */}
             <div className="flex items-center justify-between px-8 py-4 shrink-0">
-                <h1 className="text-2xl font-medium font-serif text-gray-900">
+                <h1 className="text-2xl font-medium font-serif text-foreground">
                     {t("title")}
                 </h1>
                 <div className="flex items-center gap-2">
@@ -399,7 +431,7 @@ export function WorkflowList() {
                     />
                     <button
                         onClick={() => setNewModalOpen(true)}
-                        className="flex items-center justify-center p-1.5 text-gray-500 hover:text-gray-900 transition-colors"
+                        className="flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground transition-colors"
                     >
                         <Plus className="h-4 w-4" />
                     </button>
@@ -417,8 +449,8 @@ export function WorkflowList() {
             <div className="flex-1 overflow-auto">
                 <div className="min-w-max">
                     {/* Column headers */}
-                    <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium select-none">
-                        <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                    <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium select-none">
+                        <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                             {!loading && (
                                 <input
                                     type="checkbox"
@@ -427,11 +459,11 @@ export function WorkflowList() {
                                         if (el) el.indeterminate = someSelected;
                                     }}
                                     onChange={toggleAll}
-                                    className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                    className="h-2.5 w-2.5 rounded border-input cursor-pointer accent-primary"
                                 />
                             )}
                         </div>
-                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                             {t("columns.name")}
                         </div>
                         <div className="ml-auto w-28 shrink-0">{t("columns.type")}</div>
@@ -445,20 +477,20 @@ export function WorkflowList() {
                             {[1, 2, 3].map((i) => (
                                 <div
                                     key={i}
-                                    className="flex items-center h-10 pr-8 border-b border-gray-50"
+                                    className="flex items-center h-10 pr-8 border-b border-border"
                                 >
                                     <div className="w-8 shrink-0" />
                                     <div className="flex-1 min-w-0 pl-3 pr-4">
-                                        <div className="h-3.5 w-48 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-3.5 w-48 rounded bg-muted animate-pulse" />
                                     </div>
                                     <div className="w-28 shrink-0">
-                                        <div className="h-3 w-16 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-3 w-16 rounded bg-muted animate-pulse" />
                                     </div>
                                     <div className="w-40 shrink-0">
-                                        <div className="h-3 w-24 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-3 w-24 rounded bg-muted animate-pulse" />
                                     </div>
                                     <div className="w-28 shrink-0">
-                                        <div className="h-3 w-14 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-3 w-14 rounded bg-muted animate-pulse" />
                                     </div>
                                     <div className="w-16 shrink-0" />
                                 </div>
@@ -468,37 +500,37 @@ export function WorkflowList() {
                         <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
                             {activeTab === "custom" ? (
                                 <>
-                                    <Library className="h-8 w-8 text-gray-300 mb-4" />
-                                    <p className="text-2xl font-medium font-serif text-gray-900">
+                                    <Library className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                    <p className="text-2xl font-medium font-serif text-foreground">
                                         {t("empty.customTitle")}
                                     </p>
-                                    <p className="mt-1 text-xs text-gray-400 text-left">
+                                    <p className="mt-1 text-xs text-muted-foreground/70 text-left">
                                         {t("empty.customDesc")}
                                     </p>
                                     <button
                                         onClick={() => setNewModalOpen(true)}
-                                        className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md"
+                                        className="mt-4 inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
                                     >
                                         {t("empty.createNew")}
                                     </button>
                                 </>
                             ) : activeTab === "hidden" ? (
                                 <>
-                                    <Library className="h-8 w-8 text-gray-300 mb-4" />
-                                    <p className="text-2xl font-medium font-serif text-gray-900">
+                                    <Library className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                    <p className="text-2xl font-medium font-serif text-foreground">
                                         {t("empty.hiddenTitle")}
                                     </p>
-                                    <p className="mt-1 text-xs text-gray-400 text-left">
+                                    <p className="mt-1 text-xs text-muted-foreground/70 text-left">
                                         {t("empty.hiddenDesc")}
                                     </p>
                                 </>
                             ) : (
                                 <>
-                                    <Library className="h-8 w-8 text-gray-300 mb-4" />
-                                    <p className="text-2xl font-medium font-serif text-gray-900">
+                                    <Library className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                    <p className="text-2xl font-medium font-serif text-foreground">
                                         {t("empty.allTitle")}
                                     </p>
-                                    <p className="mt-1 text-xs text-gray-400 text-left">
+                                    <p className="mt-1 text-xs text-muted-foreground/70 text-left">
                                         {t("empty.allDesc")}
                                     </p>
                                 </>
@@ -507,27 +539,27 @@ export function WorkflowList() {
                     ) : (
                         filtered.map((wf) => {
                             const rowBg = selectedIds.includes(wf.id)
-                                ? "bg-gray-50"
-                                : "bg-white";
+                                ? "bg-secondary"
+                                : "bg-background";
                             return (
                             <div
                                 key={wf.id}
                                 onClick={() => setSelected(wf)}
-                                className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                             >
                                 <div
-                                    className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-gray-50`}
+                                    className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-accent`}
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.includes(wf.id)}
                                         onChange={() => toggleOne(wf.id)}
-                                        className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                        className="h-2.5 w-2.5 rounded border-input cursor-pointer accent-primary"
                                     />
                                 </div>
-                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-gray-50`}>
-                                    <span className="text-sm text-gray-800 truncate block">
+                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-accent`}>
+                                    <span className="text-sm text-foreground truncate block">
                                         {getLocalizedWorkflowTitle(wf, tBuiltinTitles)}
                                     </span>
                                 </div>
@@ -547,29 +579,29 @@ export function WorkflowList() {
                                 </div>
                                 <div className="w-40 shrink-0">
                                     {wf.practice ? (
-                                        <span className="text-xs font-medium text-gray-600">
+                                        <span className="text-xs font-medium text-muted-foreground">
                                             {getLocalizedPractice(wf.practice, tBuiltinPractices)}
                                         </span>
                                     ) : (
-                                        <span className="text-xs text-gray-300">
+                                        <span className="text-xs text-muted-foreground/70">
                                             —
                                         </span>
                                     )}
                                 </div>
                                 <div className="w-28 shrink-0">
                                     {wf.is_system ? (
-                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                                             <MikeIcon size={14} />
                                             {t("source.mike")}
                                         </span>
                                     ) : wf.user_id === user?.id ? (
-                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600">
-                                            <User className="h-3.5 w-3.5 text-gray-500" />
+                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                            <User className="h-3.5 w-3.5 text-muted-foreground" />
                                             {t("source.myself")}
                                         </span>
                                     ) : (
-                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 truncate max-w-full">
-                                            <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground truncate max-w-full">
+                                            <User className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                                             <span className="truncate">
                                                 {wf.shared_by_name ? t("source.sharedBy", { name: wf.shared_by_name }) : t("source.shared")}
                                             </span>
@@ -585,7 +617,7 @@ export function WorkflowList() {
                                             onClick={() => downloadWorkflow(wf)}
                                             aria-label={t("downloadAria")}
                                             title={t("downloadAria")}
-                                            className="flex items-center justify-center p-1 text-gray-400 hover:text-gray-900 transition-colors"
+                                            className="flex items-center justify-center p-1 text-muted-foreground/70 hover:text-foreground transition-colors"
                                         >
                                             <Download className="h-3.5 w-3.5" />
                                         </button>
@@ -607,12 +639,35 @@ export function WorkflowList() {
                                     ) : wf.is_owner === false ? null : (
                                         <RowActions
                                             onDelete={async () => {
-                                                await deleteWorkflow(wf.id);
-                                                setCustom((prev) =>
-                                                    prev.filter(
-                                                        (w) => w.id !== wf.id,
+                                                // Permanent delete — confirm
+                                                // first (issue #120).
+                                                const ok = await confirmDialog({
+                                                    title: tDelete(
+                                                        "workflowTitle",
                                                     ),
-                                                );
+                                                    message: tDelete(
+                                                        "workflowBodyNamed",
+                                                        { title: wf.title },
+                                                    ),
+                                                    confirmLabel:
+                                                        tDelete("deleteAction"),
+                                                    destructive: true,
+                                                });
+                                                if (!ok) return;
+                                                try {
+                                                    await deleteWorkflow(wf.id);
+                                                    setCustom((prev) =>
+                                                        prev.filter(
+                                                            (w) =>
+                                                                w.id !== wf.id,
+                                                        ),
+                                                    );
+                                                } catch (err) {
+                                                    console.error(
+                                                        "Failed to delete workflow",
+                                                        err,
+                                                    );
+                                                }
                                             }}
                                         />
                                     )}
@@ -639,6 +694,7 @@ export function WorkflowList() {
                     router.push(`/workflows/${wf.id}`);
                 }}
             />
+            {confirmDialogEl}
         </div>
     );
 }

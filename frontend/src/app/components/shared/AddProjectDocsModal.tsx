@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Search, Upload, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { getProject, uploadProjectDocument } from "@/app/lib/mikeApi";
+import { track, fileTypeOf } from "@/app/lib/analytics";
 import type { MikeDocument } from "./types";
 import { DocFileIcon } from "./FileDirectory";
 import { VersionChip } from "./VersionChip";
+import { ConnectorsButton } from "./ConnectorsButton";
 
 interface Props {
     open: boolean;
@@ -37,6 +40,8 @@ export function AddProjectDocsModal({
     excludeDocIds,
     allowMultiple = true,
 }: Props) {
+    const t = useTranslations("documents");
+    const tc = useTranslations("common");
     const [docs, setDocs] = useState<MikeDocument[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState("");
@@ -99,7 +104,25 @@ export function AddProjectDocsModal({
         setUploading(true);
         try {
             const uploaded = await Promise.all(
-                files.map((f) => uploadProjectDocument(projectId, f)),
+                files.map(async (f) => {
+                    const fileType = fileTypeOf(f);
+                    try {
+                        const doc = await uploadProjectDocument(projectId, f);
+                        track("document_uploaded", {
+                            surface: "project",
+                            file_type: fileType,
+                            result: "success",
+                        });
+                        return doc;
+                    } catch (err) {
+                        track("document_uploaded", {
+                            surface: "project",
+                            file_type: fileType,
+                            result: "error",
+                        });
+                        throw err;
+                    }
+                }),
             );
             setDocs((prev) => [...uploaded, ...prev]);
             setSelectedIds((prev) => {
@@ -115,12 +138,26 @@ export function AddProjectDocsModal({
         }
     }
 
+    // Cloud-connector imports are project-scoped because we already have a
+    // projectId; the ConnectorsButton attaches the document to it during
+    // import. We just merge it into the visible list and pre-select.
+    function handleConnectorImport(doc: MikeDocument) {
+        setDocs((prev) =>
+            prev.some((d) => d.id === doc.id) ? prev : [doc, ...prev],
+        );
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.add(doc.id);
+            return next;
+        });
+    }
+
     return createPortal(
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 backdrop-blur-xs">
-            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px]">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-foreground/10 backdrop-blur-xs">
+            <div className="w-full max-w-2xl rounded-2xl bg-background border border-border flex flex-col h-[600px]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
                         {breadcrumb.map((segment, i) => (
                             <span
                                 key={i}
@@ -133,7 +170,7 @@ export function AddProjectDocsModal({
                     </div>
                     <button
                         onClick={onClose}
-                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -141,20 +178,20 @@ export function AddProjectDocsModal({
 
                 {/* Search */}
                 <div className="px-4 pt-1 pb-2">
-                    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                        <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    <div className="flex items-center gap-2 rounded-lg border border-input bg-surface-elevated px-3 py-2">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                         <input
                             type="text"
-                            placeholder="Search…"
+                            placeholder={t("searchPlaceholder")}
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="flex-1 bg-transparent text-sm text-gray-700 placeholder:text-gray-400 outline-none"
+                            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 outline-none"
                             autoFocus
                         />
                         {search && (
                             <button
                                 onClick={() => setSearch("")}
-                                className="text-gray-400 hover:text-gray-600"
+                                className="text-muted-foreground/70 hover:text-muted-foreground"
                             >
                                 <X className="h-3.5 w-3.5" />
                             </button>
@@ -165,27 +202,27 @@ export function AddProjectDocsModal({
                 {/* File list */}
                 <div className="flex-1 overflow-y-auto px-4 pb-2">
                     {loading ? (
-                        <div className="rounded-sm border border-gray-100 overflow-hidden">
+                        <div className="rounded-sm border border-border overflow-hidden">
                             {[60, 45, 75, 55, 40].map((w, i) => (
                                 <div
                                     key={i}
                                     className="flex items-center gap-2 px-2 py-2"
                                 >
-                                    <div className="h-3.5 w-3.5 rounded border border-gray-200 shrink-0" />
-                                    <div className="h-3.5 w-3.5 rounded bg-gray-200 animate-pulse shrink-0" />
+                                    <div className="h-3.5 w-3.5 rounded border border-border shrink-0" />
+                                    <div className="h-3.5 w-3.5 rounded bg-secondary animate-pulse shrink-0" />
                                     <div
-                                        className="h-3 rounded bg-gray-200 animate-pulse"
+                                        className="h-3 rounded bg-secondary animate-pulse"
                                         style={{ width: `${w}%` }}
                                     />
                                 </div>
                             ))}
                         </div>
                     ) : filtered.length === 0 ? (
-                        <p className="text-center text-sm text-gray-400 py-8">
-                            {q ? "No matches found" : "No documents in this project"}
+                        <p className="text-center text-sm text-muted-foreground/70 py-8">
+                            {q ? t("noMatches") : t("noProjectDocuments")}
                         </p>
                     ) : (
-                        <div className="rounded-sm border border-gray-100 overflow-hidden">
+                        <div className="rounded-sm border border-border overflow-hidden">
                             {filtered.map((doc) => {
                                 const excluded = isExcluded(doc.id);
                                 const checked =
@@ -200,19 +237,19 @@ export function AddProjectDocsModal({
                                             excluded
                                                 ? "opacity-50 cursor-not-allowed"
                                                 : checked
-                                                  ? "bg-gray-100"
-                                                  : "hover:bg-gray-50"
+                                                  ? "bg-secondary"
+                                                  : "hover:bg-accent"
                                         }`}
                                     >
                                         <span
                                             className={`shrink-0 h-3.5 w-3.5 rounded border flex items-center justify-center ${
                                                 checked
-                                                    ? "bg-gray-900 border-gray-900"
-                                                    : "border-gray-300"
+                                                    ? "bg-primary border-primary"
+                                                    : "border-input"
                                             }`}
                                         >
                                             {checked && (
-                                                <Check className="h-2.5 w-2.5 text-white" />
+                                                <Check className="h-2.5 w-2.5 text-primary-foreground" />
                                             )}
                                         </span>
                                         <DocFileIcon
@@ -221,22 +258,22 @@ export function AddProjectDocsModal({
                                         <span
                                             className={`flex-1 truncate ${
                                                 checked
-                                                    ? "text-gray-900"
-                                                    : "text-gray-700"
+                                                    ? "text-foreground"
+                                                    : "text-foreground"
                                             }`}
                                         >
                                             {doc.filename}
                                         </span>
                                         {excluded && (
-                                            <span className="text-[10px] text-gray-400 shrink-0">
-                                                Already added
+                                            <span className="text-[10px] text-muted-foreground/70 shrink-0">
+                                                {t("alreadyAdded")}
                                             </span>
                                         )}
                                         <VersionChip
                                             n={doc.latest_version_number}
                                         />
                                         {doc.created_at && (
-                                            <span className="shrink-0 text-gray-300">
+                                            <span className="shrink-0 text-muted-foreground/70">
                                                 {formatDate(doc.created_at)}
                                             </span>
                                         )}
@@ -248,8 +285,8 @@ export function AddProjectDocsModal({
                 </div>
 
                 {/* Footer */}
-                <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between gap-3">
-                    <div>
+                <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -261,34 +298,38 @@ export function AddProjectDocsModal({
                         <button
                             onClick={() => fileInputRef.current?.click()}
                             disabled={uploading}
-                            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
                         >
                             {uploading ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                                 <Upload className="h-3.5 w-3.5" />
                             )}
-                            {uploading ? "Uploading…" : "Upload"}
+                            {uploading ? t("uploading") : t("upload")}
                         </button>
+                        <ConnectorsButton
+                            projectId={projectId}
+                            onImport={handleConnectorImport}
+                        />
                     </div>
                     <div className="flex items-center gap-2">
                         {selectedIds.size > 0 && (
-                            <span className="text-xs text-gray-400">
-                                {selectedIds.size} selected
+                            <span className="text-xs text-muted-foreground/70">
+                                {t("selected", { count: selectedIds.size })}
                             </span>
                         )}
                         <button
                             onClick={onClose}
-                            className="rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100"
+                            className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent"
                         >
-                            Cancel
+                            {tc("cancel")}
                         </button>
                         <button
                             onClick={handleConfirm}
                             disabled={selectedIds.size === 0 || uploading}
-                            className="rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
+                            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
                         >
-                            Confirm
+                            {t("confirm")}
                         </button>
                     </div>
                 </div>

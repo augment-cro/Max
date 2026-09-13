@@ -51,7 +51,7 @@ export async function getPool(): Promise<InstanceType<typeof Pool>> {
     });
     pool = new Pool({
       ...clientOpts,
-      user: process.env.DB_IAM_USER, // e.g. mike-backend@mikeoss-495610.iam
+      user: process.env.DB_IAM_USER, // e.g. mike-backend@<gcp-project>.iam
       database: process.env.DB_NAME ?? 'mike',
       max: 10,
     });

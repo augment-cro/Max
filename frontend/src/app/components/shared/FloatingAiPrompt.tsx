@@ -19,6 +19,7 @@ import {
     updateWorkflow,
     type AiColumnSuggesterEvent,
 } from "@/app/lib/mikeApi";
+import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 
 const VALID_FORMATS: ColumnFormat[] = [
     "text",
@@ -42,6 +43,8 @@ function normalizeFormat(raw: string | undefined): ColumnFormat {
 type WorkflowProps = {
     variant: "workflow";
     workflowId: string;
+    /** Current columns, for the destructive-change confirm (issue #123). */
+    columns?: ColumnConfig[];
     onApplied: (next: {
         title: string;
         prompt_md: string;
@@ -70,6 +73,7 @@ type WebSearchHit = {
 
 export function FloatingAiPrompt(props: Props) {
     const t = useTranslations("floatingAi");
+    const { confirm, dialog: confirmDialogEl } = useConfirmDialog();
     const [text, setText] = useState("");
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
@@ -169,7 +173,7 @@ export function FloatingAiPrompt(props: Props) {
         const controller = new AbortController();
         abortRef.current = controller;
 
-        let resultColumns: typeof props.columns | null = null;
+        let resultColumns: ColumnConfig[] | null = null;
         let resultExplanation: string | null = null;
         let clarifyQuestion: string | null = null;
         let streamError: string | null = null;
@@ -259,12 +263,42 @@ export function FloatingAiPrompt(props: Props) {
             return;
         }
 
-        if (resultColumns) {
+        // `resultColumns` is only assigned inside the streaming closure, so
+        // TS flow-narrows the outer read to `null`/`never`. Cast to recover
+        // the real declared type.
+        const finalColumns = resultColumns as ColumnConfig[] | null;
+        if (finalColumns) {
+            // Destructive-change guard: if the AI result drops any existing
+            // column, ask for confirmation before persisting. Matched by name
+            // (case-insensitive) so a rename isn't mistaken for a deletion.
+            const afterNames = new Set(
+                finalColumns.map((c) => c.name.trim().toLowerCase()),
+            );
+            const removed = props.columns.filter(
+                (c) => !afterNames.has(c.name.trim().toLowerCase()),
+            );
+            if (removed.length > 0) {
+                const ok = await confirm({
+                    title: t("confirmDeleteTitle"),
+                    message: t("confirmDeleteBody", {
+                        names: removed.map((c) => c.name).join(", "),
+                    }),
+                    confirmLabel: t("confirmDeleteApply"),
+                    destructive: true,
+                });
+                if (!ok) {
+                    // Cancelled — leave columns untouched, restore the prompt.
+                    setStatusPhase(null);
+                    setStatusDetail(null);
+                    setText(originalText);
+                    return;
+                }
+            }
             try {
                 await updateTabularReview(props.reviewId, {
-                    columns_config: resultColumns,
+                    columns_config: finalColumns,
                 });
-                props.onApplied(resultColumns);
+                props.onApplied(finalColumns);
                 setText("");
                 setClarify(null);
                 if (resultExplanation) {
@@ -311,6 +345,32 @@ export function FloatingAiPrompt(props: Props) {
                         ? c.tags.filter((x) => typeof x === "string")
                         : undefined,
                 }));
+                // Same destructive-change guard the tabular-review branch
+                // has (issue #123): a refine that drops columns from a
+                // tabular workflow silently overwrote the stored config.
+                const prevCols = props.columns ?? [];
+                if (prevCols.length > 0) {
+                    const afterNames = new Set(
+                        columns.map((c) => c.name.trim().toLowerCase()),
+                    );
+                    const removed = prevCols.filter(
+                        (c) => !afterNames.has(c.name.trim().toLowerCase()),
+                    );
+                    if (removed.length > 0) {
+                        const ok = await confirm({
+                            title: t("confirmDeleteTitle"),
+                            message: t("confirmDeleteBody", {
+                                names: removed.map((c) => c.name).join(", "),
+                            }),
+                            confirmLabel: t("confirmDeleteApply"),
+                            destructive: true,
+                        });
+                        if (!ok) {
+                            setText(instruction);
+                            return;
+                        }
+                    }
+                }
                 await updateWorkflow(props.workflowId, {
                     title: out.title,
                     prompt_md: out.prompt_md,
@@ -376,6 +436,8 @@ export function FloatingAiPrompt(props: Props) {
         : null;
 
     return (
+        <>
+        {confirmDialogEl}
         <div
             ref={containerRef}
             className="fixed z-[90] w-[min(820px,calc(100vw-3rem))]"
@@ -384,23 +446,23 @@ export function FloatingAiPrompt(props: Props) {
             {/* Clarification banner */}
             {clarify && (
                 <div
-                    className="mb-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-[0_4px_18px_rgba(0,0,0,0.05)]"
+                    className="mb-2 rounded-2xl border border-warning/20 bg-warning/10 px-4 py-3"
                     style={{ pointerEvents: "auto" }}
                 >
                     <div className="flex items-start gap-2">
-                        <HelpCircle className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                        <HelpCircle className="h-4 w-4 mt-0.5 text-warning shrink-0" />
                         <div className="flex-1">
-                            <div className="text-[11px] uppercase tracking-wide text-amber-700 font-medium">
+                            <div className="text-[11px] uppercase tracking-wide text-warning font-medium">
                                 {t("clarifyHeader")}
                             </div>
-                            <div className="text-sm text-amber-900 mt-0.5">
+                            <div className="text-sm text-foreground mt-0.5">
                                 {clarify.question}
                             </div>
                         </div>
                         <button
                             type="button"
                             onClick={handleDismissClarify}
-                            className="text-amber-600 hover:text-amber-800 transition-colors"
+                            className="text-warning hover:text-foreground transition-colors"
                             title={t("dismiss")}
                             aria-label={t("dismiss")}
                         >
@@ -413,17 +475,17 @@ export function FloatingAiPrompt(props: Props) {
             {/* Live status while the agent is running */}
             {busy && statusLabel && (
                 <div
-                    className="mb-2 rounded-full border border-gray-200 bg-white/90 backdrop-blur px-3 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex items-center gap-2 max-w-fit mx-auto"
+                    className="mb-2 rounded-full border border-border bg-background/90 backdrop-blur px-3 py-1.5 flex items-center gap-2 max-w-fit mx-auto"
                     style={{ pointerEvents: "auto" }}
                 >
                     {statusPhase === "searching" ? (
-                        <GlobeIcon className="h-3.5 w-3.5 text-gray-500" />
+                        <GlobeIcon className="h-3.5 w-3.5 text-muted-foreground" />
                     ) : (
-                        <Loader2 className="h-3.5 w-3.5 text-gray-500 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
                     )}
-                    <span className="text-xs text-gray-700">{statusLabel}</span>
+                    <span className="text-xs text-foreground">{statusLabel}</span>
                     {statusDetail && (
-                        <span className="text-xs text-gray-400 truncate max-w-[320px]">
+                        <span className="text-xs text-muted-foreground/70 truncate max-w-[320px]">
                             — {statusDetail}
                         </span>
                     )}
@@ -439,7 +501,7 @@ export function FloatingAiPrompt(props: Props) {
                     {webHits.map((h, i) => (
                         <span
                             key={i}
-                            className="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-600 px-2 py-0.5 text-[11px]"
+                            className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-[11px]"
                             title={`${h.provider} · ${h.count} ${t("results")}`}
                         >
                             <GlobeIcon className="h-3 w-3" />
@@ -452,7 +514,7 @@ export function FloatingAiPrompt(props: Props) {
             )}
 
             <div
-                className="rounded-full border border-gray-200 bg-white shadow-[0_4px_24px_rgba(0,0,0,0.07)] flex items-center gap-3 pl-2 pr-1.5 py-1.5 focus-within:border-gray-900 focus-within:shadow-[0_4px_28px_rgba(0,0,0,0.10)] transition-colors"
+                className="rounded-full border border-input bg-surface-elevated flex items-center gap-3 pl-2 pr-1.5 py-1.5 focus-within:border-ring transition-colors"
                 style={{ pointerEvents: "auto" }}
             >
                 {/* Drag handle */}
@@ -460,11 +522,11 @@ export function FloatingAiPrompt(props: Props) {
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
-                    className="flex items-center gap-1 cursor-grab active:cursor-grabbing select-none pl-1 pr-1 py-1 rounded-full hover:bg-gray-100 transition-colors touch-none"
+                    className="flex items-center gap-1 cursor-grab active:cursor-grabbing select-none pl-1 pr-1 py-1 rounded-full hover:bg-accent transition-colors touch-none"
                     title={t("dragHandle")}
                 >
-                    <GripVertical className="h-3.5 w-3.5 text-gray-400" />
-                    <Sparkles className="h-4 w-4 text-gray-700 shrink-0" />
+                    <GripVertical className="h-3.5 w-3.5 text-muted-foreground/70" />
+                    <Sparkles className="h-4 w-4 text-foreground shrink-0" />
                 </div>
 
                 <textarea
@@ -481,7 +543,7 @@ export function FloatingAiPrompt(props: Props) {
                     rows={1}
                     disabled={busy}
                     aria-label={sendLabel}
-                    className="flex-1 resize-none bg-transparent border-none outline-none text-sm text-gray-800 placeholder:text-gray-400 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap py-2 leading-5 max-h-[160px] overflow-y-auto"
+                    className="flex-1 resize-none bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground/70 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap py-2 leading-5 max-h-[160px] overflow-y-auto"
                 />
                 <button
                     type="button"
@@ -491,7 +553,7 @@ export function FloatingAiPrompt(props: Props) {
                     }
                     title={busy ? t("cancel") : sendLabel}
                     aria-label={busy ? t("cancel") : sendLabel}
-                    className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors shrink-0"
+                    className="flex items-center justify-center h-9 w-9 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-secondary disabled:text-muted-foreground/70 disabled:cursor-not-allowed transition-colors shrink-0"
                 >
                     {busy ? (
                         <XIcon className="h-4 w-4" />
@@ -502,12 +564,13 @@ export function FloatingAiPrompt(props: Props) {
             </div>
             {err && (
                 <p
-                    className="mt-2 text-xs text-red-600 text-center"
+                    className="mt-2 text-xs text-destructive text-center"
                     style={{ pointerEvents: "auto" }}
                 >
                     {err}
                 </p>
             )}
         </div>
+        </>
     );
 }

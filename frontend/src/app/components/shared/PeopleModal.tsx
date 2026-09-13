@@ -46,7 +46,7 @@ type RosterRow = {
 };
 
 /**
- * Roster of every Max member with access to the project, with controls to
+ * Roster of every Eulex Desk member with access to the project, with controls to
  * add/remove members. Mirrors AddDocumentsModal's frame.
  */
 export function PeopleModal({
@@ -157,9 +157,7 @@ export function PeopleModal({
             setNewEmail("");
         } catch (e) {
             setError(
-                e instanceof Error
-                    ? e.message
-                    : "Couldn't add the member. Try again.",
+                e instanceof Error ? e.message : t("couldntAdd"),
             );
         } finally {
             setBusy(null);
@@ -178,9 +176,7 @@ export function PeopleModal({
             await onSharedWithChange(next);
         } catch (e) {
             setError(
-                e instanceof Error
-                    ? e.message
-                    : "Couldn't remove the member. Try again.",
+                e instanceof Error ? e.message : t("couldntRemove"),
             );
         } finally {
             setBusy(null);
@@ -189,11 +185,11 @@ export function PeopleModal({
     }
 
     return createPortal(
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 backdrop-blur-xs">
-            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px]">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-primary/10 backdrop-blur-xs">
+            <div className="w-full max-w-2xl rounded-2xl bg-background border border-border flex flex-col h-[600px]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
                         {breadcrumb.map((segment, i) => (
                             <span key={i} className="flex items-center gap-1.5">
                                 {i > 0 && <span>›</span>}
@@ -203,7 +199,7 @@ export function PeopleModal({
                     </div>
                     <button
                         onClick={onClose}
-                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -213,8 +209,8 @@ export function PeopleModal({
                 {onSharedWithChange && (
                     <div className="px-4 pt-1 pb-2">
                         <div className="flex items-center gap-2">
-                            <div className="flex flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                                <UserPlus className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                            <div className="flex flex-1 items-center gap-2 rounded-lg border border-input bg-muted px-3 py-2">
+                                <UserPlus className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                                 <input
                                     type="email"
                                     placeholder={t("addByEmail")}
@@ -225,7 +221,7 @@ export function PeopleModal({
                                     onKeyDown={(e) => {
                                         if (e.key === "Enter") void handleAdd();
                                     }}
-                                    className="flex-1 bg-transparent text-sm text-gray-700 placeholder:text-gray-400 outline-none"
+                                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 outline-none"
                                     autoFocus
                                 />
                             </div>
@@ -233,7 +229,7 @@ export function PeopleModal({
                                 onClick={() => void handleAdd()}
                                 disabled={!canAdd}
                                 title={t("addMember")}
-                                className="inline-flex items-center justify-center rounded-lg border border-gray-900 bg-gray-900 p-2 text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="inline-flex items-center justify-center rounded-lg border border-primary bg-primary p-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {busy === "add" ? (
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -243,12 +239,12 @@ export function PeopleModal({
                             </button>
                         </div>
                         {alreadyShared && trimmedNewEmail && (
-                            <p className="mt-1.5 text-xs text-gray-400">
+                            <p className="mt-1.5 text-xs text-muted-foreground/70">
                                 {t("alreadyHasAccess", { email: trimmedNewEmail })}
                             </p>
                         )}
                         {isOwnerEmail && trimmedNewEmail && (
-                            <p className="mt-1.5 text-xs text-gray-400">
+                            <p className="mt-1.5 text-xs text-muted-foreground/70">
                                 {t("isTheOwner", { email: trimmedNewEmail })}
                             </p>
                         )}
@@ -256,12 +252,12 @@ export function PeopleModal({
                             !isValidEmail &&
                             !alreadyShared &&
                             !isOwnerEmail && (
-                                <p className="mt-1.5 text-xs text-gray-400">
+                                <p className="mt-1.5 text-xs text-muted-foreground/70">
                                     {t("enterValidEmail")}
                                 </p>
                             )}
                         {error && (
-                            <p className="mt-1.5 text-xs text-red-500">
+                            <p className="mt-1.5 text-xs text-destructive">
                                 {error}
                             </p>
                         )}
@@ -270,22 +266,22 @@ export function PeopleModal({
 
                 {/* Section heading */}
                 <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                    <h3 className="text-xs font-medium text-gray-500">
+                    <h3 className="text-xs font-medium text-muted-foreground">
                         {t("peopleWithAccess")}
                     </h3>
                     {peopleLoading && (
-                        <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/70" />
                     )}
                 </div>
 
                 {/* Member list */}
                 <div className="flex-1 overflow-y-auto px-4 pb-2">
                     {roster.length === 0 ? (
-                        <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground/70">
                             {t("noOneHasAccess")}
                         </div>
                     ) : (
-                        <ul className="divide-y divide-gray-100 [&>li:nth-child(2)]:border-t-0">
+                        <ul className="divide-y divide-border [&>li:nth-child(2)]:border-t-0">
                             {roster.map((entry) => {
                                 const isYou =
                                     !!currentUserEmail &&
@@ -304,25 +300,25 @@ export function PeopleModal({
                                         key={`${entry.role}-${entry.email}`}
                                         className="flex items-center gap-3 py-3"
                                     >
-                                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white">
+                                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                                             <User className="h-3 w-3" />
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm text-gray-800">
+                                            <p className="truncate text-sm text-foreground">
                                                 {primary}
                                                 {isYou && (
-                                                    <span className="ml-1.5 text-xs text-gray-400">
+                                                    <span className="ml-1.5 text-xs text-muted-foreground/70">
                                                         ({t("you")})
                                                     </span>
                                                 )}
                                                 {entry.role === "owner" && (
-                                                    <span className="ml-1.5 text-[10px] text-gray-400">
+                                                    <span className="ml-1.5 text-[10px] text-muted-foreground/70">
                                                         {t("owner")}
                                                     </span>
                                                 )}
                                             </p>
                                             {showSecondary && (
-                                                <p className="truncate text-xs text-gray-400">
+                                                <p className="truncate text-xs text-muted-foreground/70">
                                                     {entry.email}
                                                 </p>
                                             )}
@@ -337,7 +333,7 @@ export function PeopleModal({
                                                     }
                                                     disabled={busy !== null}
                                                     title={t("removeAccess")}
-                                                    className="self-center inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                                                    className="self-center inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                                                 >
                                                     {isRemoving && (
                                                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -353,7 +349,7 @@ export function PeopleModal({
                 </div>
 
                 {/* Footer */}
-                <div className="px-5 py-3 text-[11px] text-gray-400">
+                <div className="px-5 py-3 text-[11px] text-muted-foreground/70">
                     {roster.length === 0
                         ? t("noOneHasAccess")
                         : t("personCount", { count: roster.length })}

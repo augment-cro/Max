@@ -17,7 +17,7 @@
  * Once the add-in authenticates, `useSyncLocaleFromProfile` (called
  * once near the auth boundary) does an async `getUserProfile()` and
  * promotes the server-stored `preferred_language` to the source of
- * truth — that's how a language switch made in the Max web app
+ * truth — that's how a language switch made in the Eulex Desk web app
  * propagates to a paired Word add-in.
  *
  * We don't pull in next-intl because it assumes a Next.js server
@@ -144,7 +144,7 @@ interface I18nContextValue {
      * Update the active locale. Persists to localStorage + cookie
      * locally for the next paint, and (when `syncToServer` is true,
      * the default) PATCHes the user profile so the choice rides
-     * across to other clients (Max web). Pass `false` when you're
+     * across to other clients (Eulex Desk web). Pass `false` when you're
      * just mirroring an already-server-confirmed locale (e.g. from
      * `useSyncLocaleFromProfile`) so we don't echo it back.
      */
@@ -173,7 +173,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Re-read the cookie when the taskpane regains focus, so a language
-    // switch made in the main Max app (in a separate browser tab on
+    // switch made in the main Eulex Desk app (in a separate browser tab on
     // the same origin) is picked up without forcing the user to reload
     // the add-in. Cheap no-op when the cookie hasn't changed.
     useEffect(() => {

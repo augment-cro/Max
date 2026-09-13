@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { ColumnConfig, MikeDocument, TabularCell } from "../shared/types";
 import { useTranslations } from "next-intl";
-import { preprocessCitations, type ParsedCitation } from "./citation-utils";
+import { prepareTabularMarkdown, parseInlineCodeToken, type ParsedCitation } from "./citation-utils";
 import { getPillClass } from "./pillUtils";
 import { DocView } from "../shared/DocView";
 import { DocxView } from "../shared/DocxView";
@@ -46,10 +46,10 @@ interface Props {
 }
 
 const FLAG_BADGE: Record<string, string> = {
-    green: "bg-emerald-600 backdrop-blur-md border border-emerald-300/20 text-white shadow-md",
-    grey: "bg-slate-500 backdrop-blur-md border border-slate-300/20 text-white shadow-md",
-    yellow: "bg-amber-500 backdrop-blur-md border border-amber-300/20 text-white shadow-md",
-    red: "bg-red-600 backdrop-blur-md border border-red-300/20 text-white shadow-md",
+    green: "bg-success backdrop-blur-md border border-success/20 text-success-foreground",
+    grey: "bg-primary backdrop-blur-md border border-border text-primary-foreground",
+    yellow: "bg-warning backdrop-blur-md border border-warning/20 text-warning-foreground",
+    red: "bg-destructive backdrop-blur-md border border-destructive/20 text-destructive-foreground",
 };
 
 // ---------------------------------------------------------------------------
@@ -106,10 +106,13 @@ export function TRSidePanel({
         setIsTruncated(el.scrollWidth > el.clientWidth);
     }, [docCitation?.quote, quoteExpanded]);
 
-    const { processed: summaryText, citations: summaryCitations } =
-        preprocessCitations(cell.content?.summary ?? "");
-    const { processed: reasoningText, citations: reasoningCitations } =
-        preprocessCitations(cell.content?.reasoning ?? "");
+    const { processed: summaryText, citations: summaryCitations, pills: summaryPills } =
+        prepareTabularMarkdown(cell.content?.summary ?? "");
+    const {
+        processed: reasoningText,
+        citations: reasoningCitations,
+        pills: reasoningPills,
+    } = prepareTabularMarkdown(cell.content?.reasoning ?? "");
 
     function flagDisplayName(flag: string): string {
         switch (flag.toLowerCase()) {
@@ -128,32 +131,32 @@ export function TRSidePanel({
     }
 
     useEffect(() => {
-        console.log("[TRSidePanel] summary:", cell.content?.summary ?? "");
-    }, [cell.id, cell.content?.summary]);
+        setQuoteExpanded(false);
+    }, [cell.id]);
 
     return (
         <div
-            className="fixed right-0 top-0 bottom-0 z-100 flex flex-row shadow-md border-l border-gray-200"
+            className="fixed right-0 top-0 bottom-0 z-100 flex flex-row border-l border-border"
             style={{
-                background: "rgba(255,255,255,0.08)",
+                background: "color-mix(in oklch, var(--background) 8%, transparent)",
                 backdropFilter: "blur(10px) saturate(50%)",
                 WebkitBackdropFilter: "blur(10px) saturate(50%)",
             }}
         >
             {/* Document panel — left, 600px */}
             {docCitation !== undefined && (
-                <div className="relative flex w-[600px] shrink-0 flex-col border-r border-white/30 px-3">
+                <div className="relative flex w-[600px] shrink-0 flex-col border-r border-background/30 px-3">
                     {/* Doc header */}
-                    <div className="flex items-center gap-2 pt-3 shrink-0 border-b border-white/30">
+                    <div className="flex items-center gap-2 pt-3 shrink-0 border-b border-background/30">
                         <p
-                            className="flex-1 truncate text-sm font-semibold font-sans text-slate-700 font-serif"
+                            className="flex-1 truncate text-sm font-semibold font-sans text-foreground font-serif"
                             title={doc.filename}
                         >
                             {doc.filename}
                         </p>
                         <button
                             onClick={() => setDocCitation(undefined)}
-                            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/40 hover:text-slate-600"
+                            className="shrink-0 rounded-lg p-1.5 text-muted-foreground/70 transition-colors hover:bg-background/40 hover:text-muted-foreground"
                         >
                             <X className="h-4 w-4" />
                         </button>
@@ -161,7 +164,7 @@ export function TRSidePanel({
                     {/* Quote row */}
                     {docCitation.quote && (
                         <div className="py-2 shrink-0">
-                            <div className="w-full rounded-md bg-gray-50 border border-gray-200 px-2 py-2">
+                            <div className="w-full rounded-md bg-muted border border-border px-2 py-2">
                                 <button
                                     onClick={() =>
                                         isTruncated || quoteExpanded
@@ -172,13 +175,13 @@ export function TRSidePanel({
                                 >
                                     <p
                                         ref={quoteParagraphRef}
-                                        className={`flex-1 text-sm text-gray-600 ${quoteExpanded ? "" : "truncate"}`}
+                                        className={`flex-1 text-sm text-muted-foreground ${quoteExpanded ? "" : "truncate"}`}
                                     >
                                         "{docCitation.quote}"
                                     </p>
                                     {(isTruncated || quoteExpanded) && (
                                         <ChevronDown
-                                            className={`mt-0.5 h-3 w-3 shrink-0 text-gray-500 transition-transform ${quoteExpanded ? "rotate-180" : ""}`}
+                                            className={`mt-0.5 h-3 w-3 shrink-0 text-muted-foreground transition-transform ${quoteExpanded ? "rotate-180" : ""}`}
                                         />
                                     )}
                                 </button>
@@ -208,7 +211,7 @@ export function TRSidePanel({
             {/* Info column — right, 300px fixed */}
             <div className="flex w-[300px] shrink-0 flex-col overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-end gap-3 px-5 pt-3 pb-1 shrink-0 border-b border-white/30">
+                <div className="flex items-center justify-end gap-3 px-5 pt-3 pb-1 shrink-0 border-b border-background/30">
                     <div className="flex items-center gap-1 mr-auto">
                         <button
                             onClick={() =>
@@ -216,11 +219,11 @@ export function TRSidePanel({
                             }
                             disabled={!prevColumn}
                             title={prevColumn ? prevColumn.name : undefined}
-                            className="rounded-lg p-0.5 text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:opacity-30 disabled:cursor-default"
+                            className="rounded-lg p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:cursor-default"
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </button>
-                        <span className="text-xs text-slate-600 font-sans tabular-nums">
+                        <span className="text-xs text-muted-foreground font-sans tabular-nums">
                             {currentPos + 1} / {sortedColumns.length}
                         </span>
                         <button
@@ -229,7 +232,7 @@ export function TRSidePanel({
                             }
                             disabled={!nextColumn}
                             title={nextColumn ? nextColumn.name : undefined}
-                            className="rounded-lg p-0.5 text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:opacity-30 disabled:cursor-default"
+                            className="rounded-lg p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:cursor-default"
                         >
                             <ChevronRight className="h-4 w-4" />
                         </button>
@@ -245,8 +248,8 @@ export function TRSidePanel({
                                 }
                             }}
                             disabled={regenerating}
-                            title="Regenerate"
-                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+                            title={t("regenerate")}
+                            className="rounded-lg p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground disabled:opacity-40"
                         >
                             {regenerating ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -257,7 +260,7 @@ export function TRSidePanel({
                     )}
                     <button
                         onClick={onClose}
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                        className="rounded-lg p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -268,7 +271,7 @@ export function TRSidePanel({
                     <div className="pb-2 px-5">
                         {/* Column name */}
                         <div className="mb-1">
-                            <span className="text-lg font-semibold text-slate-900">
+                            <span className="text-lg font-semibold text-foreground">
                                 {column.name}
                             </span>
                         </div>
@@ -294,9 +297,11 @@ export function TRSidePanel({
                             <h4 className="mb-2 text-sm font-semibold tracking-wider font-sans">
                                 {t("panelResults")}
                             </h4>
-                            <div className="text-xs leading-relaxed text-slate-600">
+                            <div className="text-xs leading-relaxed text-muted-foreground">
                                 <MarkdownContent
+                                    processed={summaryText}
                                     citations={summaryCitations}
+                                    pills={summaryPills}
                                     onCitationClick={setDocCitation}
                                     column={column}
                                 >
@@ -311,9 +316,11 @@ export function TRSidePanel({
                                 <h4 className="mb-2 text-sm font-semibold tracking-wider font-sans">
                                     {t("panelReasoning")}
                                 </h4>
-                                <div className="text-xs leading-relaxed text-slate-600">
+                                <div className="text-xs leading-relaxed text-muted-foreground">
                                     <MarkdownContent
+                                        processed={reasoningText}
                                         citations={reasoningCitations}
+                                        pills={reasoningPills}
                                         onCitationClick={setDocCitation}
                                         citationOffset={summaryCitations.length}
                                         column={column}
@@ -344,16 +351,17 @@ function CitationBadge({
     citation: ParsedCitation;
     onClick: (c: { quote: string; page: number }) => void;
 }) {
+    const t = useTranslations("tabularReview");
     return (
         <button
             type="button"
             data-page={citation.page}
             data-quote={citation.quote}
-            title={`Page ${citation.page}: "${citation.quote}"`}
+            title={t("citationTooltip", { page: citation.page, quote: citation.quote })}
             onClick={() =>
                 onClick({ quote: citation.quote, page: citation.page })
             }
-            className="inline-flex items-center justify-center rounded-full bg-gray-200 w-3.5 h-3.5 text-[9px] font-medium text-gray-700 align-super cursor-pointer hover:bg-gray-300 transition-colors"
+            className="inline-flex items-center justify-center rounded-full bg-secondary w-3.5 h-3.5 text-[9px] font-medium text-foreground align-super cursor-pointer hover:bg-accent transition-colors"
         >
             {index + 1}
         </button>
@@ -362,28 +370,24 @@ function CitationBadge({
 
 function MarkdownContent({
     children,
+    processed,
     citations,
+    pills,
     onCitationClick,
     citationOffset = 0,
     column,
     inline,
 }: {
     children: string;
+    processed: string;
     citations: ParsedCitation[];
+    pills: string[];
     onCitationClick: (c: { quote: string; page: number }) => void;
     inline?: boolean;
     citationOffset?: number;
     column?: ColumnConfig;
 }) {
     if (!children) return null;
-
-    const pills: string[] = [];
-    let processed = children.replace(/\[\[([^\]]+)\]\]/g, (_, content) => {
-        const idx = pills.length;
-        pills.push(content);
-        return `\`§p${idx}§\``;
-    });
-    processed = processed.replace(/§(\d+)§/g, (_, idx) => `\`§c${idx}§\``);
 
     return (
         <ReactMarkdown
@@ -422,14 +426,14 @@ function MarkdownContent({
                         href={href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-700 underline"
+                        className="text-foreground underline underline-offset-3"
                         {...props}
                     >
                         {children}
                     </a>
                 ),
                 code: ({ node, children: codeChildren, ...props }) => {
-                    const t = String(codeChildren);
+                    const t = parseInlineCodeToken(codeChildren);
                     const citMatch = t.match(/^§c(\d+)§$/);
                     if (citMatch) {
                         const idx = parseInt(citMatch[1]);
@@ -459,7 +463,7 @@ function MarkdownContent({
                     }
                     return (
                         <code
-                            className="bg-gray-100 px-1 py-0.5 rounded text-[11px] font-mono"
+                            className="bg-muted px-1 py-0.5 rounded text-[11px] font-mono"
                             {...props}
                         >
                             {codeChildren}

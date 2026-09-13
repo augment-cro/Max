@@ -10,14 +10,15 @@ build
 !.env.example
 !.env.local.example
 
-# MCP server config — may contain secrets; track the .example instead
+#
 mike/mcp.json
 !mike/mcp.json.example
 
-# Staged copy of mike/mcp.json that the deploy scripts drop into the
-# backend Docker build context. Always rebuilt by cloudbuild.yaml /
-# scripts/deploy.sh; never commit it.
+#
 backend/mike/
+
+#
+backend/src/lib/prompt-backups/
 
 *.log
 *.tsbuildinfo
@@ -26,23 +27,35 @@ next-env.d.ts
 .vercel
 coverage
 
-# Third-party / identity-provider code that lives on external systems.
+#
+docs/
+#
+!_ai/docs/
+
+#
 vanjske_datoteke/
 
-# External / vendor source kept locally but not part of the open-source release.
+#
 vanjski kod/
 
-# Private deployment and one-off operational scripts — not for public release.
-scripts/
+#
+scripts/*
+#
+!scripts/check-theme-tokens.sh
+#
+!scripts/publish-mirror.sh
+#
+!mike-pii-shield/scripts/
+!mike-pii-shield/scripts/**
+#
+!evals/scripts/
+!evals/scripts/**
 
-# Deployment-specific MCP sidecar services (e.g. Cloud Run wrappers around
-# third-party MCP servers). Operator-specific infra, not part of the core release.
+#
 mcp-sidecars/
 
-# Word add-in production bundle is emitted by `cd word-addin && npm run build`
-# directly into the frontend's public folder. Treat it as a build artifact —
-# rebuild it on every deploy.
+#
 frontend/public/word-addin/
 
-# IDE / editor workspace files
+#
 .cursor/

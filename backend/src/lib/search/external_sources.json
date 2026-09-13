@@ -2,6 +2,128 @@
     "description": "Eksterni izvori za web search - agent bira relevantne izvore prema pitanju",
     "note": "NE koristiti za: EUR-Lex case law, legal acts, treaties, consolidated (to imamo u bazi)",
     "sources": {
+        "hr_official": {
+            "name": "Hrvatski službeni izvori (svi)",
+            "description": "STARTER lista — Vlada, Sabor, Narodne novine, Porezna uprava, ministarstva, zavodi, registri i sudovi. Dopuni/uredi domene po potrebi.",
+            "domains": [
+                "gov.hr",
+                "vlada.gov.hr",
+                "sabor.hr",
+                "narodne-novine.nn.hr",
+                "porezna-uprava.gov.hr",
+                "mfin.gov.hr",
+                "carina.gov.hr",
+                "hzmo.hr",
+                "hzzo.hr",
+                "mirovinsko.hr",
+                "mrosp.gov.hr",
+                "sudreg.pravosudje.hr",
+                "fina.hr",
+                "dzs.gov.hr",
+                "hnb.hr",
+                "usud.hr",
+                "vsrh.hr",
+                "pravosudje.gov.hr",
+                "mingor.gov.hr",
+                "hgk.hr"
+            ],
+            "use_when": [
+                "službeni podaci",
+                "državna tijela",
+                "propisi i procedure",
+                "obrasci",
+                "porezne stope i rokovi"
+            ],
+            "topics": [
+                "hr",
+                "official"
+            ]
+        },
+        "hr_tax": {
+            "name": "Porezi / financije / carina",
+            "description": "Porezna uprava, Ministarstvo financija, Carinska uprava.",
+            "domains": [
+                "porezna-uprava.gov.hr",
+                "mfin.gov.hr",
+                "carina.gov.hr"
+            ],
+            "use_when": [
+                "porezi",
+                "PDV",
+                "porez na dohodak",
+                "carina",
+                "porezne stope",
+                "porezni rokovi"
+            ],
+            "topics": [
+                "hr",
+                "tax"
+            ]
+        },
+        "hr_labor": {
+            "name": "Rad / mirovinsko / zdravstveno",
+            "description": "HZMO, HZZO, mirovinsko, Ministarstvo rada, mirovinskoga sustava, obitelji i socijalne politike.",
+            "domains": [
+                "hzmo.hr",
+                "hzzo.hr",
+                "mirovinsko.hr",
+                "mrosp.gov.hr"
+            ],
+            "use_when": [
+                "radni odnosi",
+                "mirovine",
+                "mirovinsko osiguranje",
+                "zdravstveno osiguranje",
+                "doprinosi",
+                "socijalna prava"
+            ],
+            "topics": [
+                "hr",
+                "labor"
+            ]
+        },
+        "hr_company": {
+            "name": "Trgovačka društva / registri / statistika",
+            "description": "Sudski registar, FINA, Državni zavod za statistiku, Hrvatska gospodarska komora.",
+            "domains": [
+                "sudreg.pravosudje.hr",
+                "fina.hr",
+                "dzs.gov.hr",
+                "hgk.hr"
+            ],
+            "use_when": [
+                "trgovačka društva",
+                "sudski registar",
+                "osnivanje tvrtke",
+                "financijska izvješća",
+                "statistički podaci"
+            ],
+            "topics": [
+                "hr",
+                "company"
+            ]
+        },
+        "hr_courts": {
+            "name": "Sudovi / pravosuđe",
+            "description": "Ustavni sud, Vrhovni sud, Ministarstvo pravosuđa i uprave.",
+            "domains": [
+                "usud.hr",
+                "vsrh.hr",
+                "pravosudje.gov.hr",
+                "sudovi.hr"
+            ],
+            "use_when": [
+                "sudska praksa",
+                "presude",
+                "ustavni sud",
+                "vrhovni sud",
+                "pravosuđe"
+            ],
+            "topics": [
+                "hr",
+                "courts"
+            ]
+        },
         "think_tank": {
             "domain": "europarl.europa.eu/thinktank",
             "name": "EU Parliament Think Tank",

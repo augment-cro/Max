@@ -1,10 +1,10 @@
-# Contributing to Max
+# Contributing to Eulex Desk
 
-Thank you for your interest in contributing to Max!
+Thank you for your interest in contributing to Eulex Desk!
 
 ## License
 
-Max is licensed under the [GNU Affero General Public License v3.0](LICENSE)
+Eulex Desk is licensed under the [GNU Affero General Public License v3.0](LICENSE)
 (AGPL-3.0-only). By submitting a contribution you agree that your contribution
 will be released under the same license.
 

@@ -133,6 +133,13 @@ export interface TokenSet {
     expires_at: number;
     scope: string;
     token_type: string;
+    /**
+     * Which auth system issued this set. Absent/undefined = legacy
+     * WordPress OAuth. "supabase" sets are refreshed and signed out via
+     * supabase-js (see supabaseClient.ts mirror) instead of the WP
+     * endpoints above.
+     */
+    provider?: "supabase";
 }
 
 export interface OAuthUser {
@@ -279,10 +286,45 @@ export async function exchangeCodeForTokens(
 /**
  * Refresh the access token using the stored refresh_token.
  * The WordPress plugin rotates refresh tokens on each use.
+ * Supabase-issued sets are refreshed via supabase-js instead (the client
+ * owns the rotation; the mirror writes the fresh set back into storage).
  */
 export async function refreshAccessToken(): Promise<TokenSet | null> {
     const current = getStoredTokens();
     if (!current?.refresh_token) return null;
+
+    if (current.provider === "supabase") {
+        try {
+            // Dynamic import — supabaseClient statically imports this
+            // module, so a top-level import would be circular.
+            const { getSupabase, mirrorSupabaseSession } = await import(
+                "./supabaseClient"
+            );
+            const { data, error } = await getSupabase().auth.refreshSession();
+            if (error || !data.session) {
+                // Only a genuinely dead refresh token ends the session.
+                // This used to clear on ANY error, so a network blip or
+                // Supabase's own rate limit on /token logged the user out —
+                // exactly what mikeApi's "one refresh + retry" is written to
+                // prevent, and the tail of the tracker #32 loop. supabase-js
+                // stays the authority for real session death: it emits
+                // SIGNED_OUT, which initSupabaseAuthMirror() already clears
+                // on. Anything transient keeps the tokens so the caller can
+                // retry.
+                const dead =
+                    error?.code === "refresh_token_not_found" ||
+                    error?.code === "session_not_found" ||
+                    (!error && !data.session);
+                if (dead) clearTokens();
+                return null;
+            }
+            mirrorSupabaseSession(data.session);
+            return getStoredTokens();
+        } catch {
+            // Network/config error — keep tokens, let the caller retry.
+            return null;
+        }
+    }
 
     try {
         const response = await fetch(TOKEN_URL, {
@@ -373,6 +415,27 @@ export function decodeJwtPayload(token: string): OAuthUser | null {
 
         const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
 
+        // Supabase access token (aud "authenticated", iss .../auth/v1):
+        // carries no tier/scope claims — tier is enforced server-side from
+        // user_tier_state; here we only need display values.
+        if (
+            payload.aud === "authenticated" ||
+            (typeof payload.iss === "string" && payload.iss.endsWith("/auth/v1"))
+        ) {
+            const meta = (payload.user_metadata ?? {}) as Record<string, unknown>;
+            const metaName = [meta.display_name, meta.full_name, meta.name].find(
+                (v): v is string => typeof v === "string" && v.length > 0,
+            );
+            return {
+                id: payload.sub,
+                email: payload.email ?? "",
+                name: metaName ?? (payload.email ? String(payload.email).split("@")[0] : ""),
+                tier: "free",
+                tier_level_id: 3,
+                scope: "mike:projects mike:documents mike:chat",
+            };
+        }
+
         return {
             id: payload.sub,
             email: payload.email,
@@ -412,6 +475,21 @@ export async function getValidAccessToken(): Promise<string | null> {
  */
 export async function signOut(): Promise<void> {
     const tokens = getStoredTokens();
+
+    if (tokens?.provider === "supabase") {
+        try {
+            const { getSupabase } = await import("./supabaseClient");
+            // Revokes the refresh token server-side and clears the
+            // supabase-js session; the mirror's SIGNED_OUT handler also
+            // clears our copy, but clear explicitly in case the mirror
+            // isn't subscribed yet.
+            await getSupabase().auth.signOut();
+        } catch {
+            // Best-effort — ignore network errors during sign-out
+        }
+        clearTokens();
+        return;
+    }
 
     if (tokens?.refresh_token) {
         // Best-effort revoke (don't block on failure)

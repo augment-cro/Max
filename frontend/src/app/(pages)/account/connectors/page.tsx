@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
     AlertCircle,
     CheckCircle2,
-    CloudIcon,
     Loader2,
     LinkIcon,
     Trash2,
@@ -16,15 +15,28 @@ import {
     disconnectIntegration,
     listIntegrations,
     startIntegrationOAuth,
+    INTEGRATION_PROVIDER_IDS,
     type IntegrationProviderId,
     type IntegrationProviderStatus,
 } from "@/app/lib/mikeApi";
+import { track } from "@/app/lib/analytics";
 import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
+
+/**
+ * sessionStorage guard so integration_connected fires once per OAuth
+ * landing: the ?integration=&ok=1 params intentionally survive refresh
+ * (the toast is idempotent), but the analytics event must not. Cleared in
+ * handleConnect so a genuine reconnect in the same tab counts again.
+ */
+function connectedGuardKey(provider: string): string {
+    return `sa:integration_connected:${provider}`;
+}
+import { IntegrationIcon } from "@/app/components/shared/IntegrationIcon";
 
 /**
  * /account/connectors — manage native file-source integrations
  * (Google Drive / OneDrive / Box). Lives next to the existing MCP
- * connectors tab; this one is purely about pulling files into Max.
+ * connectors tab; this one is purely about pulling files into Eulex Desk.
  *
  * The OAuth round-trip lands the browser back here with
  *   ?integration=google_drive&ok=1
@@ -70,12 +82,40 @@ export default function ConnectorsPage() {
     // Surface the OAuth callback result that the backend bounced us
     // back with. Shown for ~5s; we DO NOT strip the params from the URL
     // because the user may want to refresh the page (idempotent).
+    const trackedConnectRef = useRef(false);
     useEffect(() => {
         const integration = sp.get("integration");
         const ok = sp.get("ok");
         const error = sp.get("error");
         if (!integration) return;
         if (ok === "1") {
+            // Only fire the event when the provider is a known, valid value —
+            // prevents arbitrary URL query-param values from reaching SA.
+            // Guarded twice: the ref stops effect re-runs (e.g. locale switch
+            // re-creating `t`), sessionStorage stops full-page refreshes with
+            // the params still in the URL.
+            if (
+                !trackedConnectRef.current &&
+                (INTEGRATION_PROVIDER_IDS as readonly string[]).includes(
+                    integration,
+                )
+            ) {
+                trackedConnectRef.current = true;
+                let alreadyTracked = false;
+                try {
+                    const key = connectedGuardKey(integration);
+                    alreadyTracked = sessionStorage.getItem(key) === "1";
+                    if (!alreadyTracked) sessionStorage.setItem(key, "1");
+                } catch {
+                    // sessionStorage unavailable — ref alone still gives
+                    // at-most-once per mount.
+                }
+                if (!alreadyTracked) {
+                    track("integration_connected", {
+                        provider: integration as IntegrationProviderId,
+                    });
+                }
+            }
             setToast({
                 kind: "ok",
                 message: t("toasts.connected", { name: integration }),
@@ -97,6 +137,13 @@ export default function ConnectorsPage() {
 
     const handleConnect = async (provider: IntegrationProviderId) => {
         setBusy((b) => ({ ...b, [provider]: true }));
+        // A new OAuth flow may legitimately land back here — let its
+        // integration_connected event through the sessionStorage guard.
+        try {
+            sessionStorage.removeItem(connectedGuardKey(provider));
+        } catch {
+            /* ignore */
+        }
         try {
             const { authorize_url } = await startIntegrationOAuth(provider);
             window.location.href = authorize_url;
@@ -143,7 +190,7 @@ export default function ConnectorsPage() {
                 <h2 className="text-2xl font-medium font-serif mb-2">
                     {t("title")}
                 </h2>
-                <p className="text-sm text-gray-600 max-w-2xl">
+                <p className="text-sm text-muted-foreground max-w-2xl">
                     {t("description")}
                 </p>
             </div>
@@ -152,8 +199,8 @@ export default function ConnectorsPage() {
                 <div
                     className={`rounded-md border px-3 py-2 text-sm flex items-start gap-2 ${
                         toast.kind === "ok"
-                            ? "border-green-200 bg-green-50 text-green-800"
-                            : "border-red-200 bg-red-50 text-red-800"
+                            ? "border-success/20 bg-success/10 text-success"
+                            : "border-destructive/20 bg-destructive/10 text-destructive"
                     }`}
                 >
                     {toast.kind === "ok" ? (
@@ -166,16 +213,16 @@ export default function ConnectorsPage() {
             )}
 
             {providers === null ? (
-                <div className="flex items-center gap-2 text-sm text-gray-500 py-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {t("loading")}
                 </div>
             ) : providers.length === 0 ? (
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
+                <div className="rounded-md border border-border bg-muted p-6 text-sm text-muted-foreground">
                     {t("empty")}
                 </div>
             ) : (
-                <ul className="divide-y divide-gray-100 rounded-md border border-gray-200">
+                <ul className="divide-y divide-border rounded-md border border-border">
                     {providers.map((p) => (
                         <li
                             key={p.id}
@@ -183,24 +230,23 @@ export default function ConnectorsPage() {
                         >
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                    <CloudIcon
+                                    <IntegrationIcon
+                                        provider={p.id}
                                         className={`h-4 w-4 shrink-0 ${
-                                            p.connected
-                                                ? "text-blue-600"
-                                                : "text-gray-400"
+                                            p.connected ? "" : "opacity-50 grayscale"
                                         }`}
                                     />
                                     <span className="font-medium text-sm">
                                         {p.display_name}
                                     </span>
                                     {!p.configured && (
-                                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                                        <span className="text-xs text-warning bg-warning/10 px-2 py-0.5 rounded">
                                             {t("notConfigured")}
                                         </span>
                                     )}
                                 </div>
                                 {p.connected ? (
-                                    <p className="text-xs text-gray-500 mt-1 truncate">
+                                    <p className="text-xs text-muted-foreground mt-1 truncate">
                                         {t("connectedAs", {
                                             email:
                                                 p.account_email ??
@@ -209,7 +255,7 @@ export default function ConnectorsPage() {
                                         })}
                                     </p>
                                 ) : (
-                                    <p className="text-xs text-gray-400 mt-1">
+                                    <p className="text-xs text-muted-foreground/70 mt-1">
                                         {t("notConnected")}
                                     </p>
                                 )}
@@ -222,7 +268,7 @@ export default function ConnectorsPage() {
                                         size="sm"
                                         disabled={busy[p.id]}
                                         onClick={() => handleDisconnect(p)}
-                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                     >
                                         {busy[p.id] ? (
                                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -236,7 +282,7 @@ export default function ConnectorsPage() {
                                         size="sm"
                                         disabled={busy[p.id]}
                                         onClick={() => handleConnect(p.id)}
-                                        className="bg-black hover:bg-gray-900 text-white"
+                                        className="bg-primary hover:bg-primary/90 text-primary-foreground"
                                     >
                                         {busy[p.id] ? (
                                             <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -247,7 +293,7 @@ export default function ConnectorsPage() {
                                     </Button>
                                 )
                             ) : (
-                                <span className="text-xs text-gray-400">
+                                <span className="text-xs text-muted-foreground/70">
                                     {t("contactAdmin")}
                                 </span>
                             )}

@@ -5,25 +5,51 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LogOut, Check } from "lucide-react";
+import { LogOut, Check, CreditCard } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserProfile } from "@/contexts/UserProfileContext";
-import { deleteAccount } from "@/app/lib/mikeApi";
+import { PlanCards } from "@/app/components/account/PlanCards";
+import { TeamSection } from "@/app/components/account/TeamSection";
+import { createBillingPortalSession, deleteAccount } from "@/app/lib/mikeApi";
+import { COUNTRIES } from "@/lib/countries";
+
+/** Keys of the billing-address block; `phone` rides along (optional). */
+type AddressKey = "line1" | "city" | "postal" | "phone";
 
 export default function AccountPage() {
     const router = useRouter();
     const { user, signOut } = useAuth();
-    const { profile, updateDisplayName, updateOrganisation } = useUserProfile();
+    const {
+        profile,
+        updateDisplayName,
+        updateOrganisation,
+        updateCountry,
+        updateVatNumber,
+        updateAddress,
+    } = useUserProfile();
     const t = useTranslations("account");
     const tc = useTranslations("common");
+    const tCountries = useTranslations("countries");
     const [displayName, setDisplayName] = useState("");
     const [isSavingName, setIsSavingName] = useState(false);
     const [saved, setSaved] = useState(false);
     const [organisation, setOrganisation] = useState("");
     const [isSavingOrg, setIsSavingOrg] = useState(false);
     const [orgSaved, setOrgSaved] = useState(false);
+    const [country, setCountry] = useState("");
+    const [isSavingCountry, setIsSavingCountry] = useState(false);
+    const [countrySaved, setCountrySaved] = useState(false);
+    const [vatNumber, setVatNumber] = useState("");
+    const [isSavingVat, setIsSavingVat] = useState(false);
+    const [vatSaved, setVatSaved] = useState(false);
+    // Billing address (tracker #35) — one saved/saving pair per field so
+    // the inline "saved" tick lands next to the input the user just left.
+    const [address, setAddress] = useState({ line1: "", city: "", postal: "", phone: "" });
+    const [addressSaving, setAddressSaving] = useState<AddressKey | null>(null);
+    const [addressSaved, setAddressSaved] = useState<AddressKey | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isOpeningPortal, setIsOpeningPortal] = useState(false);
 
     useEffect(() => {
         if (profile?.displayName) {
@@ -32,11 +58,107 @@ export default function AccountPage() {
         if (profile?.organisation) {
             setOrganisation(profile.organisation);
         }
+        // Country is stored upper-case; reflect that in the dropdown so
+        // the option matches even if a stale lower-case value snuck in
+        // from an older client. Empty string → "no country selected".
+        setCountry(profile?.country?.toUpperCase() ?? "");
+        setVatNumber(profile?.vatNumber ?? "");
+        setAddress({
+            line1: profile?.addressLine1 ?? "",
+            city: profile?.addressCity ?? "",
+            postal: profile?.addressPostalCode ?? "",
+            phone: profile?.phone ?? "",
+        });
     }, [profile]);
+
+    const handleCountryChange = async (next: string) => {
+        const previous = country;
+        setCountry(next);
+        if (next === (profile?.country ?? "")) return;
+        setIsSavingCountry(true);
+        const success = await updateCountry(next || null);
+        setIsSavingCountry(false);
+        if (success) {
+            setCountrySaved(true);
+            setTimeout(() => setCountrySaved(false), 1500);
+        } else {
+            setCountry(previous);
+            alert(t("alerts.failedUpdateCountry"));
+        }
+    };
+
+    const handleVatChange = async (value: string) => {
+        setVatNumber(value);
+    };
+
+    const handleVatBlur = async () => {
+        const trimmed = vatNumber.trim();
+        if (trimmed === (profile?.vatNumber ?? "")) return;
+        const previous = profile?.vatNumber ?? "";
+        setIsSavingVat(true);
+        const success = await updateVatNumber(trimmed || null);
+        setIsSavingVat(false);
+        if (success) {
+            setVatSaved(true);
+            setTimeout(() => setVatSaved(false), 1500);
+        } else {
+            setVatNumber(previous);
+            alert(t("alerts.failedUpdateVat"));
+        }
+    };
+
+    const ADDRESS_FIELD = {
+        line1: "addressLine1",
+        city: "addressCity",
+        postal: "addressPostalCode",
+        phone: "phone",
+    } as const;
+
+    const handleAddressBlur = async (key: AddressKey) => {
+        const field = ADDRESS_FIELD[key];
+        const trimmed = address[key].trim();
+        const previous = profile?.[field] ?? "";
+        if (trimmed === previous) return;
+        setAddressSaving(key);
+        const success = await updateAddress(field, trimmed || null);
+        setAddressSaving(null);
+        if (success) {
+            setAddressSaved(key);
+            setTimeout(() => setAddressSaved(null), 1500);
+        } else {
+            setAddress((a) => ({ ...a, [key]: previous }));
+            alert(t("alerts.failedUpdateAddress"));
+        }
+    };
+
+    const localizedCountryLabel = (code: string, fallback: string): string => {
+        // Localised name lives in messages/<locale>.json under
+        // "countries.<CODE>"; if a translator hasn't filled it in yet
+        // we fall back to the English label shipped in lib/countries.ts
+        // so the UI never shows raw "DE" / "FR".
+        const key = `${code}` as Parameters<typeof tCountries>[0];
+        try {
+            const localized = tCountries(key);
+            return localized && localized !== key ? localized : fallback;
+        } catch {
+            return fallback;
+        }
+    };
 
     const handleLogout = async () => {
         await signOut();
         router.push("/");
+    };
+
+    const handleOpenBillingPortal = async () => {
+        setIsOpeningPortal(true);
+        try {
+            const { url } = await createBillingPortalSession();
+            window.location.href = url;
+        } catch {
+            setIsOpeningPortal(false);
+            alert(t("alerts.failedOpenBillingPortal"));
+        }
     };
 
     const handleDeleteAccount = async () => {
@@ -89,7 +211,7 @@ export default function AccountPage() {
                 </div>
                 <div className="space-y-4">
                     <div>
-                        <label className="text-sm text-gray-600 block mb-2">
+                        <label className="text-sm text-muted-foreground block mb-2">
                             {t("profile.displayName")}
                         </label>
                         <div className="flex gap-2">
@@ -105,7 +227,7 @@ export default function AccountPage() {
                                 disabled={
                                     isSavingName || !displayName.trim() || saved
                                 }
-                                className="min-w-[80px] transition-all bg-black hover:bg-gray-900 text-white"
+                                className="min-w-[80px] transition-all bg-primary hover:bg-primary/90 text-primary-foreground"
                             >
                                 {isSavingName ? (
                                     tc("saving")
@@ -121,7 +243,7 @@ export default function AccountPage() {
                         </div>
                     </div>
                     <div>
-                        <label className="text-sm text-gray-600 block mb-2">
+                        <label className="text-sm text-muted-foreground block mb-2">
                             {t("profile.organisation")}
                         </label>
                         <div className="flex gap-2">
@@ -142,7 +264,7 @@ export default function AccountPage() {
                                         (profile?.organisation ?? "") ||
                                     orgSaved
                                 }
-                                className="min-w-[80px] transition-all bg-black hover:bg-gray-900 text-white"
+                                className="min-w-[80px] transition-all bg-primary hover:bg-primary/90 text-primary-foreground"
                             >
                                 {isSavingOrg ? (
                                     tc("saving")
@@ -158,7 +280,130 @@ export default function AccountPage() {
                         </div>
                     </div>
                     <div>
-                        <label className="text-sm text-gray-600 block mb-2">
+                        <label
+                            htmlFor="profile-country"
+                            className="text-sm text-muted-foreground block mb-2"
+                        >
+                            {t("profile.country")}
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <select
+                                id="profile-country"
+                                value={country}
+                                onChange={(e) =>
+                                    handleCountryChange(e.target.value)
+                                }
+                                disabled={isSavingCountry}
+                                className="flex-1 h-10 rounded-md border border-input bg-surface-elevated px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/10 disabled:opacity-60"
+                            >
+                                <option value="">
+                                    {t("profile.countryPlaceholder")}
+                                </option>
+                                {COUNTRIES.map((c) => (
+                                    <option key={c.code} value={c.code}>
+                                        {localizedCountryLabel(c.code, c.label)}
+                                    </option>
+                                ))}
+                            </select>
+                            {countrySaved ? (
+                                <span className="text-xs text-success inline-flex items-center gap-1">
+                                    <Check className="h-3.5 w-3.5" />
+                                    {tc("saved")}
+                                </span>
+                            ) : isSavingCountry ? (
+                                <span className="text-xs text-muted-foreground">
+                                    {tc("saving")}
+                                </span>
+                            ) : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                            {t("profile.countryHint")}
+                        </p>
+                    </div>
+                    <div>
+                        <label
+                            htmlFor="profile-vat"
+                            className="text-sm text-muted-foreground block mb-2"
+                        >
+                            {t("profile.vatNumber")}
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                id="profile-vat"
+                                value={vatNumber}
+                                onChange={(e) => handleVatChange(e.target.value)}
+                                onBlur={handleVatBlur}
+                                disabled={isSavingVat}
+                                placeholder={t("profile.vatNumberPlaceholder")}
+                                className="flex-1"
+                            />
+                            {vatSaved ? (
+                                <span className="text-xs text-success inline-flex items-center gap-1">
+                                    <Check className="h-3.5 w-3.5" />
+                                    {tc("saved")}
+                                </span>
+                            ) : isSavingVat ? (
+                                <span className="text-xs text-muted-foreground">
+                                    {tc("saving")}
+                                </span>
+                            ) : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                            {t("profile.vatNumberHint")}
+                        </p>
+                    </div>
+                    {/* Billing address (tracker #35) — čl. 79. ZPDV: the
+                        invoice must carry the buyer's address. Street +
+                        city are enforced at checkout for a business;
+                        here they are editable like every other field. */}
+                    {(
+                        [
+                            ["line1", "addressLine1", "street-address"],
+                            ["city", "addressCity", "address-level2"],
+                            ["postal", "addressPostalCode", "postal-code"],
+                            ["phone", "phone", "tel"],
+                        ] as const
+                    ).map(([key, i18nKey, autoComplete]) => (
+                        <div key={key}>
+                            <label
+                                htmlFor={`profile-${key}`}
+                                className="text-sm text-muted-foreground block mb-2"
+                            >
+                                {t(`profile.${i18nKey}`)}
+                            </label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    id={`profile-${key}`}
+                                    value={address[key]}
+                                    onChange={(e) =>
+                                        setAddress((a) => ({ ...a, [key]: e.target.value }))
+                                    }
+                                    onBlur={() => handleAddressBlur(key)}
+                                    disabled={addressSaving === key}
+                                    autoComplete={autoComplete}
+                                    placeholder={t(`profile.${i18nKey}Placeholder`)}
+                                    className="flex-1"
+                                />
+                                {addressSaved === key ? (
+                                    <span className="text-xs text-success inline-flex items-center gap-1">
+                                        <Check className="h-3.5 w-3.5" />
+                                        {tc("saved")}
+                                    </span>
+                                ) : addressSaving === key ? (
+                                    <span className="text-xs text-muted-foreground">
+                                        {tc("saving")}
+                                    </span>
+                                ) : null}
+                            </div>
+                            {key === "line1" && (
+                                <p className="text-xs text-muted-foreground mt-1.5">
+                                    {t("profile.addressHint")}
+                                </p>
+                            )}
+                        </div>
+                    ))}
+                    <div>
+                        <label className="text-sm text-muted-foreground block mb-2">
                             {t("profile.email")}
                         </label>
                         <p className="text-base">{user?.email}</p>
@@ -173,12 +418,29 @@ export default function AccountPage() {
                         {t("plan.title")}
                     </h2>
                 </div>
-                <div>
-                    <p className="text-base font-medium text-gray-500 capitalize">
-                        {profile?.tier || t("plan.free")}
-                    </p>
-                </div>
+                <PlanCards currentTier={profile?.tierKey} />
+                {profile?.tierKey && profile.tierKey !== "free" && (
+                    <div className="mt-4">
+                        <Button
+                            variant="outline"
+                            onClick={handleOpenBillingPortal}
+                            disabled={isOpeningPortal}
+                            className="w-full sm:w-auto"
+                        >
+                            <CreditCard className="h-4 w-4 mr-2" />
+                            {isOpeningPortal
+                                ? t("plan.openingBillingPortal")
+                                : t("plan.manageBilling")}
+                        </Button>
+                        <p className="text-xs text-gray-500 mt-1.5">
+                            {t("plan.manageBillingHint")}
+                        </p>
+                    </div>
+                )}
             </div>
+
+            {/* Team (self-hides unless the user belongs to a team) */}
+            <TeamSection />
 
             {/* Actions */}
             <div className="py-6">
@@ -197,15 +459,15 @@ export default function AccountPage() {
 
             {/* Danger Zone */}
             <div className="py-6">
-                <h2 className="text-2xl font-medium font-serif mb-1 text-red-600">
+                <h2 className="text-2xl font-medium font-serif mb-1 text-destructive">
                     {t("danger.title")}
                 </h2>
-                <p className="text-sm text-gray-500 mb-4">
+                <p className="text-sm text-muted-foreground mb-4">
                     {t("danger.description")}
                 </p>
                 {deleteConfirm ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-3 max-w-sm">
-                        <p className="text-sm font-medium text-red-700">
+                    <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 space-y-3 max-w-sm">
+                        <p className="text-sm font-medium text-destructive">
                             {t("danger.confirmMessage")}
                         </p>
                         <div className="flex gap-2">
@@ -220,7 +482,7 @@ export default function AccountPage() {
                             <Button
                                 onClick={handleDeleteAccount}
                                 disabled={isDeleting}
-                                className="text-sm bg-red-600 hover:bg-red-700 text-white"
+                                className="text-sm bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                             >
                                 {isDeleting ? t("danger.deleting") : t("danger.deleteAccount")}
                             </Button>
@@ -230,7 +492,7 @@ export default function AccountPage() {
                     <Button
                         variant="outline"
                         onClick={() => setDeleteConfirm(true)}
-                        className="w-full sm:w-auto border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        className="w-full sm:w-auto border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     >
                         {t("danger.deleteAccount")}
                     </Button>

@@ -1,4 +1,86 @@
 {
+  "rateLimit": {
+    "softTitle": "{tier} · uskoro ćete potrošiti dnevnu kvotu",
+    "softBody": "Iskorišteno {used} od {limit} tokena ({percent}%) u zadnja 24 sata.",
+    "softHintTopup": "Nadoplatite dodatne tokene za nastavak nakon dnevnog limita.",
+    "softHintUpgrade": "Razmotrite nadogradnju na Plus za veću dnevnu kvotu.",
+    "hardTitle": "{tier} · dnevni limit dosegnut",
+    "hardBody": "Limit se obnavlja za otprilike {relief}. Ostali odgovori bit će omogućeni nakon toga.",
+    "chatNoticeTitle": "Dnevni limit dosegnut",
+    "chatNoticeBody": "Dosegnuli ste dnevni limit za {tier}. Za nastavak razgovora odaberite veći paket.",
+    "chatNoticeRelief": "Limit se obnavlja za otprilike {relief}.",
+    "bonusBadge": "bonus tokena dostupno",
+    "topupCta": "Nadoplati",
+    "upgradeCta": "Pogledaj Plus",
+    "usageRingTitle": "Dnevna potrošnja",
+    "usageRingUsed": "Potrošeno: {percent} %",
+    "usageRingRemaining": "Preostalo: {remaining} %",
+    "usageRingBonus": "Uključuje bonus tokene",
+    "usageRingReset": "Obnavlja se za {relief}",
+    "usageRingResetSoon": "Obnavlja se uskoro",
+    "usageRingAria": "Dnevna potrošnja: {percent} %",
+    "topupTitle": "Nadoplata tokena",
+    "topupSubtitle": "Odaberite paket — tokeni vrijede neograničeno i troše se nakon dnevnog limita.",
+    "topupDisabled": "Nadoplata trenutno nije dostupna — molimo kontaktirajte podršku za bankovnu uplatu.",
+    "topupPlusOnly": "Nadoplata je dostupna samo korisnicima Plus pretplate.",
+    "topupBankTransferHint": "Bankovna uplata? Pišite na podrska@eulex.ai i tokeni će biti dodijeljeni manualno nakon zaprimanja uplate.",
+    "buyCta": "Kupi",
+    "redirecting": "Preusmjeravam…",
+    "loading": "Učitavam ponudu…",
+    "plusUpgradeTitle": "Pređi na Eulex Plus",
+    "plusUpgradeCancelAnytime": "Otkaži kada želiš",
+    "plusUpgradeSubscription": "Pretplata",
+    "plusUpgradeVat": "PDV",
+    "plusUpgradeTotal": "Ukupno",
+    "plusUpgradeSecure": "Sigurna naplata · Stripe",
+    "plusUpgradeCancel": "Odustani",
+    "plusUpgradeProcessing": "Obrađujem…",
+    "plusUpgradeSubmit": "Pretplati se",
+    "plusProxyDisabled": "Plus pretplata trenutno nije dostupna. Pokušajte ponovno za nekoliko trenutaka.",
+    "plusUpgradeLoading": "Pripremam plaćanje…",
+    "plusUpgradeLoadingPayment": "Učitavam naplatne metode…",
+    "plusUpgradeError": "Trenutno ne možemo otvoriti naplatu.",
+    "plusUpgradeRetry": "Pokušaj ponovno",
+    "plusUpgradePerks": {
+      "tokens": "{tokens} tokena dnevno",
+      "tokensFallback": "Uvećani dnevni limit tokena",
+      "models": "Pristup naprednim Claude modelima",
+      "topup": "Mogućnost nadoplate paketima",
+      "support": "Prioritetna podrška"
+    },
+    "promoHave": "Imam promo kod",
+    "promoPlaceholder": "npr. LJETO25",
+    "promoApply": "Primijeni",
+    "promoApplied": "Kod {code} primijenjen",
+    "promoRemove": "Ukloni",
+    "promoInvalid": "Nepoznat ili neaktivan promo kod",
+    "notSignedIn": "Niste prijavljeni.",
+    "reliefSoon": "uskoro",
+    "perMonthSuffix": "/mj",
+    "billingTitle": "Podaci za račun",
+    "billingHint": "Ime i država su obvezni — bez države Stripe ne može obračunati PDV. Naziv tvrtke i PDV ID upišite ako račun glasi na pravnu osobu.",
+    "billingName": "Ime i prezime",
+    "billingCountry": "Država",
+    "billingCountryPlaceholder": "Odaberite državu…",
+    "billingOrganisation": "Naziv tvrtke (neobvezno)",
+    "billingVatId": "PDV ID / OIB tvrtke (neobvezno)",
+    "billingVatPlaceholder": "HR12345678901",
+    "billingVatHint": "Prikazuje se na računu. Valjani EU PDV ID iz druge članice omogućuje prijenos porezne obveze (reverse charge).",
+    "billingContinue": "Nastavi na plaćanje",
+    "billingRequired": "Ime i država su obvezni. Za račun na tvrtku obvezni su i naziv tvrtke, OIB/PDV ID, ulica i grad.",
+    "billingTaxUnresolved": "Stripe ne može odrediti poreznu lokaciju za odabranu državu. Provjerite državu ili nam se javite.",
+    "billingPlanUpgraded": "Plan promijenjen u {plan}. Razlika za preostalo razdoblje obračunata je i naplaćena s pohranjene kartice; neiskorišteni dio starog plana odbijen je kao kredit.",
+    "billingPlanScheduled": "Prijelaz na {plan} zakazan je za {date} — do tada vrijedi trenutni plan koji ste već platili, a nova cijena kreće s automatskom obnovom.",
+    "billingPlanClose": "U redu",
+    "billingActiveSubExists": "Već imate aktivnu pretplatu. Promijenite plan umjesto nove pretplate — pokušajte ponovno ili odaberite plan u Postavke → Naplata.",
+    "billingBusiness": "Račun na tvrtku (pravna osoba)",
+    "billingBusinessHint": "Po čl. 79. Zakona o PDV-u račun mora sadržavati naziv, adresu i OIB ili PDV ID kupca — sva su polja obvezna. Telefon ne trebamo.",
+    "billingAddressLine1": "Ulica i kućni broj",
+    "billingAddressCity": "Grad",
+    "billingAddressPostal": "Poštanski broj",
+    "billingPhone": "Telefon (neobvezno)",
+    "billingPhonePlaceholder": "+385 1 2345 678"
+  },
   "common": {
     "save": "Spremi",
     "saving": "Spremanje...",
@@ -17,7 +99,9 @@
     "email": "E-pošta",
     "rename": "Preimenuj",
     "copy": "Kopiraj",
-    "copied": "Kopirano"
+    "copied": "Kopirano",
+    "createAction": "Stvori",
+    "dismissWarning": "Odbaci upozorenje"
   },
   "columnFormats": {
     "freeText": "Slobodan tekst",
@@ -39,6 +123,9 @@
     "tabularPlaceholder": "Dodaj, promijeni ili obriši stupce — npr. „dodaj stupac Trajanje“…",
     "tabularSubmit": "Primijeni",
     "tabularRunning": "Primjena…",
+    "confirmDeleteTitle": "Potvrda brisanja",
+    "confirmDeleteBody": "Ova će izmjena obrisati sljedeće stupce: {names}. Želite li nastaviti?",
+    "confirmDeleteApply": "Obriši",
     "error": "Nešto je pošlo po krivu. Pokušajte ponovno.",
     "statusThinking": "Razmatram trenutne stupce…",
     "statusSearching": "Pretražujem web…",
@@ -57,18 +144,21 @@
     "exportPdf": "Izvezi u PDF",
     "flagTooltip": "Neprimjeren odgovor",
     "unflagTooltip": "Ukloni oznaku",
-    "documentTitle": "Odgovor Max asistenta",
-    "brandLabel": "Max — AI asistent",
+    "documentTitle": "Odgovor Eulex Desk asistenta",
+    "brandLabel": "Eulex Desk — AI asistent",
     "generatedOn": "Generirano",
     "watermark": "Povjerljivo · Za internu uporabu",
     "marketingTagline": "Pouzdana umjetna inteligencija za pravnu izvrsnost",
-    "disclaimer": "AI može pogriješiti. Odgovori ne predstavljaju pravni savjet."
+    "disclaimer": "AI može pogriješiti. Odgovori ne predstavljaju pravni savjet.",
+    "poweredBy": "Pokreće",
+    "pageLabel": "Stranica"
   },
   "sidebar": {
     "assistant": "Asistent",
     "projects": "Predmeti",
-    "tabularReview": "Tablični pregled",
+    "tabularReview": "Analize",
     "workflows": "Radni tijekovi",
+    "contexts": "Konteksti",
     "account": "Račun",
     "accountSettings": "Postavke računa",
     "signOut": "Odjava",
@@ -76,7 +166,15 @@
     "assistantHistory": "Povijest razgovora",
     "noChatsYet": "Još nema razgovora",
     "closeSidebar": "Zatvori bočnu traku",
-    "openSidebar": "Otvori bočnu traku"
+    "openSidebar": "Otvori bočnu traku",
+    "pinned": "Prikvačeno",
+    "ungrouped": "Negrupirano",
+    "showMore": "Prikaži više",
+    "archived": "Arhivirano",
+    "backToActive": "Natrag",
+    "noArchived": "Nema arhiviranih razgovora",
+    "groupOptions": "Mogućnosti grupe",
+    "resizeSidebar": "Promijeni širinu bočne trake"
   },
   "login": {
     "title": "Prijava",
@@ -86,37 +184,81 @@
     "redirecting": "Preusmjeravanje...",
     "noAccount": "Prijavite se s vašim EULEX računom. Nemate ga?",
     "createAccount": "Otvorite račun",
-    "legalNotice": "Prijavom potvrđujete da prihvaćate <terms>uvjete korištenja</terms> i <privacy>politiku privatnosti</privacy> na eulex.ai te da imate najmanje 18 godina."
+    "legalNotice": "Prijavom potvrđujete da prihvaćate <terms>uvjete korištenja</terms> i <privacy>politiku privatnosti</privacy> na eulex.ai te da imate najmanje 18 godina.",
+    "emailLabel": "E-mail adresa",
+    "passwordLabel": "Lozinka",
+    "signInButton": "Prijavi se",
+    "signingIn": "Prijava...",
+    "orContinueWith": "ili nastavite s",
+    "invalidCredentials": "Neispravna e-mail adresa ili lozinka.",
+    "emailNotConfirmed": "Potvrdite e-mail adresu putem poveznice koju smo vam poslali.",
+    "callbackCompleting": "Dovršavanje prijave...",
+    "callbackFailedTitle": "Prijava nije uspjela",
+    "callbackTryAgain": "Pokušajte ponovno",
+    "forgotPasswordLink": "Zaboravili ste lozinku?",
+    "forgotTitle": "Obnova lozinke",
+    "forgotInstructions": "Upišite e-mail adresu računa i poslat ćemo vam poveznicu za postavljanje nove lozinke.",
+    "forgotSubmit": "Pošalji poveznicu",
+    "forgotSending": "Slanje...",
+    "forgotSentTitle": "Provjerite e-poštu",
+    "forgotSentBody": "Ako račun za {email} postoji, poslali smo poveznicu za obnovu lozinke.",
+    "backToLogin": "Natrag na prijavu",
+    "resetTitle": "Nova lozinka",
+    "resetNewPassword": "Nova lozinka (najmanje 8 znakova)",
+    "resetSubmit": "Postavi lozinku",
+    "resetSaving": "Spremanje...",
+    "resetInvalidLink": "Poveznica je nevažeća ili istekla. Otvorite je u istom pregledniku u kojem ste zatražili obnovu, ili zatražite novu.",
+    "resetRequestAgain": "Zatraži novu poveznicu",
+    "magicLinkButton": "Pošalji mi poveznicu za prijavu",
+    "magicLinkSending": "Slanje poveznice...",
+    "magicLinkNoEmail": "Najprije upišite e-mail adresu.",
+    "magicLinkError": "Slanje poveznice nije uspjelo. Pokušajte ponovno.",
+    "magicLinkSentTitle": "Provjerite e-poštu",
+    "magicLinkSentBody": "Poslali smo poveznicu za prijavu na {email}. Otvorite je u ovom pregledniku da dovršite prijavu.",
+    "otpOrEnterCode": "ili upišite kod iz e-pošte",
+    "otpCodeLabel": "8-znamenkasti kod",
+    "otpVerifyButton": "Potvrdi kod",
+    "otpVerifying": "Provjera...",
+    "otpInvalid": "Kod je nevažeći ili istekao. Zatražite novu poveznicu.",
+    "sourceCode": "Izvorni kod (AGPL-3.0)",
+    "callbackGenericError": "Prijavu nije bilo moguće dovršiti. Pokušajte ponovno.",
+    "callbackAccessDenied": "Prijava je otkazana ili je pristup odbijen.",
+    "callbackLinkExpired": "Poveznica je istekla ili je već iskorištena. Zatražite novu.",
+    "callbackMissingCode": "Poveznica za prijavu nije potpuna. Pokušajte se ponovno prijaviti.",
+    "resetWeakPassword": "Lozinka je preslaba. Odaberite dulju i manje uobičajenu lozinku.",
+    "resetSamePassword": "Nova se lozinka mora razlikovati od trenutačne.",
+    "resetGenericError": "Promjena lozinke nije uspjela. Pokušajte ponovno."
   },
   "landing": {
     "nav": {
       "logIn": "Prijava",
       "signUp": "Otvorite račun",
       "openApp": "Otvorite aplikaciju",
+      "openAppShort": "Otvori",
       "signInWithEulex": "Prijavite se putem EULEX-a"
     },
     "hero": {
       "eyebrow": "Pravna AI platforma",
       "title": "Sve što vodeće platforme nude,\nu Eulex.ai okruženju.",
       "tagline": "Integrirana hrvatska i europska pravna baza.",
-      "subtitle": "Max čita vaše dokumente, citira doslovno i piše uz vas — od prvog nacrta do potpisa.",
+      "subtitle": "Eulex Desk čita vaše dokumente, citira doslovno i piše uz vas — od prvog nacrta do potpisa.",
       "primaryCta": "Prijavite se putem EULEX-a",
       "secondaryCta": "Saznajte više",
-      "imageCaption": "Max — čita, citira i piše uz vas"
+      "imageCaption": "Eulex Desk — čita, citira i piše uz vas"
     },
     "signin": {
       "eyebrow": "Pristup uz EULEX",
       "title": "Prijavite se i krenite.",
-      "subtitle": "Postojeći EULEX korisnici ulaze direktno u Max. Nemate račun? Otvorite ga za par sekundi.",
+      "subtitle": "Postojeći EULEX korisnici ulaze direktno u Eulex Desk. Nemate račun? Otvorite ga za par sekundi.",
       "legalNotice": "Prijavom potvrđujete da prihvaćate uvjete korištenja i politiku privatnosti na eulex.ai.",
       "noAccount": "Nemate EULEX račun?",
       "createAccount": "Otvorite ga ovdje",
-      "imageAlt": "Max sučelje"
+      "imageAlt": "Eulex Desk sučelje"
     },
     "demo": {
-      "eyebrow": "Max u praksi",
+      "eyebrow": "Eulex Desk u praksi",
       "title": "Pitanje. Dokument. Citat.\nNa jednom ekranu.",
-      "description": "Postavite pitanje na hrvatskom ili engleskom, Max otvara vaše dokumente, izvlači relevantan odlomak i citira ga točno — uključujući stranicu i članak. Bez nagađanja, bez izmišljenih izvora."
+      "description": "Postavite pitanje na hrvatskom ili engleskom, Eulex Desk otvara vaše dokumente, izvlači relevantan odlomak i citira ga točno — uključujući stranicu i članak. Bez nagađanja, bez izmišljenih izvora."
     },
     "features": {
       "title": "Sve što Harvey i Legora nude,\ndorađeno za hrvatsku i europsku praksu.",
@@ -130,12 +272,12 @@
         "description": "Radni prostori vezani uz predmet. Učitajte kreditne ugovore, ugovore o kupoprodaji, najmove i due diligence pakete — asistent zadržava kontekst kroz svaki razgovor i svaki dokument."
       },
       "tabular": {
-        "title": "Tablični pregled",
+        "title": "Strukturirane analize dokumenata",
         "description": "Ekstrakcija podataka kroz stotine dokumenata istovremeno. Svaka ćelija citirana je natrag na stranicu i odlomak — bez haluciniranih odgovora, bez mrtvih linkova."
       },
       "workflows": {
         "title": "Radni tokovi",
-        "description": "Provjerene upute spakirane kao predlošci koje cijeli ured dijeli — CP popisi, sažeci kreditnih ugovora, pregledi promjene kontrole. Jedan klik i mlađi član tima pokreće ga sam."
+        "description": "Provjerene upute spakirane kao predlošci koje cijeli ured dijeli — CP popisi, sažeci kreditnih ugovora, analize promjene kontrole. Jedan klik i mlađi član tima pokreće ga sam."
       }
     },
     "selfhost": {
@@ -144,7 +286,7 @@
       "tagline": "Hostirano u pouzdanom oblaku. Vašem ili našem.",
       "items": {
         "deploy": {
-          "title": "Self-hostable by design.",
+          "title": "Dizajniran za samostalno hostanje.",
           "description": "Deployajte unutar vlastite infrastrukture. Dokumenti nikada ne napuštaju vaš perimetar. Compliance, rezidenčnost podataka i povlastica ostaju pod vašom kontrolom."
         },
         "cost": {
@@ -167,7 +309,7 @@
       "items": {
         "byok": {
           "title": "Integrirana hrvatska i europska pravna baza.",
-          "description": "Max povezuje vaše dokumente s relevantnim hrvatskim i europskim izvorima, uz citate koje možete provjeriti i obraniti."
+          "description": "Eulex Desk povezuje vaše dokumente s relevantnim hrvatskim i europskim izvorima, uz citate koje možete provjeriti i obraniti."
         },
         "eulex": {
           "title": "Sigurna EULEX prijava.",
@@ -190,10 +332,16 @@
       "secondary": "Otvorite račun"
     },
     "footer": {
-      "tagline": "Max — pravna AI platforma vašeg ureda.",
+      "tagline": "Eulex Desk — pravna AI platforma vašeg ureda.",
       "privacy": "Privatnost",
       "terms": "Uvjeti",
       "contact": "Kontakt"
+    },
+    "tokenBanner": {
+      "message": "Poklanjamo prvih <b>200.000.000 tokena</b> besplatno za testiranje.",
+      "remaining": "Ostalo: {amount}",
+      "used": "{amount} iskorišteno",
+      "percentUsed": "{pct}% iskorišteno"
     }
   },
   "signup": {
@@ -204,17 +352,44 @@
     "createOnEulex": "Otvorite besplatni račun na eulex.ai, zatim se vratite ovdje za prijavu.",
     "createAccountOnEulex": "Otvorite račun na EULEX-u",
     "alreadyHaveAccount": "Već imate račun?",
-    "signIn": "Prijavite se"
+    "signIn": "Prijavite se",
+    "nameLabel": "Ime i prezime",
+    "emailLabel": "E-mail adresa",
+    "passwordLabel": "Lozinka",
+    "passwordHint": "Najmanje 8 znakova.",
+    "signUpButton": "Registriraj se",
+    "signingUp": "Registracija...",
+    "orContinueWith": "ili nastavite s",
+    "checkEmailTitle": "Provjerite e-poštu",
+    "checkEmailBody": "Poslali smo poveznicu za potvrdu na {email}. Nakon potvrde bit ćete prijavljeni.",
+    "genericError": "Registracija nije uspjela. Pokušajte ponovno."
   },
   "account": {
     "settings": "Postavke",
     "tabs": {
       "general": "Općenito",
+      "billing": "Naplata i tokeni",
+      "privacy": "Privatnost i PII",
       "models": "Modeli i API ključevi",
-      "connectors": "Konektori",
+      "connectors": "Kontekst",
       "fileSources": "Izvori datoteka",
-      "wordAddin": "Word dodatak",
-      "changelog": "Novosti"
+      "wordAddin": "Word dodatak"
+    },
+    "proLock": {
+      "badge": "Pro",
+      "cta": "Nadogradi na Pro",
+      "pii": {
+        "title": "Anonimizacija (PII)",
+        "description": "Anonimizacija upita i učitanih dokumenata dostupna je uz Pro paket. Nadogradite za zaštitu osobnih podataka prije slanja AI-u."
+      },
+      "word": {
+        "title": "Word dodatak",
+        "description": "Word dodatak za usporedni pregled dokumenata dostupan je uz Pro paket. Nadogradite za povezivanje Eulex Deska s Microsoft Wordom."
+      },
+      "mcp": {
+        "title": "Kontekst",
+        "description": "Povezivanje vanjskih alata putem Model Context Protocola (MCP) dostupno je uz Pro paket. Nadogradite za dodavanje pravnih baza, web istraživanja i internih API-ja kao konteksta u razgovoru."
+      }
     },
     "profile": {
       "title": "Profil",
@@ -222,11 +397,211 @@
       "displayNamePlaceholder": "Unesite vaše ime",
       "organisation": "Organizacija",
       "organisationPlaceholder": "Unesite naziv organizacije",
-      "email": "E-pošta"
+      "country": "Država",
+      "countryPlaceholder": "Odaberite državu…",
+      "countryHint": "Koristimo za izračun PDV-a pri naplati pretplate.",
+      "vatNumber": "PDV broj",
+      "vatNumberPlaceholder": "npr. HR12345678901",
+      "vatNumberHint": "OIB tvrtke / PDV ID. Prikazuje se na računu i može omogućiti oslobođenje od PDV-a za B2B nabave.",
+      "email": "E-pošta",
+      "addressLine1": "Ulica i kućni broj",
+      "addressLine1Placeholder": "Ilica 1",
+      "addressCity": "Grad",
+      "addressCityPlaceholder": "Zagreb",
+      "addressPostalCode": "Poštanski broj",
+      "addressPostalCodePlaceholder": "10000",
+      "addressHint": "Adresa sjedišta za račun. Obvezna je uz naziv tvrtke i OIB/PDV ID (čl. 79. ZPDV). Šalje se na Stripe.",
+      "phone": "Telefon (neobvezno)",
+      "phonePlaceholder": "+385 1 2345 678"
     },
     "plan": {
       "title": "Plan korištenja",
-      "free": "Besplatno"
+      "free": "Besplatno",
+      "popular": "Popularno",
+      "current": "Vaš plan",
+      "currentCta": "Trenutni",
+      "includedCta": "Uključeno",
+      "modalTitle": "Odaberite plan",
+      "modalSubtitle": "Usporedite planove i odaberite onaj koji vam najbolje odgovara.",
+      "upgradeTo": "Prijeđi na {plan}",
+      "loading": "Učitavam planove…",
+      "loadError": "Planove trenutno nije moguće učitati.",
+      "vatNote": "+ PDV",
+      "cancelRenewal": {
+        "cta": "Otkaži obnovu",
+        "title": "Otkazati obnovu?",
+        "bodyWithDate": "Vaš plan ostaje aktivan do {date} — do kraja razdoblja koje ste već platili. Nema povrata novca ni razmjernog obračuna; plan se jednostavno neće obnoviti.",
+        "body": "Vaš plan ostaje aktivan do kraja razdoblja koje ste već platili. Nema povrata novca ni razmjernog obračuna; plan se jednostavno neće obnoviti.",
+        "confirm": "Otkaži obnovu",
+        "keep": "Zadrži plan",
+        "pending": "Otkazivanje…",
+        "endsNote": "Obnova otkazana — aktivno do {date}.",
+        "endsNoteNoDate": "Obnova otkazana.",
+        "error": "Otkazivanje nije uspjelo. Pokušajte ponovno."
+      },
+      "tabs": {
+        "individual": "Individualno",
+        "teamsEnterprise": "Timovi i Enterprise"
+      },
+      "tiers": {
+        "free": {
+          "name": "Free",
+          "tagline": "Za prvo pitanje. Bez obveza.",
+          "price": "€0,00",
+          "period": "/ mjesec",
+          "cta": "Započni besplatno",
+          "features": [
+            "EU regulativa (EUR-Lex korpus)",
+            "Korpus europskog nacionalnog prava (osnovni)",
+            "Spremanje do 5 istraživačkih projekata",
+            "Analiza dokumenata",
+            "PDF izvoz (EULEX brendiran)",
+            "Dnevni limit korištenja",
+            "Probni pristup Eulex Desk pravnoj radnoj ploči",
+            "MCP pristup uz dnevni limit"
+          ]
+        },
+        "plus": {
+          "name": "Plus",
+          "tagline": "Za istraživača pod rokom.",
+          "price": "€24,00",
+          "period": "/ mjesec",
+          "intro": "Sve iz Free, plus:",
+          "cta": "Prijeđi na Plus",
+          "features": [
+            "5× veći dnevni limiti",
+            "Puni pristup Eulex Desk pravnoj radnoj ploči",
+            "Dijeljenje rezultata istraživanja putem poveznice",
+            "Word i Markdown izvoz istraživanja",
+            "Puni MCP pristup uz dnevni limit"
+          ]
+        },
+        "pro": {
+          "name": "Pro",
+          "tagline": "Za profesionalca kojem treba više.",
+          "price": "€99,00",
+          "period": "/ mjesec",
+          "intro": "Sve iz Plus, plus:",
+          "cta": "Prijeđi na Pro",
+          "features": [
+            "Uključuje jedan nacionalni paket dubinske pokrivenosti s vremenskom crtom i vremenskim snimkama*",
+            "20× dnevni limit za svakodnevno korištenje Eulex Deska",
+            "Anonimizacija upita i učitanih dokumenata",
+            "Word Plugin za usporedni pregled dokumenata",
+            "Izdavanje računa na tvrtku"
+          ]
+        },
+        "legal_pro": {
+          "name": "Legal Pro",
+          "tagline": "Za svakodnevnu profesionalnu upotrebu.",
+          "price": "€399,00",
+          "period": "/ mjesec",
+          "intro": "Sve iz Pro, plus:",
+          "cta": "Prijeđi na Legal Pro",
+          "features": [
+            "80× dnevni limit za cjelodnevno korištenje Eulex Deska",
+            "Korištenje vlastitih API ključeva za proširenje AI kapaciteta po cijeni koštanja",
+            "Korisnička podrška za definiranje radnih procesa"
+          ]
+        },
+        "team": {
+          "name": "Team",
+          "tagline": "Za sigurnu suradnju u timovima.",
+          "price": "€89,00",
+          "period": "/ po korisniku mjesečno",
+          "intro": "Sve iz Pro, plus:",
+          "cta": "Prijeđi na Team",
+          "features": [
+            "Dijeljenje Workbench projekata",
+            "Prijava putem računa tvrtke radi zaštite podataka",
+            "Dodavanje korisnika kako tvrtka raste",
+            "Limit korištenja dijeljen na razini cijelog tima",
+            "Minimalno 5 sjedala"
+          ]
+        },
+        "eulex_legal_team": {
+          "name": "Legal Team",
+          "tagline": "Za vrhunske pravne timove.",
+          "price": "€349,00",
+          "period": "/ po korisniku mjesečno",
+          "intro": "Sve iz Team, plus:",
+          "cta": "Prijeđi na Legal Team",
+          "features": [
+            "80× dnevni limit za cjelodnevno korištenje Eulex Deska",
+            "Korištenje vlastitih API ključeva za proširenje AI kapaciteta po cijeni koštanja",
+            "Korisnička podrška za definiranje radnih procesa",
+            "Minimalno 5 sjedala"
+          ]
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "tagline": "Za velike organizacije.",
+          "price": "Na upit",
+          "period": "",
+          "cta": "Kontaktirajte nas",
+          "features": [
+            "Prilagođena integracija s vašom bazom znanja",
+            "Privatni cloud i hibridna implementacija",
+            "Pružanje Eulex funkcionalnosti vašim klijentima bez Eulex računa"
+          ]
+        }
+      },
+      "manageBilling": "Upravljaj naplatom",
+      "openingBillingPortal": "Otvaram…",
+      "manageBillingHint": "Računi, način plaćanja i otkazivanje pretplate — sigurno preko Stripea."
+    },
+    "billing": {
+      "title": "Naplata i tokeni",
+      "subtitle": "Pregled vaše dnevne potrošnje i nadoplata.",
+      "topupSuccess": "Plaćanje je uspješno. Tokeni će biti dodijeljeni unutar nekoliko sekundi.",
+      "topupCancelled": "Plaćanje je odustalo — niste naplaćeni.",
+      "subscription": "Pretplata",
+      "used24h": "Iskorišteno (24h)",
+      "usedOf": "od {limit} ({remaining} preostalo)",
+      "bonusTokens": "Bonus tokeni",
+      "bonusHint": "Vrijede neograničeno",
+      "requests24h": "Zahtjeva u 24h",
+      "changePlan": {
+        "title": "Promjena plana",
+        "subtitle": "Prelazak na viši plan vrijedi odmah uz razmjernu naplatu; prelazak na niži plan primjenjuje se na kraju tekućeg obračunskog razdoblja.",
+        "current": "Trenutačni plan",
+        "downgradeCta": "Prijeđi na niži plan",
+        "upgradeTitle": "Prijeći na {plan}?",
+        "upgradeBody": "Pretplata odmah prelazi na {plan}. Naplatit će se razmjerna razlika u cijeni za ostatak tekućeg obračunskog razdoblja.",
+        "downgradeTitle": "Prijeći na {plan}?",
+        "downgradeBodyWithDate": "Trenutačni plan ostaje aktivan do {date}. {plan} i njegova cijena vrijede od sljedećeg obračunskog razdoblja — bez povrata novca ili djelomične naplate.",
+        "downgradeBody": "Trenutačni plan ostaje aktivan do kraja plaćenog razdoblja. {plan} i njegova cijena vrijede od sljedećeg obračunskog razdoblja — bez povrata novca ili djelomične naplate.",
+        "confirm": "Potvrdi promjenu",
+        "cancel": "Odustani",
+        "pending": "Obrada…",
+        "successUpgraded": "Sada ste na planu {plan}.",
+        "successScheduled": "Promjena plana zakazana — {plan} počinje {date}.",
+        "successScheduledNoDate": "Promjena plana zakazana — {plan} počinje krajem tekućeg razdoblja.",
+        "error": "Promjena plana nije uspjela. Pokušajte ponovno ili se obratite podršci.",
+        "loadError": "Učitavanje planova nije uspjelo.",
+        "loading": "Učitavanje planova…"
+      }
+    },
+    "team": {
+      "title": "Tim",
+      "seats": "{used} / {total} sjedala",
+      "you": "Vi",
+      "pending": "Čeka",
+      "roleOwner": "Vlasnik",
+      "roleAdmin": "Administrator",
+      "roleMember": "Član",
+      "remove": "Ukloni člana",
+      "confirmRemove": "Ukloni",
+      "removing": "Uklanjam…",
+      "cancel": "Odustani",
+      "add": "Dodaj",
+      "adding": "Dodajem…",
+      "addPlaceholder": "kolega@tvrtka.hr",
+      "seatsFull": "Sva sjedala su zauzeta. Uklonite člana ili povećajte broj sjedala.",
+      "hint": "Dodani kolega odmah dobiva pristup; ako još nema račun, povezat će se pri prvoj prijavi. Na pojedini predmet kolege dodajete unutar samog predmeta.",
+      "errSeats": "Nema slobodnih sjedala.",
+      "errEmail": "Neispravna e-mail adresa.",
+      "errGeneric": "Akcija nije uspjela. Pokušajte ponovno."
     },
     "actions": {
       "title": "Radnje",
@@ -242,46 +617,42 @@
     "alerts": {
       "failedDeleteAccount": "Brisanje računa nije uspjelo. Pokušajte ponovo.",
       "failedUpdateName": "Ažuriranje imena nije uspjelo. Pokušajte ponovo.",
-      "failedUpdateOrg": "Ažuriranje organizacije nije uspjelo. Pokušajte ponovo."
+      "failedUpdateOrg": "Ažuriranje organizacije nije uspjelo. Pokušajte ponovo.",
+      "failedUpdateCountry": "Ažuriranje države nije uspjelo. Pokušajte ponovo.",
+      "failedUpdateVat": "Ažuriranje PDV broja nije uspjelo. Pokušajte ponovo.",
+      "failedOpenBillingPortal": "Otvaranje portala za naplatu nije uspjelo. Pokušajte ponovno.",
+      "failedUpdateAddress": "Spremanje adrese nije uspjelo."
     }
   },
   "models": {
     "title": "Postavke modela",
-    "tabularModel": "Model za tablični pregled",
+    "tabularModel": "Model za analize",
     "localLlmNote": "LocalLLM modeli su konfigurirani od strane administratora servera i dostupni svim korisnicima.",
     "selectModel": "Odaberite model",
     "apiKeys": {
-      "title": "API ključevi",
-      "description": "Morate unijeti vlastite API ključeve kako bi aplikacija radila ili dodati API ključeve u .env datoteku ako koristite vlastitu instancu Maxa.",
-      "titleGenNote": "Generiranje naslova automatski koristi najjeftiniji model od konfiguriranog pružatelja usluga (LocalLLM Lite ako je dostupan, inače Gemini Flash Lite, inače Claude Haiku).",
-      "anthropic": "Anthropic (Claude) API ključ",
-      "google": "Google (Gemini) API ključ",
-      "openai": "OpenAI API ključ",
-      "mistral": "Mistral AI API ključ",
-      "addKeyTooltip": "Dodajte {provider} API ključ za korištenje ovog modela",
-      "failedSave": "Spremanje {label} nije uspjelo.",
-      "sharedKeyBadge": "Dijeljeni ključ dostupan",
-      "sharedKeyPlaceholder": "Koristi se dijeljeni ključ — zalijepi svoj da ga zamijeniš",
-      "sharedKeyHint": "Max će koristiti dijeljeni ključ koji je postavio administrator. Svoj ključ trebaš zalijepiti samo ako želiš koristiti zaseban račun."
+      "title": "Pružatelji usluga",
+      "addKeyTooltip": "{provider} trenutno nije dostupan na ovoj Eulex Desk instanci.",
+      "serverManagedTitle": "Centralno upravljanje",
+      "serverManagedDescription": "Svi pružatelji usluga (Claude, OpenAI, Gemini, Mistral) koriste dijeljene ključeve koje konfigurira administrator. Potrošnja se mjeri kroz vašu pretplatu."
     }
   },
   "connectors": {
-    "title": "Konektori",
+    "title": "Kontekst",
     "hideForm": "Sakrij obrazac",
-    "addConnector": "Dodaj konektor",
-    "description": "Konektori povezuju vanjske alate s Maxom putem <link>Model Context Protocola</link> (MCP) — pravnih baza podataka, web istraživanja, internih API-ja organizacije i drugog. Alati otkriveni iz svakog konektora postaju dostupni chat asistentu pod nazivom <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code>.",
+    "addConnector": "Dodaj kontekst",
+    "description": "Kontekst povezuje vanjske alate s Eulex Deskom putem <link>Model Context Protocola</link> (MCP) — pravnih baza podataka, web istraživanja, internih API-ja organizacije i drugog. Alati otkriveni iz svakog konteksta postaju dostupni chat asistentu pod nazivom <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code>.",
     "trustWarning": {
-      "title": "Dodajte samo konektore kojima vjerujete",
-      "description": "Operator konektora može vidjeti sve što Max šalje u pozivima alata — vaše upite, isječke dokumenata i odgovor samog alata. Prilagođena zaglavlja (uključujući <code>Authorization</code> tokene) šalju se sa svakim zahtjevom."
+      "title": "Dodajte samo kontekste kojima vjerujete",
+      "description": "Operator konteksta može vidjeti sve što Eulex Desk šalje u pozivima alata — vaše upite, isječke dokumenata i odgovor samog alata. Prilagođena zaglavlja (uključujući <code>Authorization</code> tokene) šalju se sa svakim zahtjevom."
     },
     "loadingServers": "Učitavanje servera…",
-    "noConnectors": "Još nema konfiguriranih konektora.",
-    "builtinTitle": "Ugrađeni konektori",
+    "noConnectors": "Još nema konfiguriranog konteksta.",
+    "builtinTitle": "Ugrađeni kontekst",
     "builtinAlwaysOn": "Uvijek uključeno",
-    "customTitle": "Vaši konektori",
+    "customTitle": "Vaš kontekst",
     "addForm": {
       "name": "Naziv",
-      "namePlaceholder": "Moj konektor",
+      "namePlaceholder": "Moj kontekst",
       "url": "URL",
       "urlPlaceholder": "https://example.com/mcp",
       "authentication": "Autentifikacija",
@@ -295,7 +666,7 @@
       "headerValue": "Vrijednost",
       "addHeader": "Dodaj zaglavlje",
       "saveAndSignIn": "Spremi i prijavi se",
-      "saveConnector": "Spremi konektor",
+      "saveConnector": "Spremi kontekst",
       "nameUrlRequired": "Naziv i URL su obavezni.",
       "removeHeader": "Ukloni zaglavlje"
     },
@@ -306,7 +677,7 @@
       "disabled": "Onemogućeno",
       "signIn": "Prijava",
       "headers": "Zaglavlja:",
-      "untitledConnector": "Konektor bez naziva",
+      "untitledConnector": "Kontekst bez naziva",
       "nameContainedSecret": "Naziv je sadržavao nešto nalik na tajnu — prikazano je maskirano. Uredite server da popravite.",
       "unknownError": "Nepoznata pogreška",
       "discoveredTools": "Otkriveno {count} alat{count, plural, one {} few {a} other {a}}",
@@ -316,14 +687,14 @@
       "show": "Prikaži",
       "deleteServer": "Obriši server",
       "defaultBadge": "Zadano",
-      "builtinHint": "Predefinirani konektor — možete ga isključiti, ali konfiguraciju održava administrator."
+      "builtinHint": "Predefinirani kontekst — možete ga isključiti, ali konfiguraciju održava administrator."
     },
     "confirm": {
-      "removeTitle": "Ukloni konektor",
+      "removeTitle": "Ukloni kontekst",
       "removeMessage": "Jeste li sigurni da želite ukloniti \"{name}\"? Ovo također briše sve spremljene tokene za prijavu.",
       "removeConfirm": "Ukloni",
       "resetOauthTitle": "Resetiraj OAuth i prijavi se ponovo",
-      "resetOauthMessage": "Ovo briše spremljene tokene i ponovo registrira Max s \"{name}\" od nule. Koristite kada je konektor zapeo na \"Client Not Registered\" ili odbija osvježavanje. Bit ćete upitani za ponovnu prijavu.",
+      "resetOauthMessage": "Ovo briše spremljene tokene i ponovo registrira Eulex Desk s \"{name}\" od nule. Koristite kada je kontekst zapeo na \"Client Not Registered\" ili odbija osvježavanje. Bit ćete upitani za ponovnu prijavu.",
       "resetOauthConfirm": "Resetiraj i prijavi se",
       "resetOauth": "Resetiraj OAuth",
       "resetOauthTryAgain": "Resetiraj OAuth i pokušaj ponovo"
@@ -346,24 +717,97 @@
     "greeting": "Pozdrav, {username}",
     "disclaimer": "AI može pogriješiti. Odgovori ne predstavljaju pravni savjet.",
     "placeholder": "Postavite pitanje...",
+    "pastedText": "Zalijepljeni tekst",
+    "loadingPlaceholder": "Učitavanje povijesti razgovora i konteksta…",
     "projects": "Predmeti",
+    "projectsTooltip": "Otvorite predmete i njihove dokumente.",
     "workflows": "Radni tijekovi",
+    "workflowsTooltip": "Pokrenite spremljeni radni tijek — predložak upita ili analize.",
     "addDocuments": "Dodaj dokumente",
     "openProjects": "Otvori predmete",
     "openWorkflows": "Otvori radne tijekove",
+    "piiPreview": {
+      "loading": "Provjera PII podataka…",
+      "errorTitle": "PII pregled nije uspio",
+      "errorStrict": "Dokument nije priložen (strogi način rada). Pokušajte ponovno ili promijenite način rada u postavkama privatnosti.",
+      "errorOpen": "Dokument je priložen bez PII pregleda. Provjerite vezu i pokušajte ponovno za potpunu zaštitu.",
+      "messageLabel": "Vaša poruka",
+      "errorStrictTyped": "Poruka NIJE poslana (strogi način). Nacrt je ostao u polju za unos — pokušaj ponovno."
+    },
+    "editCard": {
+      "accept": "Prihvati",
+      "accepted": "Prihvaćeno",
+      "reject": "Odbij",
+      "rejected": "Odbijeno",
+      "view": "Prikaži",
+      "viewDisabledTitle": "Ova promjena je razriješena i više nije u dokumentu.",
+      "acceptSaveError": "Spremanje prihvaćanja nije uspjelo — promjena je vraćena.",
+      "rejectSaveError": "Spremanje odbijanja nije uspjelo — promjena je vraćena."
+    },
     "modelToggle": {
       "trigger": "Model: {model}",
       "triggerAria": "Odaberi model i razinu razmišljanja. Trenutno {model}.",
       "apiKeyMissingTitle": "Nedostaje API ključ za odabrani model",
       "effort": {
         "label": "Razina razmišljanja",
+        "off": "Nema",
         "low": "Niska",
         "medium": "Srednja",
         "high": "Visoka",
+        "offTitle": "Bez razmišljanja — model odgovara izravno.",
         "lowTitle": "Brže i jeftinije. Minimalno razmišljanje prije odgovora.",
         "mediumTitle": "Uravnoteženo. Umjerena količina razmišljanja prije odgovora.",
         "highTitle": "Najdublje razmišljanje. Sporije i skuplje, najbolje za teške zadatke."
       }
+    },
+    "enrichment": {
+      "button": "Poboljšaj",
+      "buttonAria": "Poboljšaj pitanje",
+      "tooltip": "Pretvara kratko pitanje u precizniji upit s relevantnim kontekstom.",
+      "selectVariant": "Odaberite jedno od poboljšanih pitanja:",
+      "loading": "Poboljšavam pitanje…",
+      "error": "Poboljšanje nije uspjelo. Pokušajte ponovo.",
+      "generating": "generiranje…",
+      "generatingVariants": "Generiranje varijanti…",
+      "lens": {
+        "normative": "Normativno",
+        "compliance": "Usklađenost",
+        "systemic": "Sustavno"
+      },
+      "hint": {
+        "navigate": "navigacija",
+        "select": "odabir",
+        "shortcuts": "prečaci",
+        "close": "zatvori"
+      },
+      "closeAria": "Zatvori"
+    },
+    "webSearch": {
+      "label": "Web",
+      "tooltipOn": "Pretraga weba je uključena — Eulex Desk može provjeriti službene izvore, web i vijesti. Kliknite za isključivanje.",
+      "tooltipOff": "Pretraga weba je isključena — Eulex Desk odgovara bez pretraživanja interneta. Kliknite za uključivanje."
+    },
+    "errors": {
+      "generic": "Nažalost, došlo je do pogreške. Pokušajte ponovno.",
+      "network": "Poslužitelj trenutačno nije dostupan. Provjerite internetsku vezu i pokušajte ponovno.",
+      "sessionExpired": "Vaša je prijava istekla. Prijavite se ponovno.",
+      "projectNotFound": "Projekt više ne postoji ili više nemate pristup.",
+      "streamError": "Odgovor je prekinut zbog pogreške na poslužitelju. Pokušajte ponovno.",
+      "piiUnavailable": "Poruka nije poslana: zaštita osobnih podataka trenutačno nije dostupna, a vaš način privatnosti ne dopušta slanje nezaštićenog teksta. Pokušajte ponovno za koji trenutak.",
+      "cancelled": "Prekinuli ste odgovor"
+    },
+    "greetingAnonymous": "Pozdrav",
+    "dismiss": "Odbaci",
+    "piiBadge": {
+      "restoredTooltip": "PII štit: izvorne vrijednosti vraćene su samo na vašem uređaju.",
+      "restoringTooltip": "PII štit: vraćanje izvornih vrijednosti…",
+      "failedTooltip": "PII štit: prikazane su zamjenske oznake (vraćanje izvornika nije uspjelo).",
+      "decrypting": "Dešifriranje PII-ja…",
+      "restored": "PII vraćen lokalno",
+      "placeholders": "PII zamjenske oznake"
+    },
+    "sidePanel": {
+      "closePanel": "Zatvori panel"
     }
   },
   "projects": {
@@ -379,12 +823,12 @@
       "cm": "CM",
       "files": "Dokumenti",
       "chats": "Razgovori",
-      "tabularReviews": "Tablični pregledi",
+      "tabularReviews": "Analize",
       "created": "Datum izrade"
     },
     "empty": {
       "title": "Predmeti",
-      "description": "Prenesite dokumente u predmete te započnite razgovore i tablične preglede s njima.",
+      "description": "Prenesite dokumente u predmete te započnite razgovore i analize s njima.",
       "createNew": "+ Novi predmet",
       "noProjects": "Nema {tab} predmeta"
     },
@@ -400,8 +844,9 @@
     },
     "apiKeyRequired": {
       "title": "Potreban API ključ",
-      "message": "Još niste dodali {provider} API ključ. Dodajte ga u postavkama računa za korištenje ovog modela.",
-      "goToSettings": "Idi na postavke računa"
+      "message": "Još niste dodali API ključ za: {provider}. Dodajte ga u postavkama računa za korištenje ovog modela.",
+      "goToSettings": "Idi na postavke računa",
+      "genericProvider": "ovaj pružatelj usluge"
     }
   },
   "practices": {
@@ -445,6 +890,13 @@
     "en": "English",
     "hr": "Hrvatski"
   },
+  "theme": {
+    "label": "Tema",
+    "paper": "EULEX svijetla",
+    "dark": "EULEX tamna",
+    "mike": "Klasična svijetla",
+    "mikeDark": "Klasična tamna"
+  },
   "ownerOnly": {
     "defaultTitle": "Radnja ograničena na vlasnika",
     "defaultMessage": "Samo vlasnik predmeta može izvršiti ovu radnju.",
@@ -463,7 +915,20 @@
   "chatItem": {
     "untitledChat": "Razgovor bez naslova",
     "renameThisChat": "preimenovati ovaj razgovor",
-    "deleteThisChat": "obrisati ovaj razgovor"
+    "deleteThisChat": "obrisati ovaj razgovor",
+    "pin": "Prikvači",
+    "unpin": "Otkvači",
+    "moveToGroup": "Premjesti u grupu",
+    "removeFromGroup": "Ukloni iz grupe",
+    "newGroup": "Nova grupa…",
+    "newGroupTitle": "Nova grupa",
+    "groupNamePlaceholder": "Naziv grupe",
+    "archive": "Arhiviraj",
+    "restore": "Vrati",
+    "pinThisChat": "prikvačiti ovaj razgovor",
+    "restoreThisChat": "vratiti ovaj razgovor iz arhive",
+    "moveThisChat": "premjestiti ovaj razgovor u grupu",
+    "archiveThisChat": "arhivirati ovaj razgovor"
   },
   "rowActions": {
     "rename": "Preimenuj",
@@ -474,6 +939,12 @@
     "removeFromSubfolder": "Ukloni iz podmape",
     "unhide": "Prikaži",
     "hide": "Sakrij"
+  },
+  "emailPillInput": {
+    "placeholder": "Dodaj putem e-pošte…",
+    "invalidEmail": "Unesite valjanu e-mail adresu.",
+    "verifyFailed": "Provjera e-mail adrese nije uspjela. Pokušajte ponovno.",
+    "checking": "Provjera…"
   },
   "people": {
     "addByEmail": "Dodaj putem e-pošte…",
@@ -518,6 +989,14 @@
     "openInChat": "Otvori u chatu",
     "continueConversation": "Nastavi razgovor",
     "continueExplainer": "Nastavite razgovor zajedno — bit ćeš dodan/a kao suradnik/ca.",
+    "previewSignIn": "Prijavi se",
+    "previewBanner": "{name} je s tobom podijelio/la ovaj razgovor. Ovdje je samo početak — prijavi se s pozvanom e-mail adresom da vidiš cijeli odgovor i nastaviš razgovor.",
+    "previewQuestionLabel": "Pitanje",
+    "previewAnswerLabel": "Odgovor",
+    "previewLockTitle": "Prijavi se za ostatak",
+    "previewLockBody": "Ovo je tek početak odgovora. Prijavi se s e-mail adresom na koju je razgovor poslan da pročitaš cijeli razgovor i nastaviš ga.",
+    "previewMismatchBanner": "Prijavljen/a si s drugim računom. Da vidiš cijeli razgovor, prijavi se s {email}.",
+    "previewSwitchCta": "Prijavi se s {email}",
     "emptyChat": "Ovaj razgovor je prazan.",
     "errorEmailMismatchTitle": "Ovaj poziv je vezan za drugu e-mail adresu",
     "errorEmailMismatchBody": "Prijavi se s e-mail adresom na koju je poziv poslan.",
@@ -528,22 +1007,67 @@
     "errorNotFoundBody": "Poveznica je možda krivo upisana ili je dijeljenje izbrisano."
   },
   "documents": {
+    "editor": {
+      "bold": "Podebljano (Ctrl+B)",
+      "italic": "Kurziv (Ctrl+I)",
+      "underline": "Podcrtano (Ctrl+U)",
+      "strike": "Precrtano",
+      "heading1": "Naslov 1",
+      "heading2": "Naslov 2",
+      "heading3": "Naslov 3",
+      "paragraph": "Normalan tekst",
+      "bulletList": "Lista s točkama",
+      "orderedList": "Numerirana lista",
+      "undo": "Poništi (Ctrl+Z)",
+      "redo": "Vrati (Ctrl+Shift+Z)",
+      "editorNotReady": "Pričekajte da se dokument učita"
+    },
     "searchPlaceholder": "Pretraži…",
     "noMatches": "Nema pronađenih rezultata",
     "noDocuments": "Još nema dokumenata",
+    "noProjectDocuments": "U ovom predmetu još nema dokumenata",
+    "alreadyAdded": "Već dodano",
     "uploading": "Učitavanje…",
     "upload": "Učitaj",
     "uploadFiles": "Učitaj datoteke",
     "browseAll": "Pregledaj sve",
     "addDocuments": "Dodaj dokumente",
+    "addDocumentsTooltip": "Priložite dokumente iz računala, predmeta ili integracija.",
     "documentLabel": "Dokument",
     "documentsLabel": "Dokumenti",
     "selected": "{count} odabrano",
+    "selectAll": "Odaberi sve",
+    "deselectAll": "Poništi odabir",
+    "deleteSelected": "Obriši",
+    "emptyFolder": "Prazno",
     "confirm": "Potvrdi",
     "ownerOnlyDelete": "obrisati ove dokumente — samo autor dokumenta može obrisati dokument",
     "ownerOnlyDeletePartial": "obrisati {count} od odabranih dokumenata — samo autor dokumenta može obrisati dokument",
-    "connectProvider": "Poveži {name}…",
-    "browseProvider": "Iz {name}…"
+    "connectProvider": "Poveži {name}",
+    "browseProvider": "Iz {name}",
+    "connectorsButton": "Kontekst",
+    "noConnectorsConfigured": "Nema konfiguriranog konteksta",
+    "picker": {
+      "title": "Iz {name}",
+      "searchPlaceholder": "Pretraži datoteke…",
+      "loading": "Učitavanje…",
+      "empty": "Nema pronađenih datoteka",
+      "emptyRoot": "Mapa je prazna",
+      "loadMore": "Učitaj više",
+      "importing": "Uvozim…"
+    },
+    "importing": {
+      "title": "Uvoz iz {name}",
+      "progress": "Uvezeno {done} od {total}",
+      "done": "Uvoz iz {name} završen",
+      "failed": "Uvoz iz {name} nije uspio",
+      "summaryDone": "{count, plural, one {Uvezena 1 datoteka} few {Uvezene {count} datoteke} other {Uvezeno {count} datoteka}}",
+      "summaryMixed": "{done} uspješno, {failed} neuspjelo"
+    },
+    "processing": "Obrada…",
+    "uploadFailed": "Učitavanje nije uspjelo",
+    "removeDocument": "Ukloni dokument",
+    "clearSearch": "Očisti pretraživanje"
   },
   "uploadVersion": {
     "title": "Učitaj novu verziju",
@@ -566,14 +1090,35 @@
     "chatBodyNamed": "Jeste li sigurni da želite obrisati razgovor \"{title}\"? Sve poruke i prilozi bit će trajno uklonjeni i radnja se ne može poništiti.",
     "chatsTitle": "Obriši razgovore",
     "chatsBody": "Jeste li sigurni da želite obrisati {count} {count, plural, one {razgovor} few {razgovora} other {razgovora}}? Radnja se ne može poništiti.",
-    "reviewTitle": "Obriši pregled",
-    "reviewBody": "Jeste li sigurni da želite obrisati ovaj tabularni pregled? Radnja se ne može poništiti.",
-    "reviewBodyNamed": "Jeste li sigurni da želite obrisati pregled \"{title}\"? Radnja se ne može poništiti.",
-    "reviewsTitle": "Obriši preglede",
-    "reviewsBody": "Jeste li sigurni da želite obrisati {count} {count, plural, one {pregled} few {pregleda} other {pregleda}}? Radnja se ne može poništiti.",
+    "reviewTitle": "Obriši analizu",
+    "reviewBody": "Jeste li sigurni da želite obrisati ovu analizu? Radnja se ne može poništiti.",
+    "reviewBodyNamed": "Jeste li sigurni da želite obrisati analizu \"{title}\"? Radnja se ne može poništiti.",
+    "reviewsTitle": "Obriši analize",
+    "reviewsBody": "Jeste li sigurni da želite obrisati {count} {count, plural, one {analizu} few {analize} other {analiza}}? Radnja se ne može poništiti.",
     "disconnectAction": "Odspoji",
-    "connectorTitle": "Odspoji konektor",
-    "connectorBody": "Jeste li sigurni da želite odspojiti {name}? Max više neće moći pristupati datotekama na tom računu dok se ponovno ne povežete. Već uvezene datoteke ostaju u Maxu."
+    "connectorTitle": "Odspoji kontekst",
+    "connectorBody": "Jeste li sigurni da želite odspojiti {name}? Eulex Desk više neće moći pristupati datotekama na tom računu dok se ponovno ne povežete. Već uvezene datoteke ostaju u Eulex Desku.",
+    "projectTitle": "Obriši predmet",
+    "projectBodyNamed": "Jeste li sigurni da želite obrisati predmet \"{title}\"? Svi dokumenti, razgovori i analize u predmetu bit će trajno uklonjeni i radnja se ne može poništiti.",
+    "projectsTitle": "Obriši predmete",
+    "projectsBody": "Jeste li sigurni da želite obrisati {count} {count, plural, one {predmet} few {predmeta} other {predmeta}}? Svi dokumenti, razgovori i analize u njima bit će trajno uklonjeni i radnja se ne može poništiti.",
+    "archiveAction": "Arhiviraj",
+    "groupArchiveTitle": "Arhiviraj grupu",
+    "groupArchiveBody": "Arhiviranjem grupe \"{name}\" arhivirat će se i svi razgovori u njoj. Možete ih vratiti iz prikaza arhiviranih razgovora.",
+    "groupDeleteTitle": "Obriši grupu",
+    "groupDeleteBody": "Brisanjem grupe \"{name}\" obrisat će se i svi razgovori u njoj. Radnja se ne može poništiti.",
+    "documentTitle": "Obriši dokument",
+    "documentBodyNamed": "Jeste li sigurni da želite obrisati dokument \"{title}\"? Sve verzije bit će trajno uklonjene i radnja se ne može poništiti.",
+    "documentsTitle": "Obriši dokumente",
+    "documentsBody": "Jeste li sigurni da želite obrisati {count} dokumenata? Sve verzije bit će trajno uklonjene i radnja se ne može poništiti.",
+    "folderTitle": "Obriši mapu",
+    "folderBodyNamed": "Jeste li sigurni da želite obrisati mapu \"{title}\"? Sve podmape bit će uklonjene, a dokumenti premješteni u korijen predmeta.",
+    "workflowTitle": "Obriši radni tijek",
+    "workflowBodyNamed": "Jeste li sigurni da želite obrisati radni tijek \"{title}\"? Radnja se ne može poništiti.",
+    "workflowsTitle": "Obriši radne tijekove",
+    "workflowsBody": "Jeste li sigurni da želite obrisati {count} radnih tijekova? Radnja se ne može poništiti.",
+    "contextTitle": "Obriši kontekst",
+    "contextBodyNamed": "Jeste li sigurni da želite obrisati kontekst \"{title}\"? Svi izvori i dijeljenja bit će trajno uklonjeni i radnja se ne može poništiti."
   },
   "newWorkflow": {
     "breadcrumbRoot": "Radni tijekovi",
@@ -582,7 +1127,7 @@
     "workflowNamePlaceholder": "Naziv radnog tijeka",
     "typeLabel": "Vrsta",
     "assistant": "Asistent",
-    "tabular": "Tablični",
+    "tabular": "Analiza",
     "practiceArea": "Pravno područje",
     "enterPracticeArea": "Unesite pravno područje…",
     "failedCreate": "Izrada radnog tijeka nije uspjela",
@@ -602,13 +1147,14 @@
     "canEdit": "Može uređivati",
     "readOnly": "Samo čitanje",
     "sharing": "Dijeljenje…",
-    "share": "Podijeli"
+    "share": "Podijeli",
+    "isTheOwner": "{email} je već vlasnik."
   },
   "displayWorkflow": {
     "breadcrumbRoot": "Radni tijekovi",
     "selectWorkflow": "Odaberi radni tijek",
     "newChat": "Novi razgovor",
-    "newReview": "Novi pregled",
+    "newReview": "Nova analiza",
     "searchPlaceholder": "Pretraži…",
     "workflowPrompt": "Prompt radnog tijeka",
     "noPromptDefined": "_Prompt nije definiran._",
@@ -633,10 +1179,13 @@
     "starting": "Pokretanje…",
     "startChat": "Započni razgovor",
     "creating": "Izrada…",
-    "createReview": "Izradi pregled"
+    "createReview": "Izradi analizu",
+    "runWorkflowMessage": "Pokreni radni tijek",
+    "additionalInstructionsLabel": "Dodatne upute",
+    "applyError": "Primjena radnog tijeka nije uspjela. Pokušajte ponovno."
   },
   "addColumn": {
-    "tabularReview": "Tablični pregled",
+    "tabularReview": "Analiza",
     "newColumn": "Novi stupac",
     "editColumn": "Uredi stupac",
     "columnName": "Naziv stupca",
@@ -648,19 +1197,36 @@
     "pressEnterToAddTag": "Pritisnite Enter ili zarez za dodavanje oznake.",
     "prompt": "Prompt",
     "autoGeneratePrompt": "Automatski generiraj prompt",
-    "promptPlaceholder": "Napišite prompt za analizu — opišite što Max treba izdvojiti iz svakog dokumenta za ovaj stupac…",
+    "promptPlaceholder": "Napišite prompt za analizu — opišite što Eulex Desk treba izdvojiti iz svakog dokumenta za ovaj stupac…",
     "addAnotherColumn": "Dodaj još jedan stupac",
     "delete": "Obriši",
+    "deleteConfirmTitle": "Brisanje stupca",
+    "deleteConfirmBody": "Obrisati stupac „{name}”? Ova se radnja ne može poništiti.",
     "cancel": "Odustani",
     "saving": "Spremanje…",
     "saveChanges": "Spremi promjene",
     "addColumns": "Dodaj stupce"
   },
+  "newProject": {
+    "breadcrumbProjects": "Predmeti",
+    "breadcrumbNew": "Novi predmet",
+    "namePlaceholder": "Naziv predmeta",
+    "cmPlaceholder": "Dodaj CM broj…",
+    "members": "Članovi",
+    "membersPlaceholder": "Dodaj kolege e-mailom…",
+    "selectDocuments": "Odaberi dokumente",
+    "noExistingDocuments": "Nema postojećih dokumenata",
+    "uploadFiles": "Učitaj datoteke",
+    "cancel": "Odustani",
+    "create": "Izradi predmet",
+    "creating": "Stvaranje…",
+    "failedToCreate": "Stvaranje predmeta nije uspjelo"
+  },
   "addNewTR": {
     "projects": "Predmeti",
-    "tabularReviews": "Tablični pregledi",
-    "newReview": "Novi pregled",
-    "reviewName": "Naziv pregleda",
+    "tabularReviews": "Analize",
+    "newReview": "Nova analiza",
+    "reviewName": "Naziv analize",
     "workflowTemplate": "Predložak radnog tijeka",
     "loadingTemplates": "Učitavanje predložaka…",
     "noTemplate": "Bez predloška — počni ispočetka",
@@ -678,29 +1244,33 @@
     "create": "Izradi"
   },
   "mcpToggle": {
-    "loadingConnectors": "Učitavanje konektora",
-    "connectorStatus": "{enabled} od {total} konektora omogućeno",
-    "connectors": "Konektori",
+    "tooltip": "Zakonodavstvo i konektori — uključite ili isključite izvore za ovaj razgovor.",
+    "loadingConnectors": "Učitavanje konteksta",
+    "connectorStatus": "{enabled} od {total} konteksta omogućeno",
+    "connectors": "Kontekst",
+    "legislation": "Zakonodavstva",
     "builtinConnectors": "Ugrađeni",
     "alwaysOn": "Uvijek uključeno",
     "defaultBadge": "Zadano",
-    "manageConnectors": "Upravljaj konektorima",
-    "untitled": "Bez naziva"
+    "manageConnectors": "Upravljaj kontekstom",
+    "untitled": "Bez naziva",
+    "manageContextAria": "Upravljaj kontekstom za ovaj razgovor",
+    "errorAria": "Greška: {error}"
   },
   "projectPage": {
     "untitledChat": "Razgovor bez naslova",
-    "untitledReview": "Pregled bez naslova",
+    "untitledReview": "Analiza bez naslova",
     "assistant": "Asistent",
     "projectAssistantHeading": "Asistent predmeta",
-    "tabularReviews": "Tablični pregledi",
-    "tabularReview": "Tablični pregled",
+    "tabularReviews": "Analize",
+    "tabularReview": "Analiza",
     "projects": "Predmeti",
     "documents": "Dokumenti",
     "chats": "Razgovori",
     "chat": "Razgovor",
     "columns": "Stupci",
-    "renameReview": "preimenovati ovaj tablični pregled",
-    "deleteReview": "obrisati ovaj tablični pregled",
+    "renameReview": "preimenovati ovu analizu",
+    "deleteReview": "obrisati ovu analizu",
     "addSubfolder": "Dodaj podmapu",
     "addDocuments": "Dodaj dokumente",
     "name": "Naziv",
@@ -713,6 +1283,7 @@
     "newSubfolderInside": "Nova podmapa unutar",
     "renameFolder": "Preimenuj mapu",
     "deleteFolder": "Obriši mapu",
+    "deleteFolderAction": "obrisati ovu mapu",
     "folderName": "Naziv mape",
     "searchPlaceholder": "Pretraži…",
     "peopleWithAccess": "Osobe s pristupom",
@@ -721,25 +1292,73 @@
     "projectNotFound": "Predmet nije pronađen",
     "createNew": "+ Novi",
     "tabularEmptyDescription": "Izdvojite podatke iz dokumenata predmeta u tablice pomoću umjetne inteligencije.",
-    "tabularEmptyCreateNew": "+ Novi pregled",
+    "tabularEmptyCreateNew": "+ Nova analiza",
     "assistantEmptyDescription": "Postavi pitanja i dobij odgovore utemeljene na dokumentima ovog predmeta.",
     "assistantEmptyCreateNew": "+ Novi razgovor",
     "downloadLimitTitle": "Granica preuzimanja",
     "downloadLimitBody": "U jednoj ZIP arhivi odjednom možeš preuzeti najviše {max} dokumenata. Smanji odabir ili preuzmi u više koraka.",
     "downloadFailedTitle": "Preuzimanje nije uspjelo",
-    "downloadFailedBody": "Dokumenti se nisu mogli preuzeti. Pokušaj ponovo za trenutak."
+    "downloadFailedBody": "Dokumenti se nisu mogli preuzeti. Pokušaj ponovo za trenutak.",
+    "loadingProject": "Učitavanje predmeta…",
+    "openingChat": "Otvaranje razgovora…",
+    "newChatTitle": "Novi razgovor",
+    "deleteChatTitle": "Obriši razgovor",
+    "uploadDocumentsTitle": "Prenesi dokumente",
+    "collapseExplorer": "Sažmi explorer",
+    "expandExplorer": "Proširi explorer",
+    "docViewerEmptyTitle": "Kliknite na dokument za prikaz.",
+    "docViewerEmptyHint": "Savjet: povucite dokument iz Projektnog explorera u Asistenta da ga uputite na čitanje ili uređivanje.",
+    "deleteFile": "Obriši datoteku",
+    "noDocumentsInProject": "Nema dokumenata u ovom predmetu.",
+    "loadingVersions": "Učitavanje verzija…",
+    "noVersionHistory": "Nema povijesti verzija.",
+    "versionOriginal": "Izvornik",
+    "renameVersion": "Preimenuj verziju",
+    "downloadVersion": "Preuzmi ovu verziju",
+    "creatingChat": "Stvaranje novog razgovora…",
+    "people": "Osobe",
+    "deleteDocument": "obrisati ovaj dokument",
+    "renameProject": "preimenovati ovaj predmet",
+    "renameChat": "preimenovati ovaj razgovor",
+    "deleteChat": "obrisati ovaj razgovor",
+    "ownerOnlyDeleteChatsPartial": "obrisati {count} od odabranih razgovora — samo autor razgovora može obrisati razgovor",
+    "docViewerTabPlaceholder": "Pregled dokumenta",
+    "explorerHeading": "Pregled datoteka",
+    "noSearchResults": "Nema rezultata za tu pretragu."
   },
   "tabularReview": {
-    "untitledReview": "Pregled bez naslova",
-    "tabularReviews": "Tablični pregledi",
-    "tabularReview": "Tablični pregled",
-    "assistantInReview": "Asistent za tablični pregled",
+    "untitledReview": "Analiza bez naslova",
+    "tabularReviews": "Analize",
+    "tabularReview": "Analiza",
+    "assistantInReview": "Asistent u analizi",
     "searchDocuments": "Pretraži dokumente…",
     "peopleWithAccess": "Osobe s pristupom",
     "exportToExcel": "Izvezi u Excel",
     "export": "Izvezi",
     "running": "Pokrenuto…",
     "run": "Pokreni",
+    "runProgressTitle": "Generiranje rezultata",
+    "runProgressSubtitle": "Asistent popunjava stupce za sve dokumente.",
+    "runProgressProcessing": "Obrada u tijeku…",
+    "runProgressCurrent": "Trenutno se obrađuje",
+    "runProgressOverall": "{done} od {total} stavki dovršeno",
+    "runProgressDone": "{count} dovršeno",
+    "runProgressInProgress": "{count} u tijeku",
+    "runProgressFailed": "{count} neuspjeh",
+    "runProgressCompleted": "Generiranje je dovršeno",
+    "runProgressKeepOpen": "Možete zatvoriti ovaj prozor — generiranje se nastavlja u pozadini.",
+    "runProgressClose": "Zatvori",
+    "runProgressMinimize": "Smanji",
+    "runProgressRestore": "Otvori prikaz napretka",
+    "runProgressDoc": "Dokument",
+    "runProgressColumn": "Stupac",
+    "reasoningThinking": "Razmišljam…",
+    "reasoningPondering": "Promišljam…",
+    "reasoningAnalyzing": "Analiziram…",
+    "reasoningReasoning": "Zaključujem…",
+    "reasoningThoughtProcess": "Tijek razmišljanja",
+    "reasoningReading": "Čitam",
+    "reasoningRead": "Pročitano",
     "actions": "Radnje",
     "clearResults": "Očisti rezultate",
     "delete": "Obriši",
@@ -748,7 +1367,7 @@
     "people": "Osobe",
     "projects": "Predmeti",
     "chatAssistantTitle": "Asistent",
-    "chatAskAboutReview": "Postavite pitanje o ovom tabličnom pregledu.",
+    "chatAskAboutReview": "Postavite pitanje o ovoj analizi.",
     "chatInputPlaceholder": "Postavite pitanje o svojim dokumentima...",
     "chatHistoryTitle": "Povijest razgovora",
     "chatNewTitle": "Novi razgovor",
@@ -765,13 +1384,24 @@
     "flagDisplayGreen": "Zelena",
     "flagDisplayGrey": "Siva",
     "flagDisplayYellow": "Žuta",
-    "flagDisplayRed": "Crvena"
+    "flagDisplayRed": "Crvena",
+    "emptyHint": "Dodajte stupce i dokumente za početak.",
+    "citationTooltip": "Stranica {page}: \"{quote}\"",
+    "quoteUnverified": "Citat nije pronađen u dokumentu",
+    "regenerate": "Ponovno generiraj",
+    "runProgressErrorTitle": "Pokretanje nije uspjelo",
+    "runErrorInProgress": "Analiza je već u tijeku. Pričekajte da završi pa pokušajte ponovno.",
+    "runErrorRateLimited": "Dosegnuli ste dnevnu kvotu. Pokušajte kasnije ili nadogradite plan.",
+    "runErrorGeneric": "Pokretanje analize nije uspjelo. Pokušajte ponovno.",
+    "exportSheetName": "Analiza",
+    "exportDocumentHeader": "Dokument",
+    "exportErrorCell": "Greška"
   },
   "tabularReviewsPage": {
-    "title": "Tablični pregledi",
-    "searchPlaceholder": "Pretraži preglede…",
+    "title": "Strukturirane analize dokumenata",
+    "searchPlaceholder": "Pretraži analize…",
     "tabs": {
-      "all": "Svi pregledi",
+      "all": "Sve analize",
       "inProject": "U predmetu",
       "standalone": "Samostalni"
     },
@@ -785,14 +1415,98 @@
       "created": "Datum izrade"
     },
     "empty": {
-      "title": "Tablični pregledi",
+      "title": "Strukturirane analize dokumenata",
       "description": "Izdvojite podatke iz dokumenata u tablice pomoću umjetne inteligencije.",
-      "createNew": "+ Novi pregled",
-      "noReviews": "Nema pronađenih pregleda"
+      "createNew": "+ Nova analiza",
+      "noReviews": "Nema pronađenih analiza"
     },
-    "ownerOnlyRename": "preimenovati ovaj tablični pregled",
-    "ownerOnlyDelete": "obrisati ovaj tablični pregled",
-    "ownerOnlyDeletePartial": "obrisati {count} od odabranih pregleda — samo autor pregleda može obrisati pregled"
+    "ownerOnlyRename": "preimenovati ovu analizu",
+    "ownerOnlyRemoveDocs": "ukloniti dokumente iz ove analize",
+    "ownerOnlyDelete": "obrisati ovu analizu",
+    "ownerOnlyDeletePartial": "obrisati {count} od odabranih analiza — samo autor analize može obrisati analizu"
+  },
+  "contextsPage": {
+    "title": "Konteksti",
+    "new": "Novi kontekst",
+    "empty": "Još nema konteksta",
+    "emptyDesc": "Izradite ponovno upotrebljiv skup izvora i uputa koje asistent primjenjuje dok je kontekst aktivan.",
+    "sourcesTab": "Izvori",
+    "instructionsTab": "Upute",
+    "sharingTab": "Dijeljenje",
+    "alertsToggle": "Obavijesti me kad se izvor promijeni",
+    "alertsTab": "Obavijesti",
+    "alertsEmpty": "Još nema promjena praćenih izvora. Uključite „Obavijesti me kad se izvor promijeni“ i označite izvore koje pratite.",
+    "alertChange_new_consolidated": "Nova pročišćena verzija",
+    "alertChange_amendment": "Izmjena",
+    "alertChange_effective_date": "Stupanje na snagu",
+    "alertChange_repeal": "Stavljeno izvan snage",
+    "openContext": "Otvori",
+    "deactivate": "Deaktiviraj",
+    "recentAlerts": "{count} {count, plural, one {nedavna promjena izvora} few {nedavne promjene izvora} other {nedavnih promjena izvora}}",
+    "toggleAria": "Aktiviraj ili deaktiviraj kontekst",
+    "deleteAria": "Obriši kontekst",
+    "composerAria": "Upravljanje aktivnim kontekstima",
+    "composerTooltip": "Aktivirajte spremljene kontekste koji se dodaju ovom razgovoru.",
+    "toggleFailed": "Promjena aktivacije nije uspjela. Pokušajte ponovno."
+  },
+  "newContext": {
+    "breadcrumbRoot": "Konteksti",
+    "newContext": "Novi kontekst",
+    "editContext": "Uredi kontekst",
+    "namePlaceholder": "Naziv konteksta",
+    "descriptionPlaceholder": "Čemu služi ovaj kontekst?",
+    "createContext": "Izradi kontekst",
+    "creating": "Izrada…",
+    "saving": "Spremanje…",
+    "saveChanges": "Spremi promjene",
+    "failedCreate": "Izrada konteksta nije uspjela",
+    "failedUpdate": "Ažuriranje konteksta nije uspjelo",
+    "failedLoad": "Učitavanje konteksta nije uspjelo",
+    "failedShare": "Dijeljenje nije uspjelo",
+    "invalidInput": "Upute premašuju dopušteni opseg ili podaci nisu valjani",
+    "addSource": "Dodaj izvor",
+    "refPlaceholder": "CELEX oznaka ili URL",
+    "kindInstrument": "Propis",
+    "kindArticle": "Članak",
+    "kindCaselaw": "Sudska praksa",
+    "kindWeb": "Poveznica",
+    "noSources": "Još nema izvora",
+    "pin": "Prikvači (uvijek vidljivo)",
+    "retrievalNote": "Kako koristiti ovaj izvor",
+    "trackAlerts": "Prati promjene",
+    "alertsUnavailable": "Obavijesti još nisu dostupne za ovaj izvor",
+    "removeSource": "Ukloni izvor",
+    "sharePlaceholder": "E-pošta kolege",
+    "allowEdit": "Može uređivati",
+    "share": "Podijeli",
+    "noShares": "Nitko još nema pristup",
+    "removeShare": "Ukloni pristup",
+    "outOfActiveLimit": "Istodobno možete aktivirati najviše 5 konteksta"
+  },
+  "attachContexts": {
+    "title": "Konteksti",
+    "aria": "Priloži kontekste",
+    "descriptionWorkflow": "Priloženi konteksti primjenjuju se automatski pri svakom pokretanju.",
+    "descriptionProject": "Priloženi konteksti primjenjuju se u razgovorima ovoga projekta.",
+    "accessHint": "Kontekst vrijedi samo za osobe koje mu imaju pristup.",
+    "noEditHint": "Za prilaganje je potrebno pravo uređivanja konteksta.",
+    "failed": "Promjena nije uspjela. Pokušajte ponovno."
+  },
+  "saveAsContext": {
+    "affordance": "Spremi kao kontekst",
+    "breadcrumbRoot": "Konteksti",
+    "title": "Spremi kao kontekst",
+    "namePlaceholder": "Naziv konteksta",
+    "seededSources": "Izvori iz razgovora ({count})",
+    "draftExplainer": "Eulex Desk će iz razgovora sastaviti nacrt uputa. Nacrt ćete moći urediti prije spremanja.",
+    "reviewExplainer": "Kontekst „{name}” je izrađen. Pregledajte i uredite nacrt uputa, a zatim spremite.",
+    "createDraft": "Izradi nacrt",
+    "drafting": "Izrada nacrta…",
+    "saveContext": "Spremi kontekst",
+    "saving": "Spremanje…",
+    "failedCreate": "Izrada konteksta nije uspjela",
+    "failedSave": "Spremanje uputa nije uspjelo",
+    "invalidInput": "Upute premašuju dopušteni opseg ili podaci nisu valjani"
   },
   "workflowsPage": {
     "title": "Radni tijekovi",
@@ -808,7 +1522,7 @@
     "filterByPractice": "Filtriraj po području",
     "allPractices": "Sva područja",
     "typeAssistant": "Asistent",
-    "typeTabular": "Tablični",
+    "typeTabular": "Analiza",
     "columns": {
       "name": "Naziv",
       "type": "Vrsta",
@@ -817,15 +1531,15 @@
     },
     "empty": {
       "customTitle": "Prilagođeni radni tijekovi",
-      "customDesc": "Izradite višekratne promptove i predloške za tablične preglede prilagođene vašem radu.",
+      "customDesc": "Izradite višekratne promptove i predloške za analize prilagođene vašem radu.",
       "createNew": "+ Novi radni tijek",
       "hiddenTitle": "Skriveni radni tijekovi",
       "hiddenDesc": "Ovdje će se prikazivati ugrađeni radni tijekovi koje ste sakrili. Možete ih ponovno prikazati u bilo kojem trenutku.",
       "allTitle": "Radni tijekovi",
-      "allDesc": "Automatizirajte analizu dokumenata pomoću višekratnih promptova i predložaka za tablične preglede."
+      "allDesc": "Automatizirajte analizu dokumenata pomoću višekratnih promptova i predložaka za analize."
     },
     "source": {
-      "mike": "Max",
+      "mike": "Eulex",
       "myself": "Ja",
       "shared": "Podijeljeno",
       "sharedBy": "{name}"
@@ -835,13 +1549,15 @@
       "aria": "Prenesi radni tijek",
       "errors": {
         "invalidJson": "Datoteka nije ispravan JSON.",
-        "notEnvelope": "Datoteka nije Max radni tijek.",
+        "notEnvelope": "Datoteka nije Eulex Desk radni tijek.",
         "wrongFormat": "Pogrešan format — očekivan 'mike.workflow'.",
         "unsupportedVersion": "Nepodržana verzija datoteke radnog tijeka.",
         "missingTitle": "Datoteka radnog tijeka nema naziv.",
         "badType": "Vrsta mora biti 'assistant' ili 'tabular'.",
         "badColumns": "Polje 'columns_config' mora biti niz.",
-        "generic": "Prijenos radnog tijeka nije uspio."
+        "generic": "Prijenos radnog tijeka nije uspio.",
+        "badPrompt": "Sadržaj radnog tijeka (prompt) nije u ispravnom formatu.",
+        "badPractice": "Područje prakse nije u ispravnom formatu."
       }
     },
     "detail": {
@@ -857,7 +1573,7 @@
       "format": "Format",
       "prompt": "Prompt",
       "columnsEmptyTitle": "Stupci",
-      "columnsEmptyHint": "Dodajte stupce da definirate što ovaj tablični radni tijek izdvaja iz svakog dokumenta.",
+      "columnsEmptyHint": "Dodajte stupce da definirate što ovaj radni tijek izdvaja iz svakog dokumenta.",
       "addColumnCta": "+ Dodaj stupac"
     }
   },
@@ -888,9 +1604,18 @@
     "called": "Pozvano",
     "failed": "Neuspješno",
     "webSearchSearching": "Pretražujem web",
+    "webSearchSearchingOfficial": "Pretražujem službene izvore",
+    "webSearchSearchingNews": "Pretražujem vijesti",
     "webSearchFound": "Web pretraga {count, plural, =0 {— bez rezultata} one {— # izvor} few {— # izvora} other {— # izvora}}",
+    "webSearchFoundOfficial": "Službeni izvori {count, plural, =0 {— bez rezultata} one {— # izvor} few {— # izvora} other {— # izvora}}",
+    "webSearchFoundNews": "Vijesti {count, plural, =0 {— bez rezultata} one {— # izvor} few {— # izvora} other {— # izvora}}",
     "webSearchFailed": "Web pretraga nije uspjela",
-    "webSearchVia": "preko Eulex Web",
+    "webExtractReading": "Čitam link",
+    "webExtractRead": "Pročitana stranica",
+    "webExtractReadPdf": "Pročitan PDF",
+    "webExtractFailed": "Čitanje linka nije uspjelo",
+    "webExtractPreview": "pregled",
+    "webSearchVia": "preko Eulex.ai",
     "hideDetails": "Sakrij detalje",
     "showDetails": "Prikaži detalje",
     "arguments": "Argumenti",
@@ -911,11 +1636,88 @@
     "noMatches": "Nema rezultata.",
     "chat": "Razgovor",
     "running": "Pokrenuto",
-    "tool": "alat"
+    "tool": "alat",
+    "toolLabels": {
+      "hrSearch": "Pretraga zakona",
+      "hrFindPublication": "Pronalazak propisa",
+      "hrGetArticle": "Dohvat članka",
+      "hrGetFullDocument": "Dohvat cijelog propisa",
+      "hrSearchCaselaw": "Pretraga sudske prakse",
+      "hrGetDecision": "Dohvat odluke",
+      "hrGetDecisionCitations": "Citati odluke",
+      "hrGetRelatedDecisions": "Povezane odluke",
+      "euSearch": "Pretraga EU prava",
+      "euGetSection": "Dohvat odredbe",
+      "euGetMetadata": "Podaci o aktu",
+      "euGetStructure": "Struktura akta",
+      "euGetRelated": "Povezani akti",
+      "euFindByDate": "Pretraga po datumu",
+      "euGetTimeline": "Vremenski tijek",
+      "euVerify": "Provjera važenja",
+      "euTransposition": "Prijenos direktive",
+      "euEurostat": "Eurostat statistika",
+      "euListScopes": "Dostupni filteri",
+      "euAbout": "O izvoru",
+      "frSearch": "Pretraga francuskog prava",
+      "frGetArticle": "Dohvat članka",
+      "frGetArticleVersions": "Verzije članka",
+      "frListCodes": "Pregled zakonika"
+    },
+    "bulkAcceptError": "Spremanje jednog ili više prihvaćanja nije uspjelo.",
+    "bulkRejectError": "Spremanje jednog ili više odbijanja nije uspjelo.",
+    "sourceFallback": "izvor",
+    "genericError": "Nažalost, nešto je pošlo po zlu."
+  },
+  "docPanel": {
+    "citation": "Citat",
+    "download": "Preuzmi",
+    "trackedChange": "Praćena promjena",
+    "loadError": "Učitavanje dokumenta nije uspjelo.",
+    "exitDraftMode": "Izađi iz Draft moda",
+    "editSelection": "Uredi odabir (Draft Mode)",
+    "draftBadge": "Draft",
+    "acceptSaveFailed": "Prihvaćanje nije spremljeno — pokušajte ponovno.",
+    "rejectSaveFailed": "Odbijanje nije spremljeno — pokušajte ponovno."
+  },
+  "legalSource": {
+    "sourcesHeading": "Izvori",
+    "citedPassage": "Citirani odlomak",
+    "noText": "Za ovaj izvor nema dostupnog teksta.",
+    "inForce": "Na snazi",
+    "notInForce": "Nije na snazi",
+    "viewOnEurLex": "Otvori na EUR-Lexu",
+    "viewOnNarodneNovine": "Otvori na Narodnim novinama",
+    "viewOnCourtPortal": "Otvori na portalu sudske prakse",
+    "viewOnLegifrance": "Otvori na Légifranceu",
+    "viewOnPisrs": "Otvori na PISRS-u",
+    "viewOnGesetzeImInternet": "Otvori na Gesetze im Internet",
+    "loadingFullText": "Učitavam puni tekst…",
+    "loadingLaw": "Učitavam zakon…",
+    "fullTextError": "Nije moguće učitati puni tekst.",
+    "cited": "Citirano",
+    "badge": {
+      "eu": "EU",
+      "hr": "HR",
+      "fr": "FR",
+      "si": "SI",
+      "de": "DE",
+      "caselaw": "Praksa"
+    },
+    "timeline": {
+      "sliderLabel": "Vremenska ljestvica verzija propisa",
+      "olderVersion": "Starija verzija",
+      "newerVersion": "Novija verzija",
+      "inForceFrom": "na snazi od {date}",
+      "inForceFromTo": "vrijedila od {from} do {to}",
+      "entersIntoForce": "stupa na snagu {date}",
+      "historicalNotice": "Povijesna verzija — nije važeći tekst",
+      "futureNotice": "Buduća verzija — još nije stupila na snagu",
+      "versionTextUnavailable": "Tekst ove verzije nije dostupan."
+    }
   },
   "wordAddin": {
     "title": "Word dodatak",
-    "description": "Koristite Max izravno u Microsoft Wordu. Dodatak se povezuje s ovim računom kako bi vaši predmeti, razgovori i učitani dokumenti ostali sinkronizirani.",
+    "description": "Koristite Eulex Desk izravno u Microsoft Wordu. Dodatak se povezuje s ovim računom kako bi vaši predmeti, razgovori i učitani dokumenti ostali sinkronizirani.",
     "steps": {
       "pair": {
         "title": "1. Generirajte kod za uparivanje",
@@ -929,34 +1731,17 @@
         "title": "2. Instalirajte dodatak u Word",
         "step1": "Preuzmite manifest.xml datoteku ispod.",
         "step2": "U Wordu otvorite karticu Insert (Umetni), kliknite Add-ins → Get Add-ins → Upload My Add-in.",
-        "step3": "Odaberite preuzeti manifest.xml. Max bočni panel pojavit će se na kartici Home.",
-        "step4": "Otvorite Max panel i zalijepite 6-znamenkasti kod kada to bude zatraženo.",
+        "step3": "Odaberite preuzeti manifest.xml. Eulex Desk bočni panel pojavit će se na kartici Home.",
+        "step4": "Otvorite Eulex Desk panel i zalijepite 6-znamenkasti kod kada to bude zatraženo.",
         "downloadManifest": "Preuzmi manifest.xml"
       },
       "use": {
         "title": "3. Krenite s radom",
-        "description": "Nakon uparivanja možete razgovarati s Mikeom, priložiti dokumente predmeta, tražiti prijedloge u načinu Track Changes i tražiti od asistenta komentare na označeni tekst — sve bez napuštanja Worda."
+        "description": "Nakon uparivanja možete razgovarati s Eulex Deskom, priložiti dokumente predmeta, tražiti prijedloge u načinu Track Changes i tražiti od asistenta komentare na označeni tekst — sve bez napuštanja Worda."
       }
     },
     "errors": {
       "generic": "Nešto je pošlo po krivu. Pokušajte ponovno."
-    }
-  },
-  "changelog": {
-    "title": "Novosti",
-    "description": "Pregled novih značajki, poboljšanja i ispravaka u Maxu. Najnovije izmjene su na vrhu.",
-    "loading": "Učitavanje novosti…",
-    "empty": "Još nema unosa.",
-    "errors": {
-      "loadFailed": "Učitavanje novosti nije uspjelo."
-    },
-    "types": {
-      "added": "Novo",
-      "improved": "Poboljšano",
-      "changed": "Izmijenjeno",
-      "fixed": "Ispravljeno",
-      "removed": "Uklonjeno",
-      "security": "Sigurnost"
     }
   },
   "projectPicker": {
@@ -987,19 +1772,19 @@
   },
   "builtinWorkflows": {
     "cpChecklist": "Generiraj CP popis",
-    "changeOfControlReview": "Pregled promjene kontrole",
+    "changeOfControlReview": "Analiza promjene kontrole",
     "creditAgreementSummary": "Sažetak kreditnog ugovora",
-    "commercialAgreementReview": "Pregled komercijalnog ugovora",
-    "creditAgreementReview": "Pregled kreditnog ugovora",
-    "eDiscoveryReview": "E-Discovery pregled",
-    "supplyAgreementReview": "Pregled ugovora o nabavi",
-    "spaReview": "Pregled SPA ugovora",
-    "ndaReview": "Pregled NDA ugovora",
-    "commercialLeaseReview": "Pregled komercijalnog najma",
-    "lpaReview": "Pregled ugovora o komanditnom društvu",
+    "commercialAgreementReview": "Analiza komercijalnog ugovora",
+    "creditAgreementReview": "Analiza kreditnog ugovora",
+    "eDiscoveryReview": "E-Discovery analiza",
+    "supplyAgreementReview": "Analiza ugovora o nabavi",
+    "spaReview": "Analiza SPA ugovora",
+    "ndaReview": "Analiza NDA ugovora",
+    "commercialLeaseReview": "Analiza komercijalnog najma",
+    "lpaReview": "Analiza ugovora o komanditnom društvu",
     "shareholderAgreementSummary": "Sažetak ugovora dioničara",
-    "shareholderAgreementReview": "Pregled ugovora dioničara",
-    "employmentAgreementReview": "Pregled ugovora o radu"
+    "shareholderAgreementReview": "Analiza ugovora dioničara",
+    "employmentAgreementReview": "Analiza ugovora o radu"
   },
   "builtinPractices": {
     "generalTransactions": "Opće transakcije",
@@ -1008,28 +1793,258 @@
     "litigation": "Parnice",
     "realEstate": "Nekretnine",
     "privateEquity": "Privatni kapital",
-    "employment": "Radni odnosi"
+    "employment": "Radni odnosi",
+    "tax": "Porezno pravo",
+    "ip": "Intelektualno vlasništvo",
+    "competition": "Pravo tržišnog natjecanja",
+    "techTransactions": "Tehnološke transakcije",
+    "projectFinance": "Projektno financiranje",
+    "ecVc": "EC/VC",
+    "privateCredit": "Privatni kredit",
+    "ecm": "Tržišta kapitala (ECM)",
+    "dcm": "Dužnički instrumenti (DCM)",
+    "levFin": "Financiranje s polugom",
+    "arbitration": "Arbitraža",
+    "others": "Ostalo"
   },
   "connectorsPage": {
     "title": "Izvori datoteka",
-    "description": "Povežite Google Drive, OneDrive ili Box kako biste uvozili dokumente izravno u Max. Datoteke se kopiraju u Max pri uvozu — kasnije promjene u izvoru ne mijenjaju uvezenu kopiju.",
-    "loading": "Učitavanje konektora…",
-    "empty": "Trenutno nema dostupnih konektora datoteka. Obratite se administratoru.",
+    "description": "Povežite Google Drive, OneDrive ili Box kako biste uvozili dokumente izravno u Eulex Desk. Datoteke se kopiraju u Eulex Desk pri uvozu — kasnije promjene u izvoru ne mijenjaju uvezenu kopiju.",
+    "loading": "Učitavanje konteksta…",
+    "empty": "Trenutno nema dostupnog konteksta datoteka. Obratite se administratoru.",
     "notConfigured": "Nije postavljeno",
     "notConnected": "Nije povezano",
     "connectedAs": "Povezano kao {email}",
-    "contactAdmin": "Operator nije postavio ovaj konektor",
+    "contactAdmin": "Operator nije postavio ovaj kontekst",
     "connect": "Poveži",
     "disconnect": "Odspoji",
     "toasts": {
-      "connected": "Konektor {name} uspješno povezan.",
-      "failed": "Povezivanje konektora {name} nije uspjelo.",
-      "failedWithError": "Povezivanje konektora {name} nije uspjelo: {error}"
+      "connected": "Kontekst {name} uspješno povezan.",
+      "failed": "Povezivanje konteksta {name} nije uspjelo.",
+      "failedWithError": "Povezivanje konteksta {name} nije uspjelo: {error}"
     },
     "errors": {
-      "loadFailed": "Učitavanje liste konektora nije uspjelo.",
+      "loadFailed": "Učitavanje liste konteksta nije uspjelo.",
       "startFailed": "Pokretanje OAuth procesa nije uspjelo.",
       "disconnectFailed": "Odspajanje nije uspjelo."
     }
+  },
+  "countries": {
+    "HR": "Hrvatska",
+    "AT": "Austrija",
+    "BE": "Belgija",
+    "BA": "Bosna i Hercegovina",
+    "BG": "Bugarska",
+    "CY": "Cipar",
+    "CZ": "Češka",
+    "DK": "Danska",
+    "EE": "Estonija",
+    "FI": "Finska",
+    "FR": "Francuska",
+    "DE": "Njemačka",
+    "GR": "Grčka",
+    "HU": "Mađarska",
+    "IS": "Island",
+    "IE": "Irska",
+    "IT": "Italija",
+    "XK": "Kosovo",
+    "LV": "Latvija",
+    "LI": "Lihtenštajn",
+    "LT": "Litva",
+    "LU": "Luksemburg",
+    "MT": "Malta",
+    "MD": "Moldavija",
+    "ME": "Crna Gora",
+    "NL": "Nizozemska",
+    "MK": "Sjeverna Makedonija",
+    "NO": "Norveška",
+    "PL": "Poljska",
+    "PT": "Portugal",
+    "RO": "Rumunjska",
+    "RS": "Srbija",
+    "SK": "Slovačka",
+    "SI": "Slovenija",
+    "ES": "Španjolska",
+    "SE": "Švedska",
+    "CH": "Švicarska",
+    "TR": "Turska",
+    "UA": "Ukrajina",
+    "GB": "Ujedinjeno Kraljevstvo",
+    "US": "Sjedinjene Američke Države",
+    "CA": "Kanada",
+    "AU": "Australija",
+    "NZ": "Novi Zeland",
+    "AE": "Ujedinjeni Arapski Emirati",
+    "JP": "Japan",
+    "SG": "Singapur"
+  },
+  "privacy": {
+    "title": "Privatnost i PII",
+    "subtitle": "Jedan način anonimizacije vrijedi za sve odlazne podatke — i prema AI modelu i prema vanjskim alatima (npr. web pretraga) — dok ne odaberete drugačije po pojedinom razgovoru.",
+    "notConfigured": "PII Shield trenutno nije postavljen u ovom okruženju — postavke su pohranjene, ali se još ne primjenjuju.",
+    "engineVersion": "Verzija enginea",
+    "loading": "Učitavanje…",
+    "saved": "Spremljeno",
+    "modeLabel": "Način anonimizacije",
+    "modeOff": "Isključeno",
+    "modeOffDesc": "Sve se šalje AI-u (LLM-u) i vanjskim alatima (npr. web pretrazi) u izvornom obliku — bilo da je upisano u polje za unos ili sadržano u dokumentu. Bez anonimizacije.",
+    "modeStandard": "Standardno (preporučeno)",
+    "modeStandardDesc": "Sustav automatski prepoznaje i maskira osobne podatke — imena, tvrtke, adrese — u unosima i dokumentima. Bez pregleda: sustav sve odrađuje sam, neprimjetno.",
+    "modeStrict": "Strogo",
+    "modeStrictDesc": "Isto prepoznavanje i maskiranje kao Standardno, ali sustav od vas traži pregled svakog unosa i svakog dokumenta — upisanog, uvezenog ili nastalog radom sustava — i inicijalno i naknadno.",
+    "demoTitle": "Kako izgleda pregled prije slanja AI-u",
+    "demoSubtitle": "U strogom načinu prije svakog AI poziva otvori se modal s prepoznatim podacima. Kliknite niže da vidite kako izgleda na uzorku ugovora.",
+    "demoButton": "Otvori demo pregled"
+  },
+  "pii": {
+    "shieldBadge": {
+      "active": "PII zaštita aktivna",
+      "inactive": "PII zaštita isključena",
+      "hidden": "{count} skriveno",
+      "tooltip": "Osobni podaci u ovom razgovoru zamijenjeni su placeholderima prije slanja AI-u.",
+      "tooltipOn": "PII zaštita je uključena. Osobni podaci zamjenjuju se placeholderima prije slanja AI-u.",
+      "tooltipOff": "PII zaštita je pauzirana za ovaj razgovor."
+    },
+    "previewModal": {
+      "title": "Pregled prepoznatih PII podataka",
+      "subtitle": "Provjerite što smo prepoznali. Neoznačene ostavljamo skrivene od AI-a; označite stavku da biste je otkrili.",
+      "noEntities": "Nismo prepoznali nijedan osjetljivi podatak.",
+      "approveDisclosure": "Otkrij AI-u",
+      "reasonPlaceholder": "Razlog (audit)…",
+      "cancel": "Odustani",
+      "confirm": "Potvrdi i nastavi",
+      "submitting": "Spremam…",
+      "entityType": {
+        "PERSON": "Osobe",
+        "EMAIL_ADDRESS": "E-mail",
+        "PHONE_NUMBER": "Telefon",
+        "LOCATION": "Lokacije",
+        "ORGANIZATION": "Tvrtke",
+        "CREDIT_CARD": "Kartice",
+        "IBAN_CODE": "IBAN-i",
+        "HR_OIB": "OIB-i",
+        "HR_IBAN": "Hrvatski IBAN-i",
+        "HR_MBS": "MBS",
+        "HR_COURT_NUMBER": "Sudski broj",
+        "HR_ZIP": "Poštanski brojevi",
+        "DATE_TIME": "Datumi",
+        "HR_ADDRESS": "Adrese"
+      },
+      "submitError": "Spremanje odabira nije uspjelo. Pokušajte ponovno."
+    },
+    "rateLimit": {
+      "title": "Dokument privremeno odbijen",
+      "body": "PII proxy je trenutno nedostupan. Pokušajte ponovno za nekoliko sekundi."
+    }
+  },
+  "adminmaxBugfix": {
+    "navLink": "BugFix",
+    "title": "AdminMax · BugFix status",
+    "subtitle": "Stanje bugova uživo s GitHuba: issue → PR → LIVE.",
+    "backToList": "← Natrag na popis",
+    "refresh": "Osvježi",
+    "loading": "Učitavam…",
+    "statusOpen": "Otvoreno",
+    "statusPrOpen": "PR u reviewu",
+    "statusMerged": "Mergano — čeka LIVE",
+    "statusLive": "Na LIVE-u — zatvoriti issue",
+    "statusClosed": "Zatvoreno",
+    "deployTitle": "Deploy",
+    "deployAhead": "main je {count, plural, one {# commit} few {# commita} other {# commita}} ispred stable",
+    "deployUnknown": "Usporedba stable…main nije dostupna.",
+    "colNumber": "#",
+    "colTitle": "Naslov",
+    "colStatus": "Status",
+    "colPr": "Povezani PR",
+    "colCreated": "Otvoren",
+    "colClosed": "Zatvoren",
+    "empty": "Repozitorij nema nijedan issue.",
+    "fetchedAt": "Dohvaćeno: {time}",
+    "notConfiguredTitle": "GitHub token nije konfiguriran",
+    "notConfiguredBody": "Postavite varijablu okoline ADMINMAX_GITHUB_TOKEN (ili GITHUB_TOKEN) na backend servisu kako bi stranica mogla čitati privatni repozitorij {repo}. Repozitorij se mijenja varijablom ADMINMAX_GITHUB_REPO."
+  },
+  "metadata": {
+    "title": "AI platforma",
+    "description": "Platforma za analizu pravnih dokumenata i pregled ugovora uz pomoć umjetne inteligencije."
+  },
+  "errorPage": {
+    "title": "Nešto je pošlo po zlu",
+    "description": "Dogodila se neočekivana pogreška. Zabilježili smo je i naš će je tim istražiti.",
+    "home": "Početna"
+  },
+  "notFoundPage": {
+    "title": "Stranica nije pronađena",
+    "description": "Stranica koju tražite ne postoji ili je premještena.",
+    "goHome": "Natrag na početnu"
+  },
+  "oauthConsent": {
+    "title": "Odobri pristup",
+    "wantsAccess": "{client} traži pristup vašem Eulex Max računu.",
+    "unknownClient": "Aplikacija",
+    "redirectLabel": "Nakon odobrenja bit ćete preusmjereni na:",
+    "permissionsTitle": "Traženi podaci",
+    "scopeOpenid": "Osnovna prijava (identitet računa)",
+    "scopeEmail": "Vaša e-mail adresa",
+    "scopeProfile": "Osnovni podaci profila",
+    "approve": "Odobri",
+    "deny": "Odbij",
+    "working": "Trenutak…",
+    "loading": "Učitavanje zahtjeva…",
+    "missingId": "Nedostaje identifikator zahtjeva za autorizaciju.",
+    "loadFailed": "Zahtjev za autorizaciju nije moguće učitati. Pokušajte ponovno iz aplikacije koja traži pristup.",
+    "actionFailed": "Radnju nije moguće dovršiti. Pokušajte ponovno."
+  },
+  "googleDrivePicker": {
+    "importFailed": "{count, plural, one {# datoteka nije uvezena.} few {# datoteke nisu uvezene.} other {# datoteka nije uvezeno.}}",
+    "oauthError": "OAuth pogreška",
+    "errorTitle": "Google Drive pogreška",
+    "ok": "U redu",
+    "pickerTitle": "Odaberite datoteke s Google Drivea"
+  },
+  "superDoc": {
+    "modeViewing": "Pregled",
+    "modeEditing": "Uređivanje",
+    "modeGroupLabel": "Način rada s dokumentom",
+    "applyFailed": "Promjenu nije bilo moguće primijeniti — pokušajte ponovno.",
+    "saveFailed": "Spremanje nije uspjelo.",
+    "savedAgoSeconds": "Spremljeno · prije {n}s",
+    "savedAgoMinutes": "Spremljeno · prije {n} min",
+    "savedAgoHours": "Spremljeno · prije {n} h",
+    "changes": "Promjene",
+    "autoSavePausedTitle": "Automatsko spremanje pauzirano je dok se pogreška ne otkloni ili dok ručno ne pokrenete Spremi.",
+    "autoSaveScheduledTitle": "Automatsko spremanje za 30 s — možete kliknuti Spremi za odmah.",
+    "unsavedChanges": "Nespremljene promjene",
+    "saveNowTitle": "Spremi odmah (Ctrl/Cmd+S)",
+    "noChangesToSave": "Nema promjena za spremanje",
+    "saving": "Spremam…",
+    "contentError": "Dokument nije moguće prikazati — datoteka je možda oštećena ili u nepodržanom formatu.",
+    "typeInsert": "Dodano",
+    "typeDelete": "Obrisano",
+    "typeFormat": "Formatiranje",
+    "typeReplacement": "Zamjena",
+    "trackedChanges": "Praćene promjene",
+    "closePanel": "Zatvori panel",
+    "noUnresolvedChanges": "Nema nerazriješenih promjena.",
+    "errorBoundary": {
+      "title": "Preglednik dokumenta privremeno nije dostupan",
+      "body": "Pokušajte ponovno učitati ili otvoriti drugi dokument. Vaš razgovor s Eulex Deskom i ostali predmeti rade normalno.",
+      "retry": "Pokušaj ponovno"
+    }
+  },
+  "draftMode": {
+    "quickActions": {
+      "soften": "Ublaži formulaciju",
+      "strengthenLiability": "Pojačaj odgovornost",
+      "rephraseNeutral": "Preformuliraj neutralno",
+      "shorten": "Skrati"
+    },
+    "editorAria": "Uređivač Draft moda",
+    "badge": "Draft",
+    "selectedText": "Odabrani tekst",
+    "instructionPlaceholder": "Napišite upute za izmjenu…",
+    "instructionAria": "Upute za izmjenu u Draft modu",
+    "generateAria": "Generiraj izmjenu",
+    "generating": "Generiranje izmjene…",
+    "footerHint": "Enter za potvrdu · Esc za odustajanje"
   }
 }

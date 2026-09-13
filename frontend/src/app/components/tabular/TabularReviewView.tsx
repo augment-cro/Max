@@ -40,9 +40,11 @@ import { TRTable } from "./TRTable";
 import { useTranslations } from "next-intl";
 import type { TRTableHandle } from "./TRTable";
 import { TRChatPanel } from "./TRChatPanel";
+import { TRRunProgressModal } from "./TRRunProgressModal";
 import { exportTabularReviewToExcel } from "./exportToExcel";
 import { useSidebar } from "@/app/contexts/SidebarContext";
 import { FloatingAiPrompt } from "@/app/components/shared/FloatingAiPrompt";
+import { track } from "@/app/lib/analytics";
 
 interface Props {
     reviewId: string;
@@ -52,6 +54,7 @@ interface Props {
 export function TRView({ reviewId, projectId }: Props) {
     const { setSidebarOpen } = useSidebar();
     const tTR = useTranslations("tabularReview");
+    const tTRPage = useTranslations("tabularReviewsPage");
     const [review, setReview] = useState<TabularReview | null>(null);
     const [project, setProject] = useState<MikeProject | null>(null);
     const [cells, setCells] = useState<TabularCell[]>([]);
@@ -59,6 +62,8 @@ export function TRView({ reviewId, projectId }: Props) {
     const [columns, setColumns] = useState<ColumnConfig[]>([]);
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
+    const [runError, setRunError] = useState<string | null>(null);
+    const [runModalOpen, setRunModalOpen] = useState(false);
     const [savingColumn, setSavingColumn] = useState(false);
     const [savingColumnsConfig, setSavingColumnsConfig] = useState(false);
     const [addColOpen, setAddColOpen] = useState(false);
@@ -70,6 +75,10 @@ export function TRView({ reviewId, projectId }: Props) {
     const [expandedCellCitation, setExpandedCellCitation] = useState<
         { quote: string; page: number } | undefined
     >(undefined);
+    // Bumped on every citation click so the side panel remounts (via `key`)
+    // and re-opens the document preview even when the SAME citation is clicked
+    // again after its preview was closed. See TRSidePanel `key` below.
+    const [citationNonce, setCitationNonce] = useState(0);
     const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
     const [actionsOpen, setActionsOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -97,7 +106,7 @@ export function TRView({ reviewId, projectId }: Props) {
         mistralApiKey: profile?.mistralApiKey ?? null,
         serverKeys: profile?.serverKeys,
     };
-    const tabularModel = profile?.tabularModel ?? "claude-sonnet-4-6";
+    const tabularModel = profile?.tabularModel ?? "claude-sonnet-5";
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -255,6 +264,8 @@ export function TRView({ reviewId, projectId }: Props) {
         }
 
         setGenerating(true);
+        setRunError(null);
+        setRunModalOpen(true);
 
         // Optimistically set empty/pending/error cells to generating (skip done cells)
         setCells((prev) =>
@@ -288,14 +299,33 @@ export function TRView({ reviewId, projectId }: Props) {
         );
 
         try {
+            track("tabular_review_run", { column_count: columns.length });
             const response = await streamTabularGeneration(reviewId);
+            // A non-2xx (409 concurrent-run/lease, 402 quota, 429, 500) still
+            // has a body, so the old `!response.body` check let it through —
+            // the reader found no data lines, cells reverted, and the modal
+            // flipped to a green "Completed 0/N" (issue #114). Detect it.
+            if (!response.ok) {
+                let code: string | null = null;
+                try {
+                    code = (await response.clone().json())?.code ?? null;
+                } catch {
+                    /* non-JSON error body */
+                }
+                const err = new Error(`HTTP ${response.status}`);
+                (err as { status?: number; code?: string | null }).status =
+                    response.status;
+                (err as { status?: number; code?: string | null }).code = code;
+                throw err;
+            }
             if (!response.body) throw new Error("No body");
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
+            let streamDone = false;
 
-            while (true) {
+            while (!streamDone) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
@@ -305,7 +335,10 @@ export function TRView({ reviewId, projectId }: Props) {
                 for (const line of lines) {
                     if (!line.startsWith("data:")) continue;
                     const dataStr = line.slice(5).trim();
-                    if (dataStr === "[DONE]") break;
+                    if (dataStr === "[DONE]") {
+                        streamDone = true;
+                        break;
+                    }
                     try {
                         const data = JSON.parse(dataStr);
                         if (data.type === "cell_update") {
@@ -327,7 +360,26 @@ export function TRView({ reviewId, projectId }: Props) {
             }
         } catch (err) {
             console.error("Generation failed", err);
+            const status = (err as { status?: number })?.status;
+            const code = (err as { code?: string })?.code;
+            setRunError(
+                status === 409 || code === "GENERATION_IN_PROGRESS"
+                    ? tTR("runErrorInProgress")
+                    : status === 429 || code === "RATE_LIMITED"
+                      ? tTR("runErrorRateLimited")
+                      : tTR("runErrorGeneric"),
+            );
         } finally {
+            // The SSE stream can be cut mid-run (Cloud Run request timeout,
+            // network drop) while the backend keeps writing results to the
+            // DB. Re-sync cells from the API so none stay stuck on
+            // "generating" with stale content.
+            try {
+                const { cells: freshCells } = await getTabularReview(reviewId);
+                setCells(freshCells);
+            } catch {
+                /* offline — keep whatever streamed in */
+            }
             setGenerating(false);
         }
     }
@@ -394,29 +446,64 @@ export function TRView({ reviewId, projectId }: Props) {
     }
 
     async function handleUpdateColumn(nextColumn: ColumnConfig) {
+        // If the column's *definition* changed (prompt/name/format/tags), its
+        // existing cells were produced by the OLD prompt — the server drops
+        // them in PATCH reconciliation, but the PATCH response carries only the
+        // review, so mirror that here: clear the affected cells to "pending" so
+        // the table doesn't show stale answers (or a free-text value rendered
+        // as the wrong format) under the new definition.
+        const prev = columns.find((c) => c.index === nextColumn.index);
+        const identityChanged =
+            !!prev &&
+            (prev.prompt !== nextColumn.prompt ||
+                prev.name !== nextColumn.name ||
+                (prev.format ?? "text") !== (nextColumn.format ?? "text") ||
+                JSON.stringify(prev.tags ?? []) !==
+                    JSON.stringify(nextColumn.tags ?? []));
+
         const nextColumns = columns.map((column) =>
             column.index === nextColumn.index ? nextColumn : column,
         );
         const previousColumns = columns;
+        const previousCells = cells;
         setColumns(nextColumns);
+        if (identityChanged) {
+            setCells((cs) =>
+                cs.map((c) =>
+                    c.column_index === nextColumn.index
+                        ? { ...c, content: null, status: "pending" as const }
+                        : c,
+                ),
+            );
+        }
         try {
             await saveColumnsConfig(nextColumns);
         } catch (err) {
             setColumns(previousColumns);
+            if (identityChanged) setCells(previousCells);
             console.error("Failed to update column", err);
         }
     }
 
     async function handleDeleteColumn(columnIndex: number) {
         const previousColumns = columns;
+        const previousCells = cells;
         const nextColumns = columns.filter(
             (column) => column.index !== columnIndex,
         );
         setColumns(nextColumns);
+        // Prune this column's cells too. getNextColumnIndex reuses the
+        // highest index+1, so a new column can reclaim the deleted column's
+        // index; leaving the old `done` cells in state made the new column
+        // render the deleted one's answers (issue #113).
+        setCells((prev) =>
+            prev.filter((cell) => cell.column_index !== columnIndex),
+        );
         try {
             await saveColumnsConfig(nextColumns);
         } catch (err) {
             setColumns(previousColumns);
+            setCells(previousCells);
             console.error("Failed to delete column", err);
         }
     }
@@ -431,6 +518,13 @@ export function TRView({ reviewId, projectId }: Props) {
     }
 
     async function handleDeleteDocuments() {
+        // Backend owner-gates document removal (#26; adding stays allowed
+        // for collaborators) — warn instead of optimistically removing rows
+        // the server will refuse to detach.
+        if (review?.is_owner === false) {
+            setOwnerOnlyAction(tTRPage("ownerOnlyRemoveDocs"));
+            return;
+        }
         const remaining = documents.filter(
             (d) => !selectedDocIds.includes(d.id),
         );
@@ -463,6 +557,12 @@ export function TRView({ reviewId, projectId }: Props) {
 
     async function handleTitleCommit(newTitle: string) {
         if (!newTitle || newTitle === review?.title) return;
+        // Backend owner-gates renames (#26); surface the permission popup
+        // instead of a silent 403 (mirrors the tabular reviews list page).
+        if (review?.is_owner === false) {
+            setOwnerOnlyAction(tTRPage("ownerOnlyRename"));
+            return;
+        }
         setReview((prev) => (prev ? { ...prev, title: newTitle } : prev));
         await updateTabularReview(reviewId, { title: newTitle });
     }
@@ -473,47 +573,47 @@ export function TRView({ reviewId, projectId }: Props) {
         : documents;
 
     return (
-        <div className="flex h-full overflow-hidden bg-white">
+        <div className="flex h-full overflow-hidden bg-background">
             <div className="flex flex-1 flex-col overflow-hidden">
                 {/* Header */}
-                <div className="bg-white px-8 py-4 flex items-start justify-between shrink-0 gap-4">
+                <div className="bg-background px-8 py-4 flex items-start justify-between shrink-0 gap-4">
                     <div className="flex items-center gap-1.5 text-2xl font-medium font-serif">
                         {projectId && (
                             <>
                                 <button
                                     onClick={() => router.push("/projects")}
-                                    className="text-gray-500 hover:text-gray-700 transition-colors"
+                                    className="text-muted-foreground hover:text-foreground transition-colors"
                                 >
                                     {tTR("projects")}
                                 </button>
-                                <span className="text-gray-300">›</span>
+                                <span className="text-muted-foreground/70">›</span>
                                 <button
                                     onClick={() =>
                                         router.push(`/projects/${projectId}`)
                                     }
-                                    className="text-gray-500 hover:text-gray-700 transition-colors"
+                                    className="text-muted-foreground hover:text-foreground transition-colors"
                                 >
                                     {loading ? (
-                                        <div className="h-6 w-32 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-6 w-32 rounded bg-muted animate-pulse" />
                                     ) : (
                                         <>
                                             {project?.name ?? ""}
                                             {project?.cm_number && (
-                                                <span className="ml-1 text-gray-400">
+                                                <span className="ml-1 text-muted-foreground/70">
                                                     (#{project.cm_number})
                                                 </span>
                                             )}
                                         </>
                                     )}
                                 </button>
-                                <span className="text-gray-300">›</span>
+                                <span className="text-muted-foreground/70">›</span>
                                 <button
                                     onClick={() =>
                                         router.push(
                                             `/projects/${projectId}?tab=reviews`,
                                         )
                                     }
-                                    className="text-gray-500 hover:text-gray-700 transition-colors"
+                                    className="text-muted-foreground hover:text-foreground transition-colors"
                                 >
                                     {tTR("tabularReviews")}
                                 </button>
@@ -522,14 +622,14 @@ export function TRView({ reviewId, projectId }: Props) {
                         {!projectId && (
                             <button
                                 onClick={() => router.push("/tabular-reviews")}
-                                className="text-gray-500 hover:text-gray-700 transition-colors"
+                                className="text-muted-foreground hover:text-foreground transition-colors"
                             >
                                 {tTR("tabularReviews")}
                             </button>
                         )}
-                        <span className="text-gray-300">›</span>
+                        <span className="text-muted-foreground/70">›</span>
                         {loading ? (
-                            <div className="h-6 w-40 rounded bg-gray-100 animate-pulse" />
+                            <div className="h-6 w-40 rounded bg-muted animate-pulse" />
                         ) : (
                             <RenameableTitle
                                 value={review?.title || tTR("untitledReview")}
@@ -546,8 +646,8 @@ export function TRView({ reviewId, projectId }: Props) {
                                     disabled={loading}
                                     className={`flex h-8 w-8 items-center justify-center text-sm transition-colors ${
                                         loading
-                                            ? "text-gray-300 cursor-default"
-                                            : "text-gray-500 hover:text-gray-900 cursor-pointer"
+                                            ? "text-muted-foreground/70 cursor-default"
+                                            : "text-muted-foreground hover:text-foreground cursor-pointer"
                                     }`}
                                     title={tTR("peopleWithAccess")}
                                     aria-label={tTR("peopleWithAccess")}
@@ -562,14 +662,19 @@ export function TRView({ reviewId, projectId }: Props) {
                                         columns,
                                         documents,
                                         cells,
+                                        labels: {
+                                            sheetName: tTR("exportSheetName"),
+                                            documentHeader: tTR("exportDocumentHeader"),
+                                            errorCell: tTR("exportErrorCell"),
+                                        },
                                     })
                                 }
                                 disabled={columns.length === 0 || documents.length === 0}
                                 title={tTR("exportToExcel")}
                                 className={`flex h-8 items-center justify-center gap-1.5 px-3 text-sm transition-colors ${
                                     columns.length === 0 || documents.length === 0
-                                        ? "text-gray-300 cursor-default"
-                                        : "text-gray-700 hover:text-gray-900 cursor-pointer"
+                                        ? "text-muted-foreground/70 cursor-default"
+                                        : "text-foreground hover:text-foreground cursor-pointer"
                                 }`}
                             >
                                 <Download className="h-4 w-4" />
@@ -588,8 +693,8 @@ export function TRView({ reviewId, projectId }: Props) {
                                     columns.length === 0 ||
                                     documents.length === 0 ||
                                     savingColumnsConfig
-                                        ? "text-gray-300 cursor-default"
-                                        : "text-gray-700 hover:text-gray-900 cursor-pointer"
+                                        ? "text-muted-foreground/70 cursor-default"
+                                        : "text-foreground hover:text-foreground cursor-pointer"
                                 }`}
                             >
                                 {generating ? (
@@ -604,7 +709,7 @@ export function TRView({ reviewId, projectId }: Props) {
                 </div>
 
                 {/* Toolbar */}
-                <div className="flex items-center h-10 px-8 border-b border-gray-200 gap-4">
+                <div className="flex items-center h-10 px-8 border-b border-border gap-4">
                     <button
                         onClick={() => {
                             if (!chatOpen) setSidebarOpen(false);
@@ -614,8 +719,8 @@ export function TRView({ reviewId, projectId }: Props) {
                         disabled={loading || columns.length === 0 || documents.length === 0}
                         className={`flex items-center gap-1 text-xs font-medium transition-colors ${
                             loading || columns.length === 0 || documents.length === 0
-                                ? "text-gray-300 cursor-default"
-                                : "text-gray-700 hover:text-gray-900"
+                                ? "text-muted-foreground/70 cursor-default"
+                                : "text-foreground hover:text-foreground"
                         }`}
                     >
                         <MessageSquare className="h-3.5 w-3.5" />
@@ -626,22 +731,22 @@ export function TRView({ reviewId, projectId }: Props) {
                             <div ref={actionsRef} className="relative">
                                 <button
                                     onClick={() => setActionsOpen((v) => !v)}
-                                    className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
                                 >
                                     {tTR("actions")}
                                     <ChevronDown className="h-3.5 w-3.5" />
                                 </button>
                                 {actionsOpen && (
-                                    <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-gray-100 bg-white shadow-lg z-50 overflow-hidden">
+                                    <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-border bg-surface-elevated z-50 overflow-hidden">
                                         <button
                                             onClick={handleClearResults}
-                                            className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+                                            className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent transition-colors"
                                         >
                                             {tTR("clearResults")}
                                         </button>
                                         <button
                                             onClick={handleDeleteDocuments}
-                                            className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                            className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 transition-colors"
                                         >
                                             {tTR("delete")}
                                         </button>
@@ -654,8 +759,8 @@ export function TRView({ reviewId, projectId }: Props) {
                             disabled={loading || savingColumnsConfig}
                             className={`flex items-center gap-1 text-xs font-medium transition-colors ${
                                 loading || savingColumnsConfig
-                                    ? "text-gray-300 cursor-default"
-                                    : "text-gray-700 hover:text-gray-900"
+                                    ? "text-muted-foreground/70 cursor-default"
+                                    : "text-foreground hover:text-foreground"
                             }`}
                         >
                             <Plus className="h-3.5 w-3.5" />
@@ -668,8 +773,8 @@ export function TRView({ reviewId, projectId }: Props) {
                             }
                             className={`flex items-center gap-1 text-xs font-medium transition-colors ${
                                 loading || savingColumn || savingColumnsConfig
-                                    ? "text-gray-300 cursor-default"
-                                    : "text-gray-700 hover:text-gray-900"
+                                    ? "text-muted-foreground/70 cursor-default"
+                                    : "text-foreground hover:text-foreground"
                             }`}
                         >
                             <Plus className="h-3.5 w-3.5" />
@@ -714,7 +819,9 @@ export function TRView({ reviewId, projectId }: Props) {
                         onCitationClick={(cell, page, quote) => {
                             setExpandedCell(cell);
                             setExpandedCellCitation({ quote, page });
+                            setCitationNonce((n) => n + 1);
                         }}
+                        activeColumnIndex={expandedCell?.column_index ?? null}
                         onUpdateColumn={handleUpdateColumn}
                         onDeleteColumn={handleDeleteColumn}
                         onAddColumn={() => setAddColOpen(true)}
@@ -735,6 +842,7 @@ export function TRView({ reviewId, projectId }: Props) {
                     if (!expandedDoc || !expandedCol) return null;
                     return (
                         <TRSidePanel
+                            key={`${expandedCell.id}-${citationNonce}`}
                             cell={expandedCell}
                             document={expandedDoc}
                             column={expandedCol}
@@ -853,6 +961,16 @@ export function TRView({ reviewId, projectId }: Props) {
                 open={apiKeyModalProvider !== null}
                 provider={apiKeyModalProvider}
                 onClose={() => setApiKeyModalProvider(null)}
+            />
+
+            <TRRunProgressModal
+                open={runModalOpen}
+                generating={generating}
+                runError={runError}
+                documents={documents}
+                columns={columns}
+                cells={cells}
+                onClose={() => setRunModalOpen(false)}
             />
 
             {review && (

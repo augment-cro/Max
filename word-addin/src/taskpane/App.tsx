@@ -14,7 +14,7 @@ function AppContent() {
     const t = useTranslation();
     // Pull `preferred_language` from the user profile once we have a JWT
     // — that's the only way the add-in learns about a language switch
-    // the user made in Max on the web (cookies don't cross the
+    // the user made in Eulex Desk on the web (cookies don't cross the
     // Office.js sandbox boundary).
     useSyncLocaleFromProfile(isAuthenticated);
 

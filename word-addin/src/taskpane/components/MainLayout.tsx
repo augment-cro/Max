@@ -23,7 +23,7 @@ export default function MainLayout() {
     const [activeTab, setActiveTab] = useState<TabId>("chat");
     const { logout } = useAuth();
     const t = useTranslation();
-    // MCP connector toggles live in ChatInput (Plug icon, Max web parity).
+    // MCP connector toggles live in ChatInput (Plug icon, Eulex Desk web parity).
     //
     // Gated by `true` because MainLayout only mounts after auth (App.tsx
     // renders <Login /> otherwise).

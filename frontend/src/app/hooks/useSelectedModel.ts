@@ -13,10 +13,15 @@ import { useUserProfile } from "@/contexts/UserProfileContext";
 
 const STORAGE_KEY = "mike.selectedModel";
 
+const LEGACY_MODEL_ALIASES: Record<string, string> = {
+    "claude-opus-4-7": "claude-opus-4-8",
+};
+
 function readStoredModel(): string {
     if (typeof window === "undefined") return DEFAULT_MODEL_ID;
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw && ALLOWED_MODEL_IDS.has(raw)) return raw;
+    const resolved = raw ? (LEGACY_MODEL_ALIASES[raw] ?? raw) : null;
+    if (resolved && ALLOWED_MODEL_IDS.has(resolved)) return resolved;
     return DEFAULT_MODEL_ID;
 }
 

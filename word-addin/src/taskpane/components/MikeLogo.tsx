@@ -4,14 +4,14 @@ const CARDINAL_ANGLES = [0, 90, 180, 270];
 const INTERCARDINAL_ANGLES = [30, 60, 120, 150, 210, 240, 300, 330];
 
 /**
- * Max brand mark — compass/sun rays radiating from a central dot.
+ * Eulex Desk brand mark — compass/sun rays radiating from a central dot.
  *
- * Mirrors the SVG the Max web frontend uses (frontend/src/components/chat/mike-icon.tsx)
+ * Mirrors the SVG the Eulex Desk web frontend uses (frontend/src/components/chat/mike-icon.tsx)
  * so the add-in and the web app share the same identity. We render the mark as
  * inline SVG (no PNG asset) so it scales crisply at every taskpane width.
  *
  * The component name and file stay `MikeLogo` for now to avoid touching every
- * import site; only the visuals are Max-branded.
+ * import site; only the visuals are Eulex Desk-branded.
  */
 export default function MikeLogo({
     size = 28,
@@ -31,7 +31,7 @@ export default function MikeLogo({
                 lineHeight: 0,
                 color,
             }}
-            aria-label="Max"
+            aria-label="Eulex Desk"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"

@@ -101,6 +101,7 @@ export default function ChatPanel({
                         editMode: opts.editMode,
                         model: opts.model,
                         workflow: opts.workflow,
+                        trackedChangesContext: opts.trackedChangesContext,
                     })
                 }
                 onStop={stop}

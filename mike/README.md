@@ -1,13 +1,13 @@
 # `mike/` — built-in MCP konfiguracija
 
 Ovaj folder sadrži **server-side** konfiguraciju MCP (Model Context Protocol)
-poslužitelja koje Max učitava automatski na svakom chat requestu.
+poslužitelja koje Eulex Desk učitava automatski na svakom chat requestu.
 
 Za razliku od konektora koje korisnik dodaje preko UI-ja
-(`Postavke → Konektori`, tablica `user_mcp_servers`), serveri definirani ovdje:
+(`Postavke → Kontekst`, tablica `user_mcp_servers`), serveri definirani ovdje:
 
-- **Pojavljuju** se kao zadani konektori u korisničkom UI-ju (`Postavke →
-  Konektori` i chat dropdown s utičnicom), s "Zadano" badge-om uz naziv.
+- **Pojavljuju** se kao zadani kontekst u korisničkom UI-ju (`Postavke →
+  Kontekst` i chat dropdown s utičnicom), s "Zadano" badge-om uz naziv.
   Defaultno su uključeni; korisnik ih može isključiti per-konto. Opt-out se
   pamti u tablici `user_mcp_builtin_prefs` (samo `(user_id, slug, enabled)`).
 - **URL i headeri** ostaju server-side — nikad se ne šalju browseru ni ne
@@ -56,7 +56,7 @@ Ako nijedna ne postoji, loader tiho preskače ovaj korak (nije error).
 - `<slug>` mora odgovarati regexu `^[a-z0-9_-]{1,20}$`. Loader interno doda
   prefiks `sys-` (tako da konačni slug u tool-name-u izgleda
   `mcp__sys-<slug>__<toolName>`) da se izbjegnu sudari s korisničkim
-  konektorima.
+  kontekstima.
 - `url` mora biti `https://…` ili `http://localhost…`. Podržan je samo
   **Streamable HTTP** transport (isti SDK kao za korisničke MCP-ove).
 - U svim string vrijednostima podržana je supstitucija `${VAR_NAME}`. Ako

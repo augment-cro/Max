@@ -16,9 +16,9 @@ function getPairHintUrl(): string {
 /**
  * Pairing-code login screen for the Word add-in.
  *
- * The user generates a 6-digit code on the Max web frontend and types it
+ * The user generates a 6-digit code on the Eulex Desk web frontend and types it
  * here. We deliberately do NOT offer a username/password fallback — the
- * Max OAuth provider (eulex.ai WordPress) is the single source of truth
+ * Eulex Desk OAuth provider (eulex.ai WordPress) is the single source of truth
  * for account state, and the pairing flow funnels every add-in session
  * through a token that's already been issued to a valid web session.
  */

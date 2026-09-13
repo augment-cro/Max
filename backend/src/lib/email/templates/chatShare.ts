@@ -54,28 +54,28 @@ const COPY = {
             `${owner} dijeli razgovor s tobom: "${title}"`,
         greeting: "Pozdrav,",
         intro: (owner: string, ownerEmail: string, title: string) =>
-            `${owner} (${ownerEmail}) podijelio/la je s tobom razgovor "${title}" iz Max asistenta.`,
+            `${owner} (${ownerEmail}) podijelio/la je s tobom razgovor "${title}" iz Eulex Desk asistenta.`,
         whatYouSee:
             "Klikom na gumb otvaraš sigurnu kopiju razgovora (snapshot). Ako se želiš pridružiti razgovoru i nastaviti ga, dovoljno je da se prijaviš s ovom email adresom.",
         cta: "Otvori razgovor",
         expires: (d: string) => `Poveznica vrijedi do ${d}.`,
         footer:
             "Ako nisi očekivao/la ovu poruku, slobodno je zanemari — poveznica je vezana isključivo za tvoju email adresu.",
-        productName: "Max",
+        productName: "Eulex Desk",
     },
     en: {
         subject: (owner: string, title: string) =>
             `${owner} shared a conversation with you: "${title}"`,
         greeting: "Hi,",
         intro: (owner: string, ownerEmail: string, title: string) =>
-            `${owner} (${ownerEmail}) shared the conversation "${title}" from Max Assistant with you.`,
+            `${owner} (${ownerEmail}) shared the conversation "${title}" from Eulex Desk Assistant with you.`,
         whatYouSee:
             "Click the button below to open a secure snapshot of the conversation. To continue the conversation together, just sign in using this email address.",
         cta: "Open conversation",
         expires: (d: string) => `This link is valid until ${d}.`,
         footer:
             "If you weren't expecting this email, you can ignore it — the link is bound to your email address only.",
-        productName: "Max",
+        productName: "Eulex Desk",
     },
 } as const;
 

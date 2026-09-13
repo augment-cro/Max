@@ -1,5 +1,5 @@
 /**
- * Google Cloud Storage utilities for Max document management.
+ * Google Cloud Storage utilities for Eulex Desk document management.
  *
  * On Cloud Run the default service account is used automatically —
  * no credentials env-vars are needed.

@@ -169,6 +169,18 @@ const STATEMENTS: ReadonlyArray<{ name: string; sql: string }> = [
         `,
     },
     {
+        // Per-chat PII Shield mode override. NULL = inherit user default
+        // (resolved by lib/pii/gate.ts → effectiveMode). Without this
+        // column the backend logs a benign warning on every chat hit;
+        // the override path itself falls back gracefully but we want a
+        // clean log + a real way to override per chat.
+        name: "chats.pii_mode",
+        sql: `
+            ALTER TABLE public.chats
+                ADD COLUMN IF NOT EXISTS pii_mode text;
+        `,
+    },
+    {
         // Per-message "not appropriate answer" flag — see migration 110.
         // Denormalised boolean on chat_messages keeps the GET /chat reads
         // cheap; the audit table (next entries) holds the toggle history.
@@ -243,7 +255,8 @@ const STATEMENTS: ReadonlyArray<{ name: string; sql: string }> = [
     {
         // Per-request LLM usage log for cost tracking. See migration 112.
         // Anthropic returns authoritative token counts; USD is computed
-        // in app code from the published Sonnet 4.6 rates.
+        // in app code from the published Opus 4.8 / Sonnet 4.6 / Haiku 4.5
+        // rates (see PRICING table in lib/llmUsage.ts).
         name: "llm_usage",
         sql: `
             CREATE TABLE IF NOT EXISTS public.llm_usage (
@@ -265,8 +278,42 @@ const STATEMENTS: ReadonlyArray<{ name: string; sql: string }> = [
                 status                      text        NOT NULL DEFAULT 'ok'
                                                         CHECK (status IN ('ok', 'error', 'aborted')),
                 error_message               text,
+                client                      text,
                 created_at                  timestamptz NOT NULL DEFAULT now()
             );
+        `,
+    },
+    {
+        // Attribute each usage row to the surface that produced it
+        // ("web" | "word" | "tabular" | "draft" | "workflow" | "search";
+        // NULL on rows written before call sites tagged themselves —
+        // AdminMax analytics groups those as "unknown").
+        // Usage is counted toward the user's quota
+        // regardless of client; this column only adds reporting visibility.
+        // Idempotent ALTER so existing production tables pick it up too.
+        name: "llm_usage.client",
+        sql: `
+            ALTER TABLE public.llm_usage
+                ADD COLUMN IF NOT EXISTS client text;
+        `,
+    },
+    {
+        name: "llm_usage.cost_breakdown",
+        sql: `
+            ALTER TABLE public.llm_usage ADD COLUMN IF NOT EXISTS cost_breakdown jsonb;
+            DO $$ BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'llm_usage'
+                      AND column_name = 'cost_usd'
+                      AND (numeric_scale <> 10 OR is_nullable = 'NO' OR column_default IS NOT NULL)
+                ) THEN
+                    ALTER TABLE public.llm_usage
+                        ALTER COLUMN cost_usd TYPE numeric(18, 10),
+                        ALTER COLUMN cost_usd DROP NOT NULL,
+                        ALTER COLUMN cost_usd DROP DEFAULT;
+                END IF;
+            END $$;
         `,
     },
     {
@@ -289,6 +336,735 @@ const STATEMENTS: ReadonlyArray<{ name: string; sql: string }> = [
         sql: `
             CREATE INDEX IF NOT EXISTS idx_llm_usage_model_created
                 ON public.llm_usage (model, created_at DESC);
+        `,
+    },
+    {
+        // Append-only audit trail for /adminmax/* write actions and data
+        // exports. Mirrors migration 133. `actor` stays 'adminmax' until
+        // per-operator identity exists.
+        name: "admin_audit",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.admin_audit (
+                id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                actor       text        NOT NULL DEFAULT 'adminmax',
+                action      text        NOT NULL,
+                target_type text,
+                target_id   text,
+                payload     jsonb,
+                ip          text,
+                created_at  timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        name: "admin_audit_created_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_admin_audit_created
+                ON public.admin_audit (created_at DESC);
+        `,
+    },
+    {
+        name: "admin_audit_target_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_admin_audit_target
+                ON public.admin_audit (target_type, target_id, created_at DESC);
+        `,
+    },
+    {
+        // Per-tier rate limit configuration. Mirrors migration 114.
+        // Authoritative key is `tier_level_id` from the JWT; slugs and
+        // labels are display-only. AdminMax can edit `daily_tokens` and
+        // `display_label` at runtime.
+        name: "tier_limits",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.tier_limits (
+                tier_level_id   bigint      PRIMARY KEY,
+                tier_slug       text        NOT NULL,
+                display_label   text        NOT NULL,
+                daily_tokens    bigint      NOT NULL CHECK (daily_tokens >= 0),
+                updated_at      timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        // Per-tier feature flags (jsonb). Catalog of valid keys + per-tier
+        // defaults lives in code (lib/entitlements.ts); this column holds
+        // the runtime-editable values (AdminMax). seedEntitlementDefaults()
+        // fills the defaults right after ensureSchema() without clobbering
+        // any admin edits. Mirrors migration 122.
+        name: "tier_limits.entitlements",
+        sql: `
+            ALTER TABLE public.tier_limits
+                ADD COLUMN IF NOT EXISTS entitlements jsonb NOT NULL DEFAULT '{}'::jsonb;
+        `,
+    },
+    {
+        // Bilingual marketing copy per tier (name, tagline, price string,
+        // feature bullets, order, popular). Code-default catalog lives in
+        // lib/planCatalog.ts; this column holds AdminMax-editable overrides
+        // and is the single source the public GET /billing/plans endpoint
+        // (Eulex Desk PlanCards + eulex.ai pricing) reads. Mirrors migration 123.
+        name: "tier_limits.marketing",
+        sql: `
+            ALTER TABLE public.tier_limits
+                ADD COLUMN IF NOT EXISTS marketing jsonb NOT NULL DEFAULT '{}'::jsonb;
+        `,
+    },
+    // NOTE (#15 Phase A): the tier_limits_seed_* INSERT blocks that used to
+    // live here were dead placeholders by design (prod values are operator-
+    // set via AdminMax; see the tier-quota model note) and have been removed.
+    // Tier definitions are authored in Supabase (backend/supabase/
+    // tier_limits.sql + migrations/copy-tier-limits-to-supabase.ts) and read
+    // through lib/tierLimitsStore.ts; the mike table above stays only as the
+    // transition fallback while TIERS_FROM_SUPABASE is off. Unknown tier ids
+    // are still lazy-upserted with free-tier defaults by resolveTierLimits.
+    {
+        // Drop legacy duplicate tier rows that predate the canonical ids:
+        // id 1 ('free') duplicates id 3 ('eulex_free'); id 5 ('plus')
+        // duplicates id 2 ('eulex_plus'). GUARDED: only delete a row that
+        // no user currently sits on, so an assigned tier is never orphaned.
+        // Idempotent — a no-op once the rows are gone.
+        name: "tier_limits_dedup_legacy",
+        sql: `
+            DELETE FROM public.tier_limits tl
+             WHERE tl.tier_level_id IN (1, 5)
+               AND tl.tier_slug IN ('free', 'plus')
+               AND NOT EXISTS (
+                     SELECT 1 FROM public.user_tier_state s
+                      WHERE s.active_tier_level_id = tl.tier_level_id
+                   );
+        `,
+    },
+    {
+        // Generic one-time-migration marker table. Used by code-side
+        // boot steps (e.g. applyMarketingRelaunchOnce) that must run a
+        // data change exactly once without clobbering later admin edits.
+        name: "app_migrations",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.app_migrations (
+                name        text        PRIMARY KEY,
+                applied_at  timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        // Per-user bonus token credit packs (top-up). Three sources:
+        // Stripe webhook (self-service), bank_transfer (admin manual
+        // after seeing statement) and admin_manual (discretionary).
+        // Voiding is non-destructive (voided_at preserves audit trail).
+        // Mirrors migration 115.
+        name: "user_token_credits",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.user_token_credits (
+                id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id             uuid        NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                tokens_granted      bigint      NOT NULL CHECK (tokens_granted > 0),
+                tokens_consumed     bigint      NOT NULL DEFAULT 0
+                                                CHECK (tokens_consumed >= 0
+                                                   AND tokens_consumed <= tokens_granted),
+                payment_method      text        NOT NULL
+                                                CHECK (payment_method IN
+                                                      ('stripe', 'bank_transfer', 'admin_manual')),
+                external_reference  text,
+                stripe_event_id     text        UNIQUE,
+                amount_eur_cents    integer,
+                granted_by_admin_id uuid        REFERENCES public.users(id) ON DELETE SET NULL,
+                granted_at          timestamptz NOT NULL DEFAULT now(),
+                expires_at          timestamptz,
+                voided_at           timestamptz,
+                voided_reason       text,
+                notes               text
+            );
+        `,
+    },
+    {
+        name: "user_token_credits_active_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_user_token_credits_active
+                ON public.user_token_credits (user_id, granted_at)
+                WHERE voided_at IS NULL;
+        `,
+    },
+    {
+        name: "user_token_credits_granted_by_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_user_token_credits_granted_by
+                ON public.user_token_credits (granted_by_admin_id, granted_at DESC)
+                WHERE granted_by_admin_id IS NOT NULL;
+        `,
+    },
+    {
+        // Tier override + Stripe customer — lives in a *separate* table so
+        // Cloud Run's IAM DB user can CREATE it even when `public.users`
+        // is owned by `postgres` (ALTER TABLE users is denied). See
+        // migrations/118_user_tier_state_and_ump.sql.
+        name: "user_tier_state",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.user_tier_state (
+                user_id     uuid PRIMARY KEY
+                    REFERENCES public.users(id) ON DELETE CASCADE,
+                active_tier_level_id   integer,
+                active_tier_until      timestamptz,
+                stripe_customer_id     text,
+                active_tier_synced_at  timestamptz
+            );
+        `,
+    },
+    {
+        name: "user_tier_state_stripe_uq",
+        sql: `
+            CREATE UNIQUE INDEX IF NOT EXISTS user_tier_state_stripe_customer_id_uq
+                ON public.user_tier_state (stripe_customer_id)
+                WHERE stripe_customer_id IS NOT NULL;
+        `,
+    },
+    {
+        // Supabase Auth identity mapping. Supabase `sub` (auth.users UUID)
+        // → public.users.id. Separate table because the IAM DB user can't
+        // ALTER public.users (owned by postgres) — same constraint as
+        // user_tier_state. Mirror of migration 125_user_supabase_identity.
+        name: "user_supabase_identity",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.user_supabase_identity (
+                supabase_user_id uuid PRIMARY KEY,
+                user_id          uuid NOT NULL
+                    REFERENCES public.users(id) ON DELETE CASCADE,
+                email            text,
+                created_at       timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        name: "user_supabase_identity_user_uq",
+        sql: `
+            CREATE UNIQUE INDEX IF NOT EXISTS user_supabase_identity_user_id_uq
+                ON public.user_supabase_identity (user_id);
+        `,
+    },
+    {
+        name: "user_supabase_identity_email_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS user_supabase_identity_email_idx
+                ON public.user_supabase_identity (email);
+        `,
+    },
+    {
+        // Idempotency ledger for the order-confirmation email. The Stripe
+        // webhook fires several active-making events per subscription
+        // (created → updated → invoice.paid, plus renewals), but we want
+        // exactly ONE "order confirmed" email per order. The handler does
+        // INSERT … ON CONFLICT DO NOTHING and only emails when a row was
+        // actually claimed. `order_key` = subscription id (subscriptions)
+        // or checkout session id (token packs).
+        name: "billing_order_emails",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.billing_order_emails (
+                order_key  text PRIMARY KEY,
+                user_id    uuid,
+                plan       text,
+                sent_at    timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        // ISO-3166-1 alpha-2 country code (e.g. 'HR', 'DE'). Lives on
+        // user_tier_state because public.user_profiles is owned by the
+        // postgres role and the IAM DB user can't ALTER it (same
+        // constraint that drove the tier-state split). Used to:
+        //   • pre-fill Stripe customer.address.country so
+        //     automatic_tax resolves on the very first invoice; and
+        //   • stash UMP-pulled country whenever the partner site
+        //     supplies one (see lib/membership.applyPulledStatus).
+        // The column is added with a separate ALTER so older
+        // user_tier_state rows from migration 118 pick it up too.
+        name: "user_tier_state.country",
+        sql: `
+            ALTER TABLE public.user_tier_state
+                ADD COLUMN IF NOT EXISTS country text;
+        `,
+    },
+    {
+        // EU VAT registration number (e.g. 'HR12345678901').
+        // Shown / editable in the user profile; passed to Stripe
+        // customer.tax_id so automatic_tax can zero-rate B2B invoices.
+        // Pulled from UMP billing_vat_number meta when the partner
+        // plugin supplies it (see lib/membership.applyPulledStatus).
+        // Lives on user_tier_state (same IAM-ownership reason as country).
+        name: "user_tier_state.vat_number",
+        sql: `
+            ALTER TABLE public.user_tier_state
+                ADD COLUMN IF NOT EXISTS vat_number text;
+        `,
+    },
+    {
+        // Billing address (tracker #35). Zakon o PDV-u čl. 79. st. 1. t. 3.:
+        // an invoice must carry the buyer's name, ADDRESS and OIB / VAT
+        // ID — so for a business customer street + city are mandatory
+        // and are pushed to Stripe customer.address before the
+        // subscription exists. Same table as country/vat_number for the
+        // same IAM-ownership reason. postal_code optional.
+        name: "user_tier_state.billing_address",
+        sql: `
+            ALTER TABLE public.user_tier_state
+                ADD COLUMN IF NOT EXISTS address_line1 text,
+                ADD COLUMN IF NOT EXISTS address_city text,
+                ADD COLUMN IF NOT EXISTS address_postal_code text,
+                ADD COLUMN IF NOT EXISTS phone text;
+        `,
+    },
+    {
+        // Optional catalog of UMP level definitions (future: sync from WP).
+        name: "ump_membership_levels",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.ump_membership_levels (
+                level_id   bigint PRIMARY KEY,
+                slug       text,
+                label      text,
+                synced_at  timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        // Mirror of UMP assignments we know about (Stripe webhook, UMP pull).
+        // Rebuilt on each update; empty ⇒ no mirrored levels. Full multi-level
+        // sync can replace all rows for a user in one transaction later.
+        name: "ump_user_level_assignments",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.ump_user_level_assignments (
+                user_id    uuid NOT NULL
+                    REFERENCES public.users(id) ON DELETE CASCADE,
+                wp_user_id bigint NOT NULL,
+                level_id   integer NOT NULL,
+                expire_at  timestamptz,
+                status     text,
+                synced_at  timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (user_id, level_id)
+            );
+        `,
+    },
+    {
+        name: "ump_user_level_assignments_wp_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_ump_user_level_wp
+                ON public.ump_user_level_assignments (wp_user_id);
+        `,
+    },
+    // -----------------------------------------------------------------------
+    // PII Shield user preferences. Only the core-owned columns live here:
+    // per-user defaults on user_profiles (+ chats.pii_mode above). The
+    // pii_* tables themselves (sessions, mappings, analyses, audit log) are
+    // owned and bootstrapped by mike-pii-shield in its own database since
+    // #14 — the AGPL core never touches them at the SQL level.
+    // -----------------------------------------------------------------------
+    {
+        name: "user_profiles.pii_default_mode",
+        sql: `
+            ALTER TABLE public.user_profiles
+                ADD COLUMN IF NOT EXISTS pii_default_mode text
+                    NOT NULL DEFAULT 'off'
+                    CHECK (pii_default_mode IN ('off', 'standard', 'strict_legal', 'strict'));
+        `,
+    },
+    {
+        // Retired since #14 / migration 207 (kept for rollback; no code
+        // reads it — its opt-ins were folded into mode='strict' below).
+        name: "user_profiles.pii_review_required",
+        sql: `
+            ALTER TABLE public.user_profiles
+                ADD COLUMN IF NOT EXISTS pii_review_required boolean
+                    NOT NULL DEFAULT true;
+        `,
+    },
+    {
+        // Retired since #14 / migration 207 (kept for rollback; never
+        // consulted at decision time — tool behaviour is the per-tool
+        // policy registry in lib/pii/toolPolicy.ts).
+        name: "user_profiles.pii_disclosure_policy",
+        sql: `
+            ALTER TABLE public.user_profiles
+                ADD COLUMN IF NOT EXISTS pii_disclosure_policy jsonb
+                    NOT NULL DEFAULT '{}'::jsonb;
+        `,
+    },
+    {
+        // Migration 207 — collapse the four-value mode into three:
+        // 'strict_legal' folds into 'strict', and users who explicitly
+        // opted into always-review keep their review via 'strict'.
+        // Idempotent: after the first run both WHERE clauses match zero
+        // rows. Mirrors backend/migrations/207_pii_mode_collapse.sql.
+        name: "user_profiles.pii_mode_collapse_207",
+        sql: `
+            UPDATE public.user_profiles
+               SET pii_default_mode = 'strict'
+             WHERE pii_default_mode = 'strict_legal'
+                OR (pii_default_mode = 'standard' AND pii_review_required = true);
+            UPDATE public.chats
+               SET pii_mode = 'strict'
+             WHERE pii_mode = 'strict_legal';
+        `,
+    },
+    // ── Team subsystem (MVP) ────────────────────────────────────────────
+    // A team is a seat-bound roster owned by a Team-tier subscriber. Adding
+    // a member to a specific predmet (project) still uses
+    // projects.shared_with (existing access path); teams add the managed,
+    // gated roster + seat accounting. See lib/teams.ts + routes/teams.ts.
+    {
+        name: "teams",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.teams (
+                id                     uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                name                   text        NOT NULL DEFAULT 'My Team',
+                owner_user_id          uuid        NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                seats                  integer     NOT NULL DEFAULT 5,
+                stripe_subscription_id text,
+                created_at             timestamptz NOT NULL DEFAULT now(),
+                updated_at             timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        // One team per owner (the buyer). Lets ensureTeamForOwner upsert.
+        name: "teams_owner_uniq",
+        sql: `
+            CREATE UNIQUE INDEX IF NOT EXISTS teams_owner_uniq
+                ON public.teams(owner_user_id);
+        `,
+    },
+    {
+        name: "team_members",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.team_members (
+                id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                team_id     uuid        NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+                user_id     uuid        REFERENCES public.users(id) ON DELETE SET NULL,
+                email       text        NOT NULL,
+                role        text        NOT NULL DEFAULT 'member',
+                status      text        NOT NULL DEFAULT 'invited',
+                invited_by  uuid        REFERENCES public.users(id) ON DELETE SET NULL,
+                invited_at  timestamptz NOT NULL DEFAULT now(),
+                joined_at   timestamptz
+            );
+        `,
+    },
+    {
+        // One membership row per (team, email).
+        name: "team_members_team_email_uniq",
+        sql: `
+            CREATE UNIQUE INDEX IF NOT EXISTS team_members_team_email_uniq
+                ON public.team_members(team_id, lower(email));
+        `,
+    },
+    {
+        name: "team_members_team_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_team_members_team
+                ON public.team_members(team_id);
+        `,
+    },
+    {
+        name: "team_members_email_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_team_members_email
+                ON public.team_members(lower(email));
+        `,
+    },
+    {
+        name: "team_members_user_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_team_members_user
+                ON public.team_members(user_id);
+        `,
+    },
+    {
+        // Tiny KV store for AdminMax operator state — e.g. the
+        // `new_users_last_checked_at` timestamp behind the "new users
+        // since last look" corner badge. AdminMax auth is a single shared
+        // password (no per-admin identity), so state is global. Mirrors
+        // migration 126.
+        name: "admin_state",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.admin_state (
+                key        text        PRIMARY KEY,
+                value      jsonb       NOT NULL DEFAULT '{}'::jsonb,
+                updated_at timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        // Append-only audit of tier transitions (Stripe webhook, UMP pull,
+        // AdminMax manual set). Written by lib/membership.ts whenever the
+        // effective tier actually changes. Mirrors migration 126.
+        name: "tier_change_history",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.tier_change_history (
+                id                 uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id            uuid        NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                old_tier_level_id  integer,
+                new_tier_level_id  integer,
+                old_until          timestamptz,
+                new_until          timestamptz,
+                source             text        NOT NULL
+                                               CHECK (source IN ('stripe', 'ump_sync', 'admin')),
+                reason             text,
+                created_at         timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        name: "tier_change_history_user_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_tier_change_history_user
+                ON public.tier_change_history (user_id, created_at DESC);
+        `,
+    },
+    {
+        name: "tier_change_history_created_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_tier_change_history_created
+                ON public.tier_change_history (created_at DESC);
+        `,
+    },
+    {
+        // last_login_at / login_count per user, updated (throttled) by the
+        // auth middleware. Separate table because the IAM DB user cannot
+        // ALTER public.users (owned by postgres). Mirrors migration 126.
+        name: "user_login_state",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.user_login_state (
+                user_id       uuid        PRIMARY KEY
+                    REFERENCES public.users(id) ON DELETE CASCADE,
+                last_login_at timestamptz NOT NULL DEFAULT now(),
+                login_count   bigint      NOT NULL DEFAULT 1
+            );
+        `,
+    },
+    {
+        name: "user_login_state_last_login_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_user_login_state_last_login
+                ON public.user_login_state (last_login_at DESC);
+        `,
+    },
+    {
+        // Subscription revenue ledger — Stripe webhook mirrors every PAID
+        // subscription invoice here so analytics can sum real income
+        // (token packs live in user_token_credits). Mirrors migration 127.
+        name: "billing_revenue",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.billing_revenue (
+                id                      uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id                 uuid        REFERENCES public.users(id) ON DELETE SET NULL,
+                stripe_customer_id      text,
+                stripe_invoice_id       text        UNIQUE,
+                stripe_subscription_id  text,
+                plan                    text,
+                amount_cents            integer     NOT NULL CHECK (amount_cents > 0),
+                currency                text        NOT NULL DEFAULT 'eur',
+                paid_at                 timestamptz NOT NULL DEFAULT now(),
+                created_at              timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        name: "billing_revenue_paid_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_billing_revenue_paid
+                ON public.billing_revenue (paid_at DESC);
+        `,
+    },
+    {
+        name: "billing_revenue_user_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_billing_revenue_user
+                ON public.billing_revenue (user_id, paid_at DESC)
+                WHERE user_id IS NOT NULL;
+        `,
+    },
+    {
+        // Promo-code attribution: the webhook stamps each mirrored paid
+        // invoice with the customer-facing promotion code (e.g. HOK2026)
+        // that discounted it, so AdminMax can report per-code
+        // subscriptions/revenue. Mirrors migration 206.
+        name: "billing_revenue.promo_code",
+        sql: `
+            ALTER TABLE public.billing_revenue
+                ADD COLUMN IF NOT EXISTS promo_code text;
+        `,
+    },
+    {
+        name: "billing_revenue_promo_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_billing_revenue_promo
+                ON public.billing_revenue (promo_code)
+                WHERE promo_code IS NOT NULL;
+        `,
+    },
+    {
+        // Cross-instance lease for POST /tabular-review/:id/generate. The
+        // in-memory activeGenerateRuns set only guards one process; with
+        // Cloud Run maxScale > 1 a second click can land on another
+        // instance. Acquired via conditional UPDATE (atomic per row);
+        // the timestamp doubles as a TTL so a crashed holder can't wedge
+        // the review forever.
+        name: "tabular_reviews.generate_lock_until",
+        sql: `
+            ALTER TABLE public.tabular_reviews
+                ADD COLUMN IF NOT EXISTS generate_lock_until timestamptz;
+        `,
+    },
+    {
+        // Authoritative list of documents attached to a review. Historically
+        // a review's documents existed ONLY implicitly as the distinct
+        // document_ids in tabular_cells (doc × column matrix). That meant a
+        // review created/updated with documents but ZERO columns produced
+        // zero cells and silently lost its documents. This column persists
+        // the document set independently of the cell matrix; cells stay the
+        // matrix, document_ids is the source of truth for "which docs".
+        name: "tabular_reviews.document_ids",
+        sql: `
+            ALTER TABLE public.tabular_reviews
+                ADD COLUMN IF NOT EXISTS document_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+        `,
+    },
+    {
+        // Contexts runtime — per-user toggle prefs for the optional context
+        // provider (CONTEXTS_URL). context_id is an OPAQUE provider id: no
+        // FK, the provider owns the content datastore. Mirrors
+        // migrations/201_custom_contexts.sql + 205 (FK removal).
+        name: "user_context_prefs",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.user_context_prefs (
+                user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                context_id uuid NOT NULL,
+                enabled boolean NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (user_id, context_id)
+            );
+        `,
+    },
+    {
+        // Contexts runtime — attach links: a context attached to a
+        // workflow/project joins that run's active set, access re-checked
+        // per requester by the provider's resolve. Opaque context ids, no
+        // FK. Mirrors migrations/203_context_links.sql + 205 (FK removal).
+        name: "context_workflow_links",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.context_workflow_links (
+                context_id uuid NOT NULL,
+                workflow_id uuid NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (context_id, workflow_id)
+            );
+        `,
+    },
+    {
+        name: "idx_context_workflow_links_wf",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_context_workflow_links_wf
+                ON public.context_workflow_links (workflow_id);
+        `,
+    },
+    {
+        name: "context_project_links",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.context_project_links (
+                context_id uuid NOT NULL,
+                project_id uuid NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (context_id, project_id)
+            );
+        `,
+    },
+    {
+        name: "idx_context_project_links_proj",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_context_project_links_proj
+                ON public.context_project_links (project_id);
+        `,
+    },
+    {
+        // Databases created before migration 205 carry FKs from the runtime
+        // tables into the deprecated custom_contexts content table; provider
+        // context ids are opaque and never rows there, so the FKs must go.
+        // Mirrors migrations/205_deprecate_context_content_tables.sql.
+        name: "context_runtime_tables_no_content_fk",
+        sql: `
+            ALTER TABLE public.user_context_prefs
+                DROP CONSTRAINT IF EXISTS user_context_prefs_context_id_fkey;
+            ALTER TABLE public.context_workflow_links
+                DROP CONSTRAINT IF EXISTS context_workflow_links_context_id_fkey;
+            ALTER TABLE public.context_project_links
+                DROP CONSTRAINT IF EXISTS context_project_links_context_id_fkey;
+        `,
+    },
+    {
+        // Generic notification store for the license-boundary seams
+        // (design §4.2): configured services POST /internal/notifications
+        // and the core stores rows it does not interpret.
+        // Mirrors migrations/204_service_notifications.sql.
+        name: "service_notifications",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.service_notifications (
+              id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              user_id        UUID REFERENCES public.users(id) ON DELETE CASCADE,
+              context_ref    TEXT,
+              title          TEXT NOT NULL,
+              body_md        TEXT,
+              link           TEXT,
+              source_service TEXT NOT NULL,
+              read_at        TIMESTAMPTZ,
+              created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        name: "service_notifications_user_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS service_notifications_user_idx
+                ON public.service_notifications (user_id, created_at DESC);
+        `,
+    },
+    {
+        // Sidebar conversation groups — see migration 132. Per-user only
+        // (user_id is text, matching chats.user_id). Soft-delete status
+        // model; routes/chatGroups.ts never returns 'deleted' rows.
+        name: "chat_groups",
+        sql: `
+            CREATE TABLE IF NOT EXISTS public.chat_groups (
+                id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id     text        NOT NULL,
+                name        text        NOT NULL,
+                status      text        NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived','deleted')),
+                created_at  timestamptz NOT NULL DEFAULT now(),
+                updated_at  timestamptz NOT NULL DEFAULT now()
+            );
+        `,
+    },
+    {
+        name: "chat_groups_user_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_chat_groups_user
+                ON public.chat_groups (user_id);
+        `,
+    },
+    {
+        // Chat history management flags — see migration 132. status:
+        // 'deleted' rows are invisible everywhere (soft delete); DELETE
+        // /chat/:id flips status instead of removing the row.
+        name: "chats.history_management_columns",
+        sql: `
+            ALTER TABLE public.chats
+                ADD COLUMN IF NOT EXISTS group_id uuid REFERENCES public.chat_groups(id) ON DELETE SET NULL,
+                ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived','deleted'));
+        `,
+    },
+    {
+        name: "chats_user_status_idx",
+        sql: `
+            CREATE INDEX IF NOT EXISTS idx_chats_user_status
+                ON public.chats (user_id, status);
         `,
     },
 ];
@@ -349,9 +1125,36 @@ async function applyWithRetry(
     );
 }
 
+async function verifyUserTierStateTable(): Promise<void> {
+    try {
+        const r = await query<{ exists: boolean }>(
+            `SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'public'
+                   AND table_name = 'user_tier_state'
+            ) AS exists`,
+        );
+        if (!r.rows[0]?.exists) {
+            console.error(
+                "[ensureSchema] CRITICAL: public.user_tier_state is missing — Plus tier override + Stripe customer cannot persist.",
+            );
+        }
+    } catch (err) {
+        console.warn(
+            "[ensureSchema] could not verify user_tier_state:",
+            err instanceof Error ? err.message : err,
+        );
+    }
+}
+
+// NOTE: PII retention (pii_audit_log 13-month trim, expired-session
+// cleanup, stale analyses) moved into mike-pii-shield with the DB split
+// (#14) — the shield owns the pii_* schema and its retention job.
+
 export async function ensureSchema(): Promise<void> {
     for (const stmt of STATEMENTS) {
         await applyWithRetry(stmt.name, stmt.sql);
     }
+    await verifyUserTierStateTable();
     console.log("[ensureSchema] done");
 }

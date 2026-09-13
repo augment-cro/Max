@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { MikeIcon } from "@/components/chat/mike-icon";
 import { useFetchDocxBytes } from "@/app/hooks/useFetchDocxBytes";
 import { supabase } from "@/lib/supabase";
@@ -10,6 +11,7 @@ import {
 } from "./highlightDocxQuote";
 import type { CitationQuote } from "./types";
 
+import { API_BASE } from "@/app/lib/apiBase";
 interface Props {
     documentId: string;
     versionId?: string | null;
@@ -70,8 +72,30 @@ interface Props {
      * current scrollTop against its tab state.
      */
     onScrollChange?: (scrollTop: number) => void;
+    /**
+     * Fires after SuperDoc saves a new version (manual "Spremi" or
+     * auto-save). The parent must repoint its tab's `versionId` to the
+     * new version so the reload shows the saved content, not the old
+     * pinned version (vidi SUPERDOC_SAVE_BUG, Bug 1). docx-preview
+     * fallback ne sprema, pa ovdje ostaje neiskorišten — postoji samo da
+     * `DocxViewer` (zajednički tip) može proslijediti prop na SuperDocView.
+     */
+    onSaved?: (args: {
+        versionId: string;
+        versionNumber: number | null;
+    }) => void;
     rounded?: boolean;
     bordered?: boolean;
+    /**
+     * Aktivira Draft Mode selekcijsko sučelje. Ignorira se u docx-preview
+     * fallback-u; koristi ga SuperDocView (proslijeđuje DocxViewer spredom).
+     */
+    draftModeEnabled?: boolean;
+    /**
+     * Poziva se nakon što Draft Mode edit uspješno primijeni novu verziju.
+     * Ignorira se u docx-preview fallback-u.
+     */
+    onDraftEditApplied?: (result: import("@/app/lib/mikeApi").DraftSelectionEditResult) => void;
 }
 
 function findEditElement(
@@ -148,8 +172,7 @@ async function tagWIdsOnRenderedDom(
             data: { session },
         } = await supabase.auth.getSession();
         const token = session?.access_token;
-        const apiBase =
-            process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:3001";
+        const apiBase = API_BASE;
         const qs = versionId
             ? `?version_id=${encodeURIComponent(versionId)}`
             : "";
@@ -208,6 +231,7 @@ export function DocxView({
     rounded = true,
     bordered = true,
 }: Props) {
+    const tc = useTranslations("common");
     const scrollRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const lastScrollTopRef = useRef(0);
@@ -471,16 +495,16 @@ export function DocxView({
 
     return (
         <div
-            className={`relative flex flex-col flex-1 overflow-hidden ${bordered ? "border border-gray-200" : ""} ${rounded ? "rounded-xl" : ""}`}
+            className={`relative flex flex-col flex-1 overflow-hidden ${bordered ? "border border-border" : ""} ${rounded ? "rounded-xl" : ""}`}
         >
             {warning && (
-                <div className="absolute top-2 left-2 z-10 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800 shadow-sm">
+                <div className="absolute top-2 left-2 z-10 flex items-center gap-2 rounded-md border border-warning/20 bg-warning/10 px-2 py-1 text-xs text-warning">
                     <span>{warning}</span>
                     <button
                         type="button"
                         onClick={() => onWarningDismiss?.()}
-                        className="text-amber-600 hover:text-amber-900"
-                        aria-label="Dismiss warning"
+                        className="text-warning hover:text-foreground"
+                        aria-label={tc("dismissWarning")}
                     >
                         ×
                     </button>
@@ -488,7 +512,7 @@ export function DocxView({
             )}
             <div
                 ref={scrollRef}
-                className="flex-1 overflow-auto bg-gray-100 px-5 pt-5 pb-3 docx-view-scroll"
+                className="flex-1 overflow-auto bg-muted px-5 pt-5 pb-3 docx-view-scroll"
                 data-document-id={documentId}
                 data-version-id={versionId ?? ""}
             >
@@ -499,7 +523,7 @@ export function DocxView({
                 )}
                 {error && (
                     <div className="flex h-full items-center justify-center">
-                        <p className="text-sm text-red-500">{error}</p>
+                        <p className="text-sm text-destructive">{error}</p>
                     </div>
                 )}
                 <div ref={containerRef} className="docx-view-container" />

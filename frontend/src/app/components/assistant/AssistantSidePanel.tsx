@@ -1,9 +1,13 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { DocPanel, type DocPanelMode } from "../shared/DocPanel";
+import { LegalSourcePanel } from "../shared/LegalSourcePanel";
 import type {
+    CitationPinpoint,
+    LegalSource,
     MikeCitationAnnotation,
     MikeEditAnnotation,
 } from "../shared/types";
@@ -42,7 +46,36 @@ export type EditTab = CommonTab & {
     edit: MikeEditAnnotation;
 };
 
-export type AssistantSidePanelTab = DocumentTab | CitationTab | EditTab;
+/** A legal source (EU/HR/FR) — renders `LegalSourcePanel`, not `DocPanel`. */
+export type LegalSourceTab = CommonTab & {
+    kind: "legal-source";
+    source: LegalSource;
+    /** Exact cited passage to highlight (empty when opened from a chip). */
+    quote: string;
+    /**
+     * Article numbers cited for this regulation across the whole message. The
+     * panel fetches the FULL law and marks only these articles. Empty/undefined
+     * → only the clicked source's own article is marked.
+     */
+    citedArticleNumbers?: string[];
+    /**
+     * Stavak/točka pinpoint parsed from the clicked reference ("članak 38.
+     * stavak 2. točka a)"). The panel highlights it in magenta inside the
+     * (green) cited article. Null/undefined → article-level highlight only.
+     */
+    pinpoint?: CitationPinpoint | null;
+    /**
+     * Bumped on every citation click so re-clicking the same article in an
+     * already-open tab re-scrolls to it (instead of keeping the old scroll).
+     */
+    focusNonce?: number;
+};
+
+export type AssistantSidePanelTab =
+    | DocumentTab
+    | CitationTab
+    | EditTab
+    | LegalSourceTab;
 
 interface Props {
     tabs: AssistantSidePanelTab[];
@@ -82,6 +115,25 @@ interface Props {
     }) => void;
     onWarningDismiss?: (tabId: string) => void;
     onScrollChange?: (tabId: string, scrollTop: number) => void;
+    /**
+     * Fires after the SuperDoc editor in a tab saves a new version. The
+     * parent repoints that tab's `versionId`/`versionNumber` so the reload
+     * shows the saved content (Bug 1 fix).
+     */
+    onSaved?: (args: {
+        documentId: string;
+        versionId: string;
+        versionNumber: number | null;
+    }) => void;
+    /**
+     * Poziva se nakon što Draft Mode edit primijeni novu verziju.
+     * Parent treba ažurirati tab versionId i bumparse refetchKey.
+     */
+    onDraftEditApplied?: (args: {
+        documentId: string;
+        versionId: string;
+        versionNumber: number | null;
+    }) => void;
 }
 
 const MIN_WIDTH = 300;
@@ -100,7 +152,10 @@ export function AssistantSidePanel({
     onEditError,
     onWarningDismiss,
     onScrollChange,
+    onSaved,
+    onDraftEditApplied,
 }: Props) {
+    const t = useTranslations("assistant.sidePanel");
     const panelRef = useRef<HTMLDivElement>(null);
     const [panelWidth, setPanelWidth] = useState(() =>
         typeof window !== "undefined"
@@ -149,18 +204,18 @@ export function AssistantSidePanel({
     return (
         <div
             ref={panelRef}
-            className="flex h-full shrink-0 flex-col bg-white relative border-l border-gray-200 shadow-[-4px_0_12px_rgba(0,0,0,0.02)]"
+            className="flex h-full shrink-0 flex-col bg-background relative border-l border-border"
             style={{ width: panelWidth }}
         >
             {/* Drag handle */}
             <div
                 onMouseDown={onMouseDown}
-                className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-400 transition-colors z-10"
+                className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-ring transition-colors z-10"
                 style={{ marginLeft: -2 }}
             />
 
             {/* Tab strip (Chrome-style) */}
-            <div className="flex items-end gap-1 pr-2 pt-2 bg-gray-100">
+            <div className="flex items-end gap-1 pr-2 pt-2 bg-muted">
                 <div className="flex-1 flex items-end gap-1 overflow-x-auto pl-2 pr-2">
                     {tabs.map((tab) => {
                         const isActive = tab.id === active.id;
@@ -174,8 +229,8 @@ export function AssistantSidePanel({
                                 onClick={() => onActivateTab(tab.id)}
                                 className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 h-8 min-w-0 max-w-[220px] rounded-t-lg cursor-pointer select-none transition-colors ${
                                     isActive
-                                        ? "bg-white text-gray-800 before:content-[''] before:absolute before:bottom-0 before:-left-2 before:w-2 before:h-2 before:bg-[radial-gradient(circle_at_top_left,transparent_8px,white_9px)] after:content-[''] after:absolute after:bottom-0 after:-right-2 after:w-2 after:h-2 after:bg-[radial-gradient(circle_at_top_right,transparent_8px,white_9px)]"
-                                        : "bg-gray-200/70 text-gray-600 hover:bg-gray-200"
+                                        ? "bg-background text-foreground before:content-[''] before:absolute before:bottom-0 before:-left-2 before:w-2 before:h-2 before:bg-[radial-gradient(circle_at_top_left,transparent_8px,var(--background)_9px)] after:content-[''] after:absolute after:bottom-0 after:-right-2 after:w-2 after:h-2 after:bg-[radial-gradient(circle_at_top_right,transparent_8px,var(--background)_9px)]"
+                                        : "bg-secondary/70 text-muted-foreground hover:bg-secondary"
                                 }`}
                             >
                                 <span
@@ -188,8 +243,8 @@ export function AssistantSidePanel({
                                     <span
                                         className={`shrink-0 inline-flex items-center rounded border px-1 py-px text-[9px] font-medium ${
                                             isActive
-                                                ? "border-gray-200 bg-white text-gray-600"
-                                                : "border-gray-300 bg-white/70 text-gray-500"
+                                                ? "border-border bg-surface-elevated text-muted-foreground"
+                                                : "border-border bg-surface-elevated/70 text-muted-foreground"
                                         }`}
                                     >
                                         V{tab.versionNumber}
@@ -200,7 +255,7 @@ export function AssistantSidePanel({
                                         e.stopPropagation();
                                         onCloseTab(tab.id);
                                     }}
-                                    className="shrink-0 rounded-full p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-700"
+                                    className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
                                 >
                                     <X className="h-3 w-3" />
                                 </button>
@@ -210,8 +265,8 @@ export function AssistantSidePanel({
                 </div>
                 <button
                     onClick={onCloseAll}
-                    className="shrink-0 mb-1 ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
-                    title="Close panel"
+                    className="shrink-0 mb-1 ml-1 rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                    title={t("closePanel")}
                 >
                     <X className="h-4 w-4" />
                 </button>
@@ -223,6 +278,23 @@ export function AssistantSidePanel({
             <div className="flex-1 min-h-0 relative">
                 {tabs.map((tab) => {
                     const isActive = tab.id === active.id;
+                    if (tab.kind === "legal-source") {
+                        return (
+                            <div
+                                key={tab.id}
+                                className={`absolute inset-0 flex flex-col ${isActive ? "" : "invisible pointer-events-none"}`}
+                                aria-hidden={!isActive}
+                            >
+                                <LegalSourcePanel
+                                    source={tab.source}
+                                    quote={tab.quote}
+                                    citedArticleNumbers={tab.citedArticleNumbers}
+                                    pinpoint={tab.pinpoint}
+                                    focusNonce={tab.focusNonce}
+                                />
+                            </div>
+                        );
+                    }
                     const mode: DocPanelMode =
                         tab.kind === "citation"
                             ? {
@@ -263,6 +335,16 @@ export function AssistantSidePanel({
                                 initialScrollTop={tab.initialScrollTop ?? null}
                                 onScrollChange={(scrollTop) =>
                                     onScrollChange?.(tab.id, scrollTop)
+                                }
+                                onSaved={(args) =>
+                                    onSaved?.({
+                                        documentId: tab.documentId,
+                                        versionId: args.versionId,
+                                        versionNumber: args.versionNumber,
+                                    })
+                                }
+                                onDraftEditApplied={(args) =>
+                                    onDraftEditApplied?.(args)
                                 }
                             />
                         </div>

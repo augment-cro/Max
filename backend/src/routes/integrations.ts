@@ -215,6 +215,53 @@ integrationsRouter.delete(
     },
 );
 
+// GET /integrations/google_drive/picker_token
+//
+// Returns a (refreshed if needed) access_token + the GCP project number
+// the frontend hands straight to Google Picker's `oauth-token` attribute.
+// The token is short-lived (1h) and scoped only to drive.file, so leaking
+// it is bounded — but we still avoid exposing it broader than this route.
+//
+// We keep this route google_drive-specific (not generic /picker_token) so
+// callers can't accidentally fish other providers' tokens through it.
+integrationsRouter.get(
+    "/google_drive/picker_token",
+    requireAuth,
+    async (_req, res) => {
+        const userId = res.locals.userId as string;
+        const adapter = getAdapter("google_drive");
+        if (!adapter || !adapter.isConfigured()) {
+            return void res
+                .status(503)
+                .json({ detail: "Google Drive is not configured" });
+        }
+        try {
+            const access_token = await getValidAccessToken(
+                userId,
+                "google_drive",
+            );
+            // app_id is the numeric portion of the OAuth client id
+            // (== GCP project number), required by Picker for app-binding.
+            const client_id = process.env.GOOGLE_DRIVE_CLIENT_ID ?? "";
+            const app_id = client_id.split("-")[0] ?? "";
+            const developer_key =
+                process.env.GOOGLE_PICKER_API_KEY?.trim() || null;
+            res.json({
+                access_token,
+                app_id,
+                developer_key,
+            });
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(
+                "[integrations] google_drive picker_token failed:",
+                msg,
+            );
+            res.status(502).json({ detail: msg });
+        }
+    },
+);
+
 // GET /integrations/:provider/files?q=&page_token=
 integrationsRouter.get(
     "/:provider/files",
@@ -320,9 +367,13 @@ function redirectToFrontend(
     // origin — we bounce it to the frontend so the user lands somewhere
     // useful. The frontend reads ?integration=&ok=&error= and shows a
     // toast / refreshes its connector list.
+    // FRONTEND_URL is a comma-separated CORS-origins list (see index.ts);
+    // a redirect needs exactly ONE origin, so take the first entry.
     const base =
-        process.env.FRONTEND_URL?.trim() ||
-        "https://max.eulex.ai";
+        (process.env.FRONTEND_URL ?? "https://max.eulex.ai")
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)[0] ?? "https://max.eulex.ai";
     const qs = new URLSearchParams({
         integration: params.provider,
         ok: params.ok ? "1" : "0",

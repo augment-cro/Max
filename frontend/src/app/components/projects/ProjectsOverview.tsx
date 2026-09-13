@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Plus, FolderOpen, ChevronDown } from "lucide-react";
 import { HeaderSearchBtn } from "@/app/components/shared/HeaderSearchBtn";
 import { listProjects, updateProject, deleteProject } from "@/app/lib/mikeApi";
@@ -12,9 +12,13 @@ import type { MikeProject } from "@/app/components/shared/types";
 import { NewProjectModal } from "./NewProjectModal";
 import { ToolbarTabs } from "@/app/components/shared/ToolbarTabs";
 import { RowActions } from "@/app/components/shared/RowActions";
+import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 
-function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString(undefined, {
+function formatDate(iso: string, locale?: string) {
+    // Map the app locale to a BCP-47 tag so a hr user on an en-US browser
+    // still sees Croatian dates, matching ProjectPage.formatDate (#105).
+    const bcp47 = locale === "hr" ? "hr-HR" : locale;
+    return new Date(iso).toLocaleDateString(bcp47, {
         day: "numeric",
         month: "short",
         year: "numeric",
@@ -43,7 +47,11 @@ export function ProjectsOverview() {
     const router = useRouter();
     const { user } = useAuth();
     const t = useTranslations("projects");
+    const locale = useLocale();
     const tc = useTranslations("common");
+    const tDelete = useTranslations("confirmDelete");
+    const { confirm: confirmDialog, dialog: confirmDialogEl } =
+        useConfirmDialog();
 
     useEffect(() => {
         listProjects()
@@ -126,7 +134,9 @@ export function ProjectsOverview() {
                 p.id === projectId ? { ...p, cm_number: trimmed || null } : p,
             ),
         );
-        await updateProject(projectId, { cm_number: trimmed || undefined });
+        // `undefined` was dropped by JSON.stringify, so clearing the field
+        // PATCHed `{}` and silently reverted on reload (issue #100).
+        await updateProject(projectId, { cm_number: trimmed || null });
     }
 
     async function handleDeleteSelected() {
@@ -140,12 +150,34 @@ export function ProjectsOverview() {
             return !p || (p.is_owner ?? p.user_id === user?.id);
         });
         const blocked = ids.length - owned.length;
+        if (owned.length > 0) {
+            const ok = await confirmDialog({
+                title: tDelete("projectsTitle"),
+                message: tDelete("projectsBody", { count: owned.length }),
+                confirmLabel: tDelete("deleteAction"),
+                destructive: true,
+            });
+            if (!ok) return;
+        }
         setSelectedIds([]);
-        await Promise.all(owned.map((id) => deleteProject(id).catch(() => {})));
-        setProjects((prev) => prev.filter((p) => !owned.includes(p.id)));
+        // Remove from the list only the rows that ACTUALLY deleted —
+        // otherwise a failed delete vanishes from the UI and silently
+        // reappears on the next reload.
+        const results = await Promise.all(
+            owned.map((id) =>
+                deleteProject(id)
+                    .then(() => id)
+                    .catch(() => null),
+            ),
+        );
+        const deleted = new Set(
+            results.filter((id): id is string => id !== null),
+        );
+        if (deleted.size > 0)
+            setProjects((prev) => prev.filter((p) => !deleted.has(p.id)));
         if (blocked > 0) {
             setOwnerOnlyAction(
-                `delete ${blocked} of the selected projects — only the project owner can delete a project`,
+                t("ownerOnlyDeleteWarning", { count: blocked }),
             );
         }
     }
@@ -156,16 +188,16 @@ export function ProjectsOverview() {
                 <div ref={actionsRef} className="relative">
                     <button
                         onClick={() => setActionsOpen((v) => !v)}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                        className="flex items-center gap-1 text-xs font-medium text-foreground transition-colors"
                     >
                         {tc("actions")}
                         <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     {actionsOpen && (
-                        <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-gray-100 bg-white shadow-lg z-50 overflow-hidden">
+                        <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-border bg-surface-elevated z-50 overflow-hidden">
                             <button
                                 onClick={handleDeleteSelected}
-                                className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 transition-colors"
                             >
                                 {tc("delete")}
                             </button>
@@ -177,10 +209,10 @@ export function ProjectsOverview() {
     );
 
     return (
-        <div className="flex-1 overflow-y-auto bg-white">
+        <div className="flex-1 h-full overflow-y-auto bg-background">
             {/* Page header */}
             <div className="flex items-center justify-between px-8 py-4">
-                <h1 className="text-2xl font-medium font-serif text-gray-900">
+                <h1 className="text-2xl font-medium font-serif text-foreground">
                     {t("title")}
                 </h1>
                 <div className="flex items-center gap-2">
@@ -191,7 +223,7 @@ export function ProjectsOverview() {
                     />
                     <button
                         onClick={() => setModalOpen(true)}
-                        className="flex items-center justify-center p-1.5 text-gray-500 hover:text-gray-900 transition-colors"
+                        className="flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground transition-colors"
                     >
                         <Plus className="h-4 w-4" />
                     </button>
@@ -209,8 +241,8 @@ export function ProjectsOverview() {
             <div className="w-full overflow-x-auto">
                 <div className="min-w-max">
                 {/* Column headers */}
-                <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium select-none">
-                    <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium select-none">
+                    <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                         {!loading && (
                             <input
                                 type="checkbox"
@@ -219,11 +251,11 @@ export function ProjectsOverview() {
                                     if (el) el.indeterminate = someSelected;
                                 }}
                                 onChange={toggleAll}
-                                className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                             />
                         )}
                     </div>
-                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                         {t("columns.name")}
                     </div>
                     <div className="ml-auto w-32 shrink-0 text-left">{t("columns.cm")}</div>
@@ -241,26 +273,26 @@ export function ProjectsOverview() {
                         {[1, 2, 3].map((i) => (
                             <div
                                 key={i}
-                                className="flex items-center h-10 pr-8 border-b border-gray-50"
+                                className="flex items-center h-10 pr-8 border-b border-border"
                             >
                                 <div className="w-8 shrink-0" />
                                 <div className="flex-1 min-w-0 pl-3 pr-4">
-                                    <div className="h-3.5 w-48 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3.5 w-48 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-32 shrink-0">
-                                    <div className="h-3 w-20 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-20 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-24 shrink-0">
-                                    <div className="h-3 w-8 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-8 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-24 shrink-0">
-                                    <div className="h-3 w-8 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-8 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-36 shrink-0">
-                                    <div className="h-3 w-8 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-8 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-32 shrink-0">
-                                    <div className="h-3 w-20 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-20 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-8 shrink-0" />
                             </div>
@@ -270,22 +302,22 @@ export function ProjectsOverview() {
                     <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
                         {activeTab === "all" || activeTab === "mine" ? (
                             <>
-                                <FolderOpen className="h-8 w-8 text-gray-300 mb-4" />
-                                <p className="text-2xl font-medium font-serif text-gray-900">
+                                <FolderOpen className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                <p className="text-2xl font-medium font-serif text-foreground">
                                     {t("title")}
                                 </p>
-                                <p className="mt-1 text-xs text-gray-400 max-w-xs">
+                                <p className="mt-1 text-xs text-muted-foreground/70 max-w-xs">
                                     {t("empty.description")}
                                 </p>
                                 <button
                                     onClick={() => setModalOpen(true)}
-                                    className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md"
+                                    className="mt-4 inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
                                 >
                                     {t("empty.createNew")}
                                 </button>
                             </>
                         ) : (
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-muted-foreground/70">
                                 {t("empty.noProjects", { tab: activeTab })}
                             </p>
                         )}
@@ -294,8 +326,8 @@ export function ProjectsOverview() {
                     <div>
                         {filtered.map((project) => {
                             const rowBg = selectedIds.includes(project.id)
-                                ? "bg-gray-50"
-                                : "bg-white";
+                                ? "bg-secondary"
+                                : "bg-background";
                             return (
                             <div
                                 key={project.id}
@@ -303,10 +335,10 @@ export function ProjectsOverview() {
                                     if (renamingId === project.id) return;
                                     router.push(`/projects/${project.id}`);
                                 }}
-                                className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                             >
                                 <div
-                                    className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-gray-50`}
+                                    className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-accent`}
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     <input
@@ -315,12 +347,12 @@ export function ProjectsOverview() {
                                             project.id,
                                         )}
                                         onChange={() => toggleOne(project.id)}
-                                        className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                        className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                                     />
                                 </div>
 
                                 {/* Project Name */}
-                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-gray-50`}>
+                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-accent`}>
                                     {renamingId === project.id ? (
                                         <input
                                             autoFocus
@@ -340,17 +372,17 @@ export function ProjectsOverview() {
                                                 handleRenameSubmit(project.id)
                                             }
                                             onClick={(e) => e.stopPropagation()}
-                                            className="w-full text-sm text-gray-800 bg-transparent outline-none"
+                                            className="w-full text-sm text-foreground bg-transparent outline-none"
                                         />
                                     ) : (
-                                        <span className="text-sm text-gray-800 truncate block">
+                                        <span className="text-sm text-foreground truncate block">
                                             {project.name}
                                         </span>
                                     )}
                                 </div>
 
                                 <div
-                                    className="ml-auto w-32 shrink-0 text-sm text-gray-500 truncate"
+                                    className="ml-auto w-32 shrink-0 text-sm text-muted-foreground truncate"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {cmEditingId === project.id ? (
@@ -370,27 +402,27 @@ export function ProjectsOverview() {
                                                 handleCmSubmit(project.id)
                                             }
                                             placeholder={t("cmPlaceholder")}
-                                            className="w-full text-sm text-gray-800 bg-transparent outline-none"
+                                            className="w-full text-sm text-foreground bg-transparent outline-none"
                                         />
                                     ) : (
                                         (project.cm_number ?? (
-                                            <span className="text-gray-300">
+                                            <span className="text-muted-foreground/70">
                                                 —
                                             </span>
                                         ))
                                     )}
                                 </div>
-                                <div className="w-24 shrink-0 text-sm text-gray-500 truncate">
+                                <div className="w-24 shrink-0 text-sm text-muted-foreground truncate">
                                     {project.document_count ?? 0}
                                 </div>
-                                <div className="w-24 shrink-0 text-sm text-gray-500 truncate">
+                                <div className="w-24 shrink-0 text-sm text-muted-foreground truncate">
                                     {project.chat_count ?? 0}
                                 </div>
-                                <div className="w-36 shrink-0 text-sm text-gray-500 truncate">
+                                <div className="w-36 shrink-0 text-sm text-muted-foreground truncate">
                                     {project.review_count ?? 0}
                                 </div>
-                                <div className="w-32 shrink-0 text-sm text-gray-500 truncate">
-                                    {formatDate(project.created_at)}
+                                <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">
+                                    {formatDate(project.created_at, locale)}
                                 </div>
 
                                 <div
@@ -411,6 +443,21 @@ export function ProjectsOverview() {
                                                 setCmEditingId(project.id);
                                             }}
                                             onDelete={async () => {
+                                                const ok = await confirmDialog({
+                                                    title: tDelete(
+                                                        "projectTitle",
+                                                    ),
+                                                    message: tDelete(
+                                                        "projectBodyNamed",
+                                                        {
+                                                            title: project.name,
+                                                        },
+                                                    ),
+                                                    confirmLabel:
+                                                        tDelete("deleteAction"),
+                                                    destructive: true,
+                                                });
+                                                if (!ok) return;
                                                 await deleteProject(project.id);
                                                 setProjects((prev) =>
                                                     prev.filter(
@@ -444,6 +491,8 @@ export function ProjectsOverview() {
                 action={ownerOnlyAction ?? undefined}
                 onClose={() => setOwnerOnlyAction(null)}
             />
+
+            {confirmDialogEl}
         </div>
     );
 }

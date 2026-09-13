@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     ArrowUp,
     FolderClosed,
+    GitCompare,
     History,
     Loader2,
     Paperclip,
@@ -28,6 +29,10 @@ import WorkflowPickerModal, {
     type PickedWorkflow,
 } from "./WorkflowPickerModal";
 import type { EditMode } from "../lib/wordComments";
+import {
+    getTrackedChangesViaApi,
+    formatTrackedChangesForLLM,
+} from "../lib/wordOoxml";
 
 interface AttachedFile {
     document_id: string;
@@ -44,6 +49,8 @@ export interface ChatInputSendArgs {
      */
     model?: string;
     workflow?: { id: string; title: string };
+    /** Formatted summary of existing tracked changes in the document. */
+    trackedChangesContext?: string;
 }
 
 interface Props {
@@ -64,7 +71,7 @@ interface Props {
     pendingWorkflow?: { id: string; title: string } | null;
     onClearPendingWorkflow?: () => void;
     /**
-     * MCP connectors — matches Max web assistant: Plug icon + dropdown toggles
+     * MCP connectors — matches Eulex Desk web assistant: Plug icon + dropdown toggles
      * for built-ins and user connectors; backend honours `enabled` on each chat.
      */
     mcpUserServers: McpServer[];
@@ -106,6 +113,8 @@ export default function ChatInput({
     const [editMode, setEditMode] = useState<EditMode>("track");
     const [pickedWorkflow, setPickedWorkflow] =
         useState<PickedWorkflow | null>(null);
+    const [includeTrackedChanges, setIncludeTrackedChanges] = useState(false);
+    const [extractingChanges, setExtractingChanges] = useState(false);
     const t = useTranslation();
 
     const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -291,7 +300,7 @@ export default function ChatInput({
                         filename: displayName,
                     });
                     // Surface the attached chip so the user sees what
-                    // Max just received — the chip clears with the
+                    // Eulex Desk just received — the chip clears with the
                     // rest of the form state right below.
                     setFiles([
                         {
@@ -312,6 +321,27 @@ export default function ChatInput({
                 }
             }
 
+            // Extract tracked changes context if toggled on.
+            let trackedChangesContext: string | undefined;
+            if (includeTrackedChanges) {
+                try {
+                    setExtractingChanges(true);
+                    const changes = await getTrackedChangesViaApi();
+                    if (changes.length > 0) {
+                        trackedChangesContext =
+                            formatTrackedChangesForLLM(changes);
+                    }
+                } catch (err) {
+                    // eslint-disable-next-line no-console
+                    console.warn(
+                        "[ChatInput] tracked changes extraction failed:",
+                        err,
+                    );
+                } finally {
+                    setExtractingChanges(false);
+                }
+            }
+
             onSend(trimmed, {
                 files: allFiles,
                 selection: {
@@ -325,6 +355,7 @@ export default function ChatInput({
                           title: pickedWorkflow.title,
                       }
                     : undefined,
+                trackedChangesContext,
             });
             setText("");
             setFiles([]);
@@ -562,7 +593,29 @@ export default function ChatInput({
                     <span className="text-[10px] text-gray-400">
                         {t("chat.footerNote")}
                     </span>
-                    <EditModeToggle value={editMode} onChange={setEditMode} />
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setIncludeTrackedChanges((v) => !v)
+                            }
+                            className={
+                                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors " +
+                                (includeTrackedChanges
+                                    ? "bg-orange-100 text-orange-700 border border-orange-300"
+                                    : "bg-gray-50 text-gray-400 border border-gray-200 hover:text-gray-600 hover:bg-gray-100")
+                            }
+                            title={t("chat.trackedChangesContextTip")}
+                        >
+                            {extractingChanges ? (
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                            ) : (
+                                <GitCompare className="h-2.5 w-2.5" />
+                            )}
+                            {t("chat.trackedChangesContext")}
+                        </button>
+                        <EditModeToggle value={editMode} onChange={setEditMode} />
+                    </div>
                 </div>
             </form>
 

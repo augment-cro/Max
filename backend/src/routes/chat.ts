@@ -1,5 +1,11 @@
 import { Router } from "express";
+import {
+    fillPromptTemplate,
+    getTitleGenerationPrompt,
+} from "../lib/seams/promptPack";
+import { createHash } from "crypto";
 import { requireAuth } from "../middleware/auth";
+import { enforceRateLimit } from "../lib/rateLimit";
 import { createServerSupabase } from "../lib/supabase";
 import {
     buildDocContext,
@@ -8,20 +14,76 @@ import {
     buildWorkflowStore,
     extractAnnotations,
     runLLMStream,
+    PiiShieldUnavailableError,
     type ChatMessage,
 } from "../lib/chatTools";
-import { completeText } from "../lib/llm";
+import {
+    completeText,
+    providerForModel,
+    LlmStreamStallError,
+} from "../lib/llm";
 import { recordLlmUsage } from "../lib/llmUsage";
-import { getUserApiKeys, getUserModelSettings } from "../lib/userSettings";
-import { localeContextForLlm, parseUiLocale } from "../lib/uiLocale";
+import { emptyUsage, getErrorUsage, type UsageContext } from "../lib/llm/usage";
+import { recordAuditEvent, recordFeatureUse } from "../lib/audit";
+import { buildUsageEvent } from "../lib/usageEvent";
+import { getUserApiKeys, getUserModelSettings, resolveInlineModel } from "../lib/userSettings";
+import { localeContextForLlm, parseUiLocale, referenceTimeContext, shortLocaleRule } from "../lib/uiLocale";
 import { checkProjectAccess } from "../lib/access";
 import {
     closeMcpServers,
     loadEnabledMcpServersForUser,
 } from "../lib/mcp/servers";
 import { loadBuiltinMcpServers } from "../lib/mcp/builtin";
+import {
+    detectPromptInjection,
+    enforceLlmTextSafety,
+    logInjectionFinding,
+    safeRefusal,
+    writeSseRefusal,
+} from "../lib/promptSecurity";
+import { loadContextsForTurn } from "../lib/seams/contextsRuntime";
+import { governanceClient } from "../lib/seams/governanceClient";
 
 export const chatRouter = Router();
+
+// ─── In-memory enrichment result cache (Phase 2) ─────────────────────────────
+// Shared across all requests on this Cloud Run instance.
+// TTL = 7 days — legal content is stable.
+// Keys: SHA-256 hex of lowercased, trimmed query.
+// Evicted lazily on each cache-set (max 500 entries).
+interface EnrichCacheEntry {
+    variants: Array<{ query: string; why: string }>;
+    expires: number;
+}
+const enrichMemCache = new Map<string, EnrichCacheEntry>();
+const ENRICH_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const ENRICH_CACHE_MAX = 500;
+
+function enrichCacheKey(query: string): string {
+    return createHash("sha256").update(query.trim().toLowerCase()).digest("hex");
+}
+
+function enrichCacheGet(query: string): Array<{ query: string; why: string }> | null {
+    const entry = enrichMemCache.get(enrichCacheKey(query));
+    if (!entry) return null;
+    if (Date.now() > entry.expires) { enrichMemCache.delete(enrichCacheKey(query)); return null; }
+    return entry.variants;
+}
+
+function enrichCacheSet(query: string, variants: Array<{ query: string; why: string }>): void {
+    // Lazy eviction: remove expired + oldest if over limit
+    if (enrichMemCache.size >= ENRICH_CACHE_MAX) {
+        const now = Date.now();
+        for (const [k, v] of enrichMemCache) {
+            if (now > v.expires) enrichMemCache.delete(k);
+        }
+        if (enrichMemCache.size >= ENRICH_CACHE_MAX) {
+            // Remove oldest entry
+            enrichMemCache.delete(enrichMemCache.keys().next().value!);
+        }
+    }
+    enrichMemCache.set(enrichCacheKey(query), { variants, expires: Date.now() + ENRICH_CACHE_TTL });
+}
 
 /**
  * Per-chat collaborator check (jsonb email list on chats.shared_with —
@@ -48,9 +110,27 @@ function chatHasCollaborator(
 // own projects in the global recent-chats list). Chats in projects that
 // are merely *shared with* the user are NOT included here — those are
 // listed per-project via GET /projects/:projectId/chats.
+//
+// Pagination: ?limit=N&offset=M (defaults: limit=100, offset=0).
+// The response body stays a plain JSON array for backward compatibility;
+// pagination metadata is exposed via response headers:
+//   X-Total-Count  – total matching rows (only when Supabase returns it)
+//   X-Pagination   – JSON: { limit, offset, total?, has_more }
+const CHAT_LIST_DEFAULT_LIMIT = 100;
+const CHAT_LIST_MAX_LIMIT = 500;
+
 chatRouter.get("/", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
     const db = createServerSupabase();
+
+    // Parse pagination params with safe defaults.
+    const rawLimit = parseInt(req.query.limit as string, 10);
+    const rawOffset = parseInt(req.query.offset as string, 10);
+    const limit = Math.min(
+        Math.max(Number.isFinite(rawLimit) ? rawLimit : CHAT_LIST_DEFAULT_LIMIT, 1),
+        CHAT_LIST_MAX_LIMIT,
+    );
+    const offset = Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0);
 
     const { data: ownProjects, error: projErr } = await db
         .from("projects")
@@ -66,13 +146,36 @@ chatRouter.get("/", requireAuth, async (req, res) => {
             ? `user_id.eq.${userId},project_id.in.(${ownProjectIds.join(",")})`
             : `user_id.eq.${userId}`;
 
-    const { data, error } = await db
+    // Status filter (migration 132): 'active' by default, 'archived' on
+    // request. 'deleted' rows are soft-deleted and never listed.
+    const statusParam =
+        req.query.status === "archived" ? "archived" : "active";
+
+    const { data, error, count } = await db
         .from("chats")
-        .select("*")
+        .select("*", { count: "exact" })
         .or(filter)
-        .order("created_at", { ascending: false });
+        .eq("status", statusParam)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
     if (error) return void res.status(500).json({ detail: error.message });
-    res.json(data ?? []);
+
+    const rows = data ?? [];
+    const total = typeof count === "number" ? count : undefined;
+    const hasMore = total !== undefined ? offset + rows.length < total : rows.length === limit;
+
+    // Expose pagination metadata in headers so existing consumers
+    // (frontend ChatHistoryContext, Word add-in) that expect a plain
+    // array keep working, while new callers can read the headers.
+    if (total !== undefined) {
+        res.setHeader("X-Total-Count", String(total));
+    }
+    res.setHeader(
+        "X-Pagination",
+        JSON.stringify({ limit, offset, total, has_more: hasMore }),
+    );
+
+    res.json(rows);
 });
 
 // POST /chat/create
@@ -90,6 +193,22 @@ chatRouter.post("/create", requireAuth, async (req, res) => {
     res.json({ id: data.id });
 });
 
+// Soft delete (migration 132) must hold on every read path, not just the
+// list: a deleted chat is 404 for everyone (owner, project member, share
+// collaborator). Every chats-by-id read below carries
+// `.neq("status", "deleted")` — keep that filter when adding new reads.
+//
+// The param guard also 404s non-uuid ids so unmatched /chat/<word> verbs
+// (e.g. DELETE /chat/groups falling through the groups router) can't reach
+// Postgres with an invalid uuid and surface a raw 500.
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+chatRouter.param("chatId", (req, res, next, chatId) => {
+    if (!UUID_RE.test(String(chatId)))
+        return void res.status(404).json({ detail: "Chat not found" });
+    next();
+});
+
 // GET /chat/:chatId
 chatRouter.get("/:chatId", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
@@ -101,6 +220,7 @@ chatRouter.get("/:chatId", requireAuth, async (req, res) => {
         .from("chats")
         .select("*")
         .eq("id", chatId)
+        .neq("status", "deleted")
         .single();
     if (error || !chat)
         return void res.status(404).json({ detail: "Chat not found" });
@@ -251,20 +371,69 @@ async function hydrateEditStatuses(
 }
 
 // PATCH /chat/:chatId
+// Owner-only partial update: any of { title, group_id, pinned, status }.
+// group_id must reference one of the caller's non-deleted chat_groups (or
+// null to ungroup); status here only toggles active <-> archived — soft
+// delete goes through DELETE below.
 chatRouter.patch("/:chatId", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
     const { chatId } = req.params;
-    const title = (req.body.title ?? "").trim();
-    if (!title)
-        return void res.status(400).json({ detail: "title is required" });
-
     const db = createServerSupabase();
+
+    const patch: Record<string, unknown> = {};
+    if (req.body.title !== undefined) {
+        const title = (req.body.title ?? "").trim();
+        if (!title)
+            return void res
+                .status(400)
+                .json({ detail: "title is required" });
+        patch.title = title;
+    }
+    if (req.body.pinned !== undefined) {
+        if (typeof req.body.pinned !== "boolean")
+            return void res
+                .status(400)
+                .json({ detail: "pinned must be a boolean" });
+        patch.pinned = req.body.pinned;
+    }
+    if (req.body.status !== undefined) {
+        if (req.body.status !== "active" && req.body.status !== "archived")
+            return void res
+                .status(400)
+                .json({ detail: "status must be 'active' or 'archived'" });
+        patch.status = req.body.status;
+    }
+    if (req.body.group_id !== undefined) {
+        const groupId = req.body.group_id;
+        if (groupId !== null && typeof groupId !== "string")
+            return void res
+                .status(400)
+                .json({ detail: "group_id must be a uuid or null" });
+        if (groupId !== null) {
+            const { data: group } = await db
+                .from("chat_groups")
+                .select("id")
+                .eq("id", groupId)
+                .eq("user_id", userId)
+                .neq("status", "deleted")
+                .single();
+            if (!group)
+                return void res
+                    .status(404)
+                    .json({ detail: "Group not found" });
+        }
+        patch.group_id = groupId;
+    }
+    if (Object.keys(patch).length === 0)
+        return void res.status(400).json({ detail: "no valid fields" });
+
     const { data, error } = await db
         .from("chats")
-        .update({ title })
+        .update(patch)
         .eq("id", chatId)
         .eq("user_id", userId)
-        .select("id, title")
+        .neq("status", "deleted")
+        .select("id, title, group_id, pinned, status")
         .single();
 
     if (error || !data)
@@ -273,13 +442,16 @@ chatRouter.patch("/:chatId", requireAuth, async (req, res) => {
 });
 
 // DELETE /chat/:chatId
+// Soft delete (migration 132): the row and its messages are retained but
+// status='deleted' hides the chat from every list. No purge job yet —
+// recorded in the design spec (2026-07-06) §8.1.
 chatRouter.delete("/:chatId", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
     const { chatId } = req.params;
     const db = createServerSupabase();
     const { error } = await db
         .from("chats")
-        .delete()
+        .update({ status: "deleted", pinned: false })
         .eq("id", chatId)
         .eq("user_id", userId);
 
@@ -329,6 +501,7 @@ chatRouter.post(
             .from("chats")
             .select("id, user_id, project_id, shared_with")
             .eq("id", msg.chat_id)
+            .neq("status", "deleted")
             .single();
         if (!chat)
             return void res.status(404).json({ detail: "Chat not found" });
@@ -377,8 +550,187 @@ chatRouter.post(
     },
 );
 
+// POST /chat/enrich — Legal Query Enrichment ("Poboljšaj pitanje")
+// Thin proxy for the governance service's POST /enrich (the enrichment
+// prompt and its LLM pass moved server-side — spec §9.4; contract:
+// contracts/prompt-pack.openapi.json). Two response modes via the `Accept`
+// header, kept shape-compatible with the pre-seam route:
+//   • application/json  → legacy non-streaming
+//   • text/event-stream → `variant` events + `done`
+// Failure posture: PASSTHROUGH — env unset, guard hit, seam error, or an
+// empty result all return the original query unchanged; never an error.
+chatRouter.post("/enrich", requireAuth, enforceRateLimit(), async (req, res) => {
+    const userId = res.locals.userId as string;
+    const query: string = (req.body.query ?? "").trim();
+    if (!query)
+        return void res.status(400).json({ detail: "query is required" });
+
+    // Detect streaming vs. legacy mode from Accept header.
+    const wantsStream = (req.headers["accept"] ?? "").includes("text/event-stream");
+    const uiLocale = parseUiLocale(req);
+
+    const respond = (variants: Array<{ query: string; why: string }>) => {
+        if (wantsStream) {
+            res.setHeader("Content-Type", "text/event-stream");
+            res.setHeader("Cache-Control", "no-cache");
+            res.setHeader("Connection", "keep-alive");
+            res.setHeader("X-Accel-Buffering", "no");
+            res.setHeader("Alt-Svc", "clear");
+            res.flushHeaders();
+            variants.forEach((v, i) => {
+                res.write(`data: ${JSON.stringify({ type: "variant", index: i, variant: v })}\n\n`);
+            });
+            res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+            res.end();
+        } else {
+            res.json({
+                improved_queries: variants.map((v) => v.query),
+                improved_queries_rich: variants,
+            });
+        }
+    };
+    const passthrough = () => respond([{ query, why: "" }]);
+
+    // Standalone core: no governance service → no enrichment. The UI gets
+    // the original query back and degrades silently (feature absent).
+    if (!governanceClient.isConfigured()) return void passthrough();
+
+    // SECURITY: the core-side injection gate stays as our own fail-safe
+    // even though the enrichment LLM now runs behind the governance
+    // service. An obvious payload never leaves the process.
+    const guard = enforceLlmTextSafety({
+        text: query.slice(0, 2000),
+        where: "/chat/enrich",
+        userId,
+    });
+    if (guard.block) return void passthrough();
+
+    // ---- PII Shield: enrichment input gate (#45) -----------------------
+    // The enrichment LLM runs behind the governance service — raw user
+    // text must not reach it when the user's PII mode is active. This
+    // route carries no chat id, so the mode comes from the user default
+    // and the shield resolves the session itself. Placeholder-bearing
+    // enriched text is fine on the way back (it re-enters the LLM flow,
+    // which speaks placeholders). Failure semantics: fail-closed modes
+    // degrade to passthrough (no LLM, original query back); standard
+    // fails open with a tagged warn.
+    let queryForLlm = query;
+    let piiActiveForEnrich = false;
+    {
+        const { effectiveMode, piiActive, failsClosed, piiClient } =
+            await import("../lib/pii");
+        const userSettings = await getUserModelSettings(
+            userId,
+            createServerSupabase(),
+        );
+        const piiMode = effectiveMode(null, userSettings);
+        if (piiActive(piiMode)) {
+            piiActiveForEnrich = true;
+            const anon = await piiClient.anonymize({
+                text: query,
+                userId,
+                mode: piiMode,
+                language: uiLocale,
+                source: "user_input",
+            });
+            if (anon.ok) {
+                queryForLlm = anon.data.anonymized_text;
+            } else if (failsClosed(piiMode)) {
+                console.warn(
+                    "[chat/enrich][pii] /anonymize failed — passthrough (fail-closed):",
+                    anon.error,
+                );
+                return void passthrough();
+            } else {
+                console.warn(
+                    "[pii] fail-open: standard mode — enrich query forwarded to the LLM unanonymized (sidecar unavailable):",
+                    anon.error,
+                );
+            }
+        }
+    }
+
+    // ── Phase 2: in-memory cache (successful enrichments only) ──────────
+    // Skipped while PII mode is active: enriched variants then carry
+    // session-scoped placeholders that must not be replayed globally.
+    const cached = piiActiveForEnrich ? null : enrichCacheGet(query);
+    if (cached && cached.length > 0) {
+        console.log("[chat/enrich] cache HIT (memory):", enrichCacheKey(query).slice(0, 12));
+        return void respond(cached);
+    }
+
+    const result = await governanceClient.enrich(queryForLlm, uiLocale, userId);
+    if (!result.ok || typeof result.data.enriched !== "string" || !result.data.enriched.trim()) {
+        // Graceful failure: enrichment is a non-critical enhancement.
+        if (!result.ok)
+            console.warn("[chat/enrich] governance enrich failed — passthrough:", result.error);
+        return void passthrough();
+    }
+
+    const variants = parseEnrichedVariants(result.data.enriched);
+    if (!variants) {
+        // The model answered with something we can't safely surface
+        // (e.g. malformed JSON) — degrade to the original query rather
+        // than paste raw JSON into the composer (issue #85).
+        console.warn("[chat/enrich] unparseable enriched payload — passthrough");
+        return void passthrough();
+    }
+    if (!piiActiveForEnrich) {
+        enrichCacheSet(query, variants);
+        console.log("[chat/enrich] cached to memory:", enrichCacheKey(query).slice(0, 12));
+    }
+    respond(variants);
+});
+
+/**
+ * The governance /enrich contract returns a single `enriched` string, but
+ * the enrichment prompt behind it can answer with the multi-variant JSON
+ * (optionally fenced: ```json {"improved_queries":[{query,why},…]} ```).
+ * Surface those as separate variants; never let raw JSON through as a
+ * "variant" (issue #85).
+ */
+export function parseEnrichedVariants(
+    enriched: string,
+): Array<{ query: string; why: string }> | null {
+    let text = enriched.trim();
+    const fence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (fence) text = fence[1].trim();
+    if (!text) return null;
+    if (!text.startsWith("{") && !text.startsWith("[")) {
+        // Plain rewritten query — the normal contract shape.
+        return [{ query: text, why: "" }];
+    }
+    try {
+        const parsed = JSON.parse(text) as unknown;
+        const list = Array.isArray(parsed)
+            ? parsed
+            : (parsed as { improved_queries?: unknown })?.improved_queries;
+        if (!Array.isArray(list)) return null;
+        const variants = list
+            .map((v: unknown) => {
+                if (typeof v === "string" && v.trim())
+                    return { query: v.trim(), why: "" };
+                if (v && typeof v === "object") {
+                    const q = (v as { query?: unknown }).query;
+                    if (typeof q === "string" && q.trim()) {
+                        const why = (v as { why?: unknown }).why;
+                        return {
+                            query: q.trim(),
+                            why: typeof why === "string" ? why : "",
+                        };
+                    }
+                }
+                return null;
+            })
+            .filter((v): v is { query: string; why: string } => v !== null);
+        return variants.length > 0 ? variants : null;
+    } catch {
+        return null;
+    }
+}
+
 // POST /chat/:chatId/generate-title
-chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
+chatRouter.post("/:chatId/generate-title", requireAuth, enforceRateLimit(), async (req, res) => {
     const userId = res.locals.userId as string;
     const userEmail = res.locals.userEmail as string | undefined;
     const { chatId } = req.params;
@@ -391,6 +743,7 @@ chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
         .from("chats")
         .select("id, user_id, project_id, shared_with")
         .eq("id", chatId)
+        .neq("status", "deleted")
         .single();
 
     if (error || !chat)
@@ -412,17 +765,130 @@ chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
         return void res.status(404).json({ detail: "Chat not found" });
 
     try {
-        const { title_model, api_keys, preferred_language } =
-            await getUserModelSettings(userId, db);
-        const langName =
-            preferred_language === "hr" ? "Croatian" : "English";
-        const titleText = await completeText({
-            model: title_model,
-            user: `Generate a concise title (3–6 words) for a chat in an AI Legal Platform that starts with this message. The title MUST be written in ${langName} (the user's UI language), regardless of the language of the user's message. The title should describe the topic or document — do NOT include words like "Legal Assistant", "AI", "Chat", or any similar prefix. Return only the title, no quotes or punctuation.\n\nMessage: ${message.slice(0, 500)}`,
-            maxTokens: 64,
-            apiKeys: api_keys,
+        const userSettings = await getUserModelSettings(userId, db);
+        const { title_model, api_keys, preferred_language } = userSettings;
+        // Prefer the X-UI-Locale request header (web frontend always
+        // sends it via getUiLocaleHeader() reading <html lang>); fall
+        // back to the user's stored preferred_language for callers
+        // that can't read browser cookies (Word add-in, etc.). Without
+        // this, HR users on the default locale (no NEXT_LOCALE cookie,
+        // no persisted preference) would get English chat titles.
+        const rawHeader = req.headers["x-ui-locale"];
+        const headerLocale = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+        const effectiveLocale: "hr" | "en" =
+            headerLocale === "hr" || headerLocale === "en"
+                ? headerLocale
+                : preferred_language === "hr"
+                  ? "hr"
+                  : "en";
+        const langName = effectiveLocale === "hr" ? "Croatian" : "English";
+        // ---- PII Shield: title-gen input gate (#45) ------------------
+        // When the chat is in an active PII mode the user's message must
+        // not reach the title LLM raw. Anonymize through the chat's
+        // session (get-or-create via /anonymize); the placeholder-bearing
+        // title is deanonymized again below so the sidebar stays human-
+        // readable. Failure semantics: fail-closed modes skip the LLM
+        // entirely (the truncated literal fallback never leaves the
+        // server); standard fails open with a tagged warn.
+        // Sliced BEFORE anonymization (and not re-sliced after): the
+        // placeholders are longer than the values they replace, so a
+        // post-anonymize slice could cut a `⟦PII:…⟧` token in half.
+        let messageForTitle = message.slice(0, 500);
+        let piiTitleSessionId: string | null = null;
+        let piiBlockTitleLlm = false;
+        {
+            const { effectiveMode, piiActive, failsClosed, piiClient, getChatPiiMode } =
+                await import("../lib/pii");
+            const piiMode = effectiveMode(await getChatPiiMode(chatId), userSettings);
+            if (piiActive(piiMode)) {
+                const anon = await piiClient.anonymize({
+                    text: messageForTitle,
+                    userId,
+                    mode: piiMode,
+                    language: effectiveLocale,
+                    chatId,
+                    source: "user_input",
+                });
+                if (anon.ok) {
+                    messageForTitle = anon.data.anonymized_text;
+                    piiTitleSessionId = anon.data.session_id;
+                } else if (failsClosed(piiMode)) {
+                    console.warn(
+                        "[generate-title][pii] /anonymize failed — skipping LLM (fail-closed):",
+                        anon.error,
+                    );
+                    piiBlockTitleLlm = true;
+                } else {
+                    console.warn(
+                        "[pii] fail-open: standard mode — title-gen message forwarded to the LLM unanonymized (sidecar unavailable):",
+                        anon.error,
+                    );
+                }
+            }
+        }
+
+        // SECURITY: title-gen feeds the user's first message verbatim
+        // into the LLM. If the message is an obvious injection payload
+        // (path traversal, fake-role override, etc.) skip the LLM
+        // entirely and fall back to a truncated literal title. Otherwise
+        // wrap the snippet in <user_input> tags so the model never
+        // confuses it with an instruction.
+        const titleGuard = enforceLlmTextSafety({
+            text: messageForTitle,
+            where: "/chat/generate-title",
+            userId,
         });
-        const title = titleText.trim() || message.slice(0, 60);
+        let title: string;
+        if (titleGuard.block || piiBlockTitleLlm) {
+            title = message.slice(0, 60) || safeRefusal(effectiveLocale);
+        } else {
+            const titleStartedAt = Date.now();
+            const { text: titleText, usage: titleUsage } = await completeText({
+                model: title_model,
+                user:
+                    fillPromptTemplate(getTitleGenerationPrompt(), {
+                        LANG_NAME: langName,
+                    }) + `\n\n${titleGuard.safeText}`,
+                maxTokens: 64,
+                apiKeys: api_keys,
+            });
+            title = titleText.trim() || message.slice(0, 60);
+            // PII Shield: restore original values in the title server-
+            // side so the sidebar stays human-readable (the title never
+            // goes back through an LLM). If deanonymize fails, keep the
+            // placeholder-bearing title — fail-safe, never raw-on-error.
+            if (piiTitleSessionId) {
+                const { piiClient } = await import("../lib/pii");
+                const restored = await piiClient.deanonymize({
+                    sessionId: piiTitleSessionId,
+                    text: title,
+                });
+                if (restored.ok) {
+                    title = restored.data.restored_text;
+                } else {
+                    console.warn(
+                        "[generate-title][pii] deanonymize failed — keeping placeholder title:",
+                        restored.error,
+                    );
+                }
+            }
+            if (titleUsage) {
+                // Title generation is small (≤64 output tokens) but
+                // happens once per new chat. Track it so AdminMax
+                // shows the full cost picture, attributed to the
+                // originating chat.
+                void recordLlmUsage({
+                    userId,
+                    client: "title",
+                    provider: providerForModel(title_model),
+                    model: title_model,
+                    chatId,
+                    usage: titleUsage,
+                    durationMs: Date.now() - titleStartedAt,
+                    status: "ok",
+                });
+            }
+        }
 
         await db
             .from("chats")
@@ -438,7 +904,7 @@ chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
 });
 
 // POST /chat — streaming
-chatRouter.post("/", requireAuth, async (req, res) => {
+chatRouter.post("/", requireAuth, enforceRateLimit(), async (req, res) => {
     const userId = res.locals.userId as string;
     const {
         messages,
@@ -448,11 +914,16 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         effort,
         client,
         editMode,
+        web_search,
     } = req.body as {
         messages: ChatMessage[];
         chat_id?: string;
         project_id?: string;
         model?: string;
+        // User's composer web-search toggle (globe icon). Defaults to on
+        // when omitted so existing callers keep search available; `false`
+        // drops the search tools for this turn.
+        web_search?: boolean;
         // User-selected reasoning intensity for this turn. Validated
         // below against the canonical "low" | "medium" | "high" set so
         // a malformed client can't crash the provider with an invalid
@@ -461,7 +932,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         // `client` lets the LLM tailor its tool-use strategy: the Word
         // add-in needs `find` strings that survive Office.js' search
         // primitive (≤200 chars, single paragraph). Defaults to "web"
-        // when missing so existing callers (Max frontend, public API)
+        // when missing so existing callers (Eulex Desk frontend, public API)
         // keep their behavior.
         client?: "web" | "word";
         // How the user wants edits applied in the Word client. Plumbed
@@ -470,6 +941,15 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         // client picks the right Apply UI.
         editMode?: "track" | "comments";
     };
+    // Malformed body must 400 up front: `[...messages]` on a missing array
+    // throws inside this bare async handler and the rejection never reaches
+    // the error middleware — the request would hang forever (issue #93).
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return void res
+            .status(400)
+            .json({ detail: "messages array is required" });
+    }
+
     const reasoningEffort: "low" | "medium" | "high" | undefined =
         effort === "low" || effort === "medium" || effort === "high"
             ? effort
@@ -502,10 +982,13 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     if (chatId) {
         // Chat owner, a member of the chat's project, OR a per-chat
         // collaborator (chats.shared_with) can post into the thread.
+        // Deleted chats can't receive messages — a stale chat_id falls
+        // through to the create-new-chat path below.
         const { data: existing } = await db
             .from("chats")
             .select("id, title, user_id, project_id, shared_with")
             .eq("id", chatId)
+            .neq("status", "deleted")
             .single();
         let canUse = !!existing && existing.user_id === userId;
         if (!canUse && existing?.project_id) {
@@ -537,7 +1020,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             if (!access.ok)
                 return void res
                     .status(404)
-                    .json({ detail: "Project not found" });
+                    .json({ detail: "Project not found", code: "PROJECT_NOT_FOUND" });
         }
         const { data: newChat, error } = await db
             .from("chats")
@@ -548,7 +1031,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             console.error("[chat/stream] failed to create chat", error);
             return void res
                 .status(500)
-                .json({ detail: "Failed to create chat" });
+                .json({ detail: "Failed to create chat", code: "CHAT_CREATE_FAILED" });
         }
         chatId = newChat.id as string;
         chatTitle = newChat.title;
@@ -558,17 +1041,161 @@ chatRouter.post("/", requireAuth, async (req, res) => {
 
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (lastUser) {
-        await db.from("chat_messages").insert({
-            chat_id: chatId,
-            role: "user",
-            // `chat_messages.content` is jsonb (migration 107) — user turns
-            // are plain strings, but jsonb wants a JSON literal, so wrap
-            // the string as a JSON-string literal. Assistant inserts pass
-            // an array which the dbShim already JSON.stringify's.
-            content: JSON.stringify(lastUser.content ?? ""),
-            files: lastUser.files ?? null,
-            workflow: lastUser.workflow ?? null,
+        const { error: userInsertError } = await db
+            .from("chat_messages")
+            .insert({
+                chat_id: chatId,
+                role: "user",
+                // `chat_messages.content` is jsonb (migration 107) — user turns
+                // are plain strings, but jsonb wants a JSON literal, so wrap
+                // the string as a JSON-string literal. Assistant inserts pass
+                // an array which the dbShim already JSON.stringify's.
+                content: JSON.stringify(lastUser.content ?? ""),
+                files: lastUser.files ?? null,
+                workflow: lastUser.workflow ?? null,
+            });
+        if (userInsertError) {
+            // Don't kill the turn (the answer can still stream), but the
+            // silent variant left user turns missing after reload (#95).
+            console.error(
+                "[chat/stream] user message insert FAILED — turn not persisted:",
+                userInsertError,
+            );
+        }
+    }
+
+    // SECURITY: pre-LLM prompt-injection check. We block CRITICAL hits
+    // (path traversal, fake-role overrides like [ADMIN OVERRIDE], obvious
+    // jailbreak payloads) before any token is spent. MEDIUM hits
+    // (system-prompt extraction attempts, tool enumeration, translation
+    // attacks, bulk PII sweeps) still go to the LLM but rely on the
+    // CONFIDENTIALITY and TOOL AND CAPABILITY DISCLOSURE clauses in
+    // SYSTEM_PROMPT plus the <user_input> wrapper applied in buildMessages.
+    const uiLocale = parseUiLocale(req);
+    const lastUserContent =
+        typeof lastUser?.content === "string" ? lastUser.content : "";
+    const injectionFinding = detectPromptInjection(lastUserContent);
+    logInjectionFinding("/chat", userId, injectionFinding);
+
+    if (injectionFinding.severity === "critical") {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.setHeader("Alt-Svc", "clear");
+        res.flushHeaders();
+
+        const write = (line: string) => res.write(line);
+        write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
+        const { events: refusalEvents } = writeSseRefusal(write, uiLocale);
+
+        try {
+            const { data: insertedAssistant } = await db
+                .from("chat_messages")
+                .insert({
+                    chat_id: chatId,
+                    role: "assistant",
+                    content: refusalEvents,
+                    annotations: null,
+                })
+                .select("id")
+                .single();
+            if (insertedAssistant?.id) {
+                write(
+                    `data: ${JSON.stringify({ type: "message_id", messageId: insertedAssistant.id })}\n\n`,
+                );
+            }
+        } catch (err) {
+            console.error(
+                "[chat/stream] failed to persist safety refusal",
+                err,
+            );
+        }
+        res.end();
+        return;
+    }
+
+    // ---- Governance pre-inference hook --------------------------------
+    // Optional per-turn seam (contract: contracts/pre-inference-hook.
+    // openapi.json); inert without GOVERNANCE_URL. Verdicts are generic:
+    // gate.block short-circuits before any token is spent (same SSE
+    // refusal shape as the promptSecurity gate above), gate.notify is
+    // surfaced as a governance_notice SSE event before the answer, and
+    // prompt_blocks are merged into the UNcached dynamic system suffix
+    // (after SYSTEM_DYNAMIC_DOC_MARKER) so the cached static prefix stays
+    // byte-stable. classification is opaque — debug-logged only until the
+    // audit-sink seam lands. Fail-OPEN by default on any seam error;
+    // GOVERNANCE_FAIL_MODE=closed refuses the turn instead.
+    let governancePromptBlocks: string[] = [];
+    let governanceNotice: string | null = null;
+    if (governanceClient.isConfigured()) {
+        const writeGovernanceRefusal = async (text: string) => {
+            res.setHeader("Content-Type", "text/event-stream");
+            res.setHeader("Cache-Control", "no-cache");
+            res.setHeader("Connection", "keep-alive");
+            res.setHeader("X-Accel-Buffering", "no");
+            res.setHeader("Alt-Svc", "clear");
+            res.flushHeaders();
+            const write = (line: string) => res.write(line);
+            write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
+            // Same event sequence writeSseRefusal emits, with the gate's text.
+            write(`data: ${JSON.stringify({ type: "content_delta", text })}\n\n`);
+            write(`data: ${JSON.stringify({ type: "citations", citations: [] })}\n\n`);
+            write("data: [DONE]\n\n");
+            try {
+                await db.from("chat_messages").insert({
+                    chat_id: chatId,
+                    role: "assistant",
+                    content: [{ type: "content", text }],
+                    annotations: null,
+                });
+            } catch (err) {
+                console.error("[chat/stream] failed to persist governance refusal", err);
+            }
+            res.end();
+        };
+
+        const hook = await governanceClient.preInference({
+            query: lastUserContent,
+            meta: {
+                chat_id: chatId,
+                user_id: userId,
+                locale: uiLocale,
+                client: client ?? "web",
+            },
         });
+        if (!hook.ok) {
+            console.warn("[chat/stream] governance pre-inference failed:", hook.error);
+            if (governanceClient.failMode() === "closed") {
+                await writeGovernanceRefusal(safeRefusal(uiLocale));
+                return;
+            }
+            // fail-open: proceed without hook output
+        } else {
+            const { prompt_blocks, classification, gate } = hook.data;
+            if (classification !== undefined) {
+                // Relayed nowhere yet (audit sink is a later seam) — keep a
+                // debug trace so staging can verify the hook end to end.
+                console.debug(
+                    "[chat/stream] governance classification:",
+                    JSON.stringify(classification)?.slice(0, 500),
+                );
+            }
+            if (gate?.action === "block") {
+                await writeGovernanceRefusal(
+                    gate.message_md?.trim() || safeRefusal(uiLocale),
+                );
+                return;
+            }
+            if (gate?.action === "notify" && gate.message_md?.trim()) {
+                governanceNotice = gate.message_md.trim();
+            }
+            if (Array.isArray(prompt_blocks)) {
+                governancePromptBlocks = prompt_blocks.filter(
+                    (b): b is string => typeof b === "string" && !!b.trim(),
+                );
+            }
+        }
     }
 
     const { docIndex, docStore } = await buildDocContext(
@@ -590,8 +1217,16 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     const apiMessages = buildMessages(
         enrichedMessages,
         docAvailability,
-        localeContextForLlm(parseUiLocale(req)),
+        // Timestamp is omitted from the cached static prefix and re-injected
+        // below via the dynamic suffix — a ticking clock in the static block
+        // busts the Anthropic prompt cache. Hour-truncated (see
+        // referenceTimeContext) so the suffix — and with it the rolling
+        // conversation-history cache — stays byte-stable across turns too.
+        localeContextForLlm(uiLocale, { omitReferenceTime: true }),
         docIndex,
+        // Governance prompt_blocks ride the same uncached dynamic suffix as
+        // the reference-time line — never the cached static prefix.
+        [referenceTimeContext(uiLocale), ...governancePromptBlocks].join("\n\n"),
     );
 
     const workflowStore = await buildWorkflowStore(userId, userEmail, db);
@@ -625,7 +1260,14 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     if (typeof req.setTimeout === "function") req.setTimeout(0);
     if (typeof res.setTimeout === "function") res.setTimeout(0);
 
-    const write = (line: string) => res.write(line);
+    // Guarded against write-after-end: when the stall watchdog (#25)
+    // aborts a turn, the route emits its terminal error and ends the
+    // response while the orphaned stream may still drain a hung tool call
+    // — a late res.write() after res.end() would emit an unhandled
+    // ERR_STREAM_WRITE_AFTER_END 'error' event and crash the process.
+    const write = (line: string) => {
+        if (!res.writableEnded) res.write(line);
+    };
 
     // SSE keep-alive heartbeat. Comment lines (": …") are ignored by the
     // EventSource/SSE parser but force a flush through Cloud Run's HTTP/2
@@ -640,26 +1282,128 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             /* socket already closed — interval gets cleared in finally */
         }
     }, 15_000);
-    // Clean up if the client navigates away before we finish.
-    req.on("close", () => clearInterval(heartbeat));
+    // Clean up if the client navigates away before we finish. Aborting the
+    // turn stops token spend and further tool calls (edits, searches) that
+    // used to keep running server-side after a Stop / tab-close (issue #92).
+    const turnAbort = new AbortController();
+    req.on("close", () => {
+        clearInterval(heartbeat);
+        if (!res.writableEnded) turnAbort.abort();
+    });
 
     const apiKeys = await getUserApiKeys(userId, db);
     // Per-user connectors come first so they win any slug collision in
     // findMcpServerForTool; built-in (system-side) MCPs follow.
     const [userMcpServers, builtinMcpServers] = await Promise.all([
         loadEnabledMcpServersForUser(userId, db),
-        loadBuiltinMcpServers(userId, db),
+        loadBuiltinMcpServers(
+            userId,
+            db,
+            res.locals.tierLevelId as number | undefined,
+        ),
     ]);
     const mcpServers = [...userMcpServers, ...builtinMcpServers];
+
+    // Contexts active for this turn: globally-toggled ∪ contexts attached
+    // to the applied workflow, resolved by the configured context provider.
+    // The provider re-checks access per requester, so a private context
+    // attached to a shared workflow never leaks; built-in (non-UUID)
+    // workflow ids skip the link lookup; each part fails soft on its own —
+    // see loadContextsForTurn. Never breaks chat, and does nothing at all
+    // when no provider is configured.
+    const activeContexts = await loadContextsForTurn({
+        userId,
+        email: userEmail ?? null,
+        query: lastUserContent,
+        workflowId: lastUser?.workflow?.id ?? null,
+    });
 
     // Wall-clock timer for cost telemetry — see recordLlmUsage call below.
     const turnStartedAt = Date.now();
     let usageRecorded = false;
+    let completedUsage: UsageContext | undefined;
 
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
+        if (governanceNotice) {
+            // Per the pre-inference contract: notify → a governance_notice
+            // event before the answer; the turn itself proceeds normally.
+            write(
+                `data: ${JSON.stringify({ type: "governance_notice", message_md: governanceNotice })}\n\n`,
+            );
+        }
 
-        const { fullText, events, usage, selectedModel } = await runLLMStream({
+        // ---- PII Shield context resolution ---------------------------
+        // Resolve once per turn: (chat.pii_mode ?? user_profiles.pii_default_mode).
+        // Cheap lookups; both columns may be missing in pre-migration
+        // environments and the helpers return null in that case so the
+        // mode silently falls back to "off" — exactly what we want.
+        const piiContext: import("../lib/chatTools").PiiToolContext | null =
+            await (async () => {
+                try {
+                    const { effectiveMode, piiActive, getChatPiiMode } =
+                        await import("../lib/pii");
+                    const userSettings = await getUserModelSettings(userId, db);
+                    const chatMode = chatId ? await getChatPiiMode(chatId) : null;
+                    const mode = effectiveMode(chatMode, userSettings);
+                    if (!piiActive(mode) || !chatId) return null;
+                    // PII anonymization is a Pro+ entitlement. Force it off
+                    // for lower tiers even if a stale chat/user preference
+                    // still requests it (the /pii routes are gated too).
+                    const tierLevelId = res.locals.tierLevelId as
+                        | number
+                        | undefined;
+                    if (typeof tierLevelId === "number") {
+                        const { getEntitlements, can } = await import(
+                            "../lib/entitlements"
+                        );
+                        if (
+                            !can(
+                                await getEntitlements(tierLevelId),
+                                "piiAnonymization",
+                            )
+                        ) {
+                            return null;
+                        }
+                    }
+                    return {
+                        userId,
+                        chatId,
+                        mode,
+                        language: uiLocale,
+                    };
+                } catch (err) {
+                    console.warn(
+                        "[chat/stream] PII context resolution failed (non-fatal):",
+                        err instanceof Error ? err.message : err,
+                    );
+                    return null;
+                }
+            })();
+
+        // Word export (generate_docx) is a Plus+ entitlement. Fail open on
+        // a lookup error so a metering hiccup never breaks doc generation.
+        const canExportDocx = await (async (): Promise<boolean> => {
+            const tl = res.locals.tierLevelId as number | undefined;
+            if (typeof tl !== "number") return true;
+            try {
+                const { getEntitlements, can } = await import(
+                    "../lib/entitlements"
+                );
+                return can(await getEntitlements(tl), "exportWordMarkdown");
+            } catch {
+                return true;
+            }
+        })();
+
+        const {
+            fullText,
+            events,
+            usage,
+            selectedModel,
+            webSearchCostUsd,
+            docTexts,
+        } = await runLLMStream({
             apiMessages,
             docStore,
             docIndex,
@@ -674,24 +1418,65 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             mcpServers,
             client: client ?? "web",
             editMode: editMode ?? "track",
+            piiContext,
+            canExportDocx,
+            webSearchEnabled: web_search,
+            activeContexts,
+            abortSignal: turnAbort.signal,
+            // Stall watchdog (#25): the same controller — after
+            // LLM_STREAM_DEADLINE_MS of provider silence runLLMStream
+            // fires turnAbort.abort() and rejects with
+            // LlmStreamStallError (mapped to the terminal SSE error in
+            // the catch below).
+            turnAbort,
         });
+        if (usage) completedUsage = { usage, model: selectedModel, extraCostUsd: webSearchCostUsd };
 
         console.log("[chat/stream] LLM stream finished", {
             fullTextLen: fullText?.length ?? 0,
             eventCount: events?.length ?? 0,
         });
 
-        const annotations = extractAnnotations(fullText, docIndex, events);
-        const { data: insertedAssistant } = await db
-            .from("chat_messages")
-            .insert({
-                chat_id: chatId,
-                role: "assistant",
-                content: events.length ? events : null,
-                annotations: annotations.length ? annotations : null,
-            })
-            .select("id")
-            .single();
+        // docTexts → citation-quote verification on `citation_data` (#22);
+        // same texts the streamed `citations` event was verified against.
+        const annotations = extractAnnotations(
+            fullText,
+            docIndex,
+            events,
+            docTexts,
+        );
+        const { data: insertedAssistant, error: assistantInsertError } =
+            await db
+                .from("chat_messages")
+                .insert({
+                    chat_id: chatId,
+                    role: "assistant",
+                    content: events.length ? events : null,
+                    annotations: annotations.length ? annotations : null,
+                })
+                .select("id")
+                .single();
+        if (assistantInsertError) {
+            // The user just watched the full answer stream; if this insert
+            // failed the turn silently vanishes on reload (issue #95).
+            // Log loudly and tell the client so it can warn instead of
+            // pretending the turn is durable.
+            console.error(
+                "[chat/stream] assistant message insert FAILED — turn not persisted:",
+                assistantInsertError,
+            );
+            try {
+                write(
+                    `data: ${JSON.stringify({
+                        type: "error",
+                        message: "Assistant message could not be saved",
+                        code: "PERSIST_FAILED",
+                    })}\n\n`,
+                );
+            } catch {
+                /* ignore */
+            }
+        }
         if (insertedAssistant?.id) {
             // Surfaces the new row's id to the client so the UI can wire
             // up per-message affordances (flag "Not appropriate answer",
@@ -705,20 +1490,75 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             }
         }
 
+        // Workspace audit trail (#27) — fire-and-forget, never awaited on
+        // the stream path; recordAuditEvent swallows its own failures.
+        // Feature adoption (migration 210): first-use milestones per surface.
+        void recordFeatureUse({
+            userId,
+            feature: client === "word" ? "word" : "assistant",
+            surface: client ?? "web",
+        });
+        if (activeContexts.length > 0) {
+            void recordFeatureUse({ userId, feature: "contexts", surface: client ?? "web" });
+        }
+        if (lastUser?.workflow?.id) {
+            void recordFeatureUse({ userId, feature: "workflow", surface: client ?? "web" });
+        }
+        void recordAuditEvent({
+            userId,
+            eventType: "chat.turn_completed",
+            chatId,
+            projectId: project_id ?? null,
+            surface: client ?? "web",
+            metadata: {
+                model: selectedModel,
+                cancelled: turnAbort.signal.aborted,
+                contexts: activeContexts.length,
+                workflow: Boolean(lastUser?.workflow?.id),
+            },
+        });
+
+        // Terminal usage event (evals enabler; answer-neutral — post-[DONE]).
+        if (usage) {
+            try {
+                write(
+                    `data: ${JSON.stringify(
+                        buildUsageEvent({
+                            usage,
+                            model: selectedModel,
+                            webSearchCostUsd,
+                            durationMs: Date.now() - turnStartedAt,
+                        }),
+                    )}\n\n`,
+                );
+            } catch {
+                /* stream already closed — usage still recorded to DB below */
+            }
+        }
+
         // Cost telemetry: persist token counts + USD for this assistant
         // turn. Best-effort — recordLlmUsage swallows its own errors.
         if (usage) {
             usageRecorded = true;
             await recordLlmUsage({
                 userId,
-                provider: "claude",
+                // Attribute the actual provider — this route serves every
+                // model family, and hardcoding "claude" skewed AdminMax
+                // provider analytics for Gemini/GPT/Mistral turns (#98).
+                provider: providerForModel(selectedModel),
+                client: client ?? "web",
                 model: selectedModel,
                 chatId,
                 projectId: project_id ?? null,
                 chatMessageId: insertedAssistant?.id ?? null,
                 usage,
                 durationMs: Date.now() - turnStartedAt,
-                status: "ok",
+                status: turnAbort.signal.aborted ? "aborted" : "ok",
+                // Roll search-provider USD (Tavily / Exa / Parallel)
+                // into the same cost_usd column — we deliberately keep
+                // one number per turn rather than splitting LLM vs
+                // search across schemas. See lib/searchPricing.ts.
+                extraCostUsd: webSearchCostUsd,
             });
         }
 
@@ -730,38 +1570,40 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
     } catch (err) {
         console.error("[chat/stream] error:", err);
-        // Even on failure we want a usage row when the upstream call had
-        // already produced any tokens (e.g. crash mid-tool-loop). The
-        // stream result is unavailable here; we log a zero-token row
-        // tagged with the error so the row count itself signals failure
-        // rate even before we have a UI.
+        // Preserve every receipt already reported before the failure.
         if (!usageRecorded) {
             try {
+                const partial = getErrorUsage(err) ?? completedUsage;
+                const actualModel = partial?.model ?? model ?? "unknown";
+                let actualProvider = "unknown";
+                try { actualProvider = providerForModel(actualModel); } catch {}
                 await recordLlmUsage({
-                    userId,
-                    provider: "claude",
-                    model: model ?? "unknown",
-                    chatId,
+                    userId, provider: actualProvider, client: client ?? "web",
+                    model: actualModel, chatId,
                     projectId: project_id ?? null,
-                    usage: {
-                        inputTokens: 0,
-                        outputTokens: 0,
-                        cacheCreationInputTokens: 0,
-                        cacheReadInputTokens: 0,
-                        iterations: 0,
-                    },
+                    usage: partial?.usage ?? { ...emptyUsage(), incomplete: true },
+                    extraCostUsd: partial?.extraCostUsd,
                     durationMs: Date.now() - turnStartedAt,
                     status: "error",
-                    errorMessage:
-                        err instanceof Error ? err.message : String(err),
+                    errorMessage: err instanceof Error ? err.message : String(err),
                 });
-            } catch {
-                /* recordLlmUsage already logs its own failures */
-            }
+            } catch { /* recordLlmUsage already logs its own failures */ }
         }
+
         try {
+            // Fail-closed PII abort (#45) gets its own code so the client
+            // can render the dedicated localized banner; a stall-watchdog
+            // abort (#25) ships STREAM_STALLED (the frontend renders any
+            // unknown code as the generic localized stream-error banner);
+            // everything else stays the generic marker string.
+            const { message, code } =
+                err instanceof PiiShieldUnavailableError
+                    ? { message: err.message, code: err.code }
+                    : err instanceof LlmStreamStallError
+                      ? { message: err.message, code: err.code }
+                      : { message: "Stream error", code: "STREAM_ERROR" };
             write(
-                `data: ${JSON.stringify({ type: "error", message: "Stream error" })}\n\n`,
+                `data: ${JSON.stringify({ type: "error", message, code })}\n\n`,
             );
             write("data: [DONE]\n\n");
         } catch {

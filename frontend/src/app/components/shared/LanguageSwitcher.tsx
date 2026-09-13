@@ -3,17 +3,25 @@
 import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { Globe } from "lucide-react";
 import type { Locale } from "@/i18n/request";
 import { getStoredTokens } from "@/lib/oauth";
+import { cn } from "@/lib/utils";
+import { CountryFlag } from "@/app/components/shared/CountryFlag";
 
-const LOCALES: { code: Locale; flag: string }[] = [
-    { code: "en", flag: "🇬🇧" },
-    { code: "hr", flag: "🇭🇷" },
+import { API_BASE } from "@/app/lib/apiBase";
+/**
+ * `sidebar` — the in-app shell switcher (shadcn sidebar tokens).
+ * `landing` — the public marketing/login surfaces. Both variants now use the
+ * shared paper/ink design tokens (see design tokens). Same locale-switch
+ * behaviour, different skin.
+ */
+type LanguageSwitcherVariant = "sidebar" | "landing";
+
+// `country` is the ISO code whose flag represents the locale (en → GB).
+const LOCALES: { code: Locale; country: string }[] = [
+    { code: "en", country: "gb" },
+    { code: "hr", country: "hr" },
 ];
-
-const API_BASE =
-    process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:3001";
 
 /**
  * Fire-and-forget mirror of the chosen locale into the user profile.
@@ -43,7 +51,16 @@ function persistPreferredLanguage(locale: Locale): void {
     });
 }
 
-export function LanguageSwitcher() {
+/** Cookie the server-side `next-intl` request config reads (`NEXT_LOCALE`). */
+function setLocaleCookie(nextLocale: Locale): void {
+    document.cookie = `NEXT_LOCALE=${nextLocale};path=/;max-age=31536000;SameSite=Lax`;
+}
+
+export function LanguageSwitcher({
+    variant = "sidebar",
+}: {
+    variant?: LanguageSwitcherVariant;
+} = {}) {
     const locale = useLocale();
     const t = useTranslations("language");
     const router = useRouter();
@@ -51,7 +68,7 @@ export function LanguageSwitcher() {
 
     const handleSwitch = (nextLocale: Locale) => {
         if (nextLocale === locale) return;
-        document.cookie = `NEXT_LOCALE=${nextLocale};path=/;max-age=31536000;SameSite=Lax`;
+        setLocaleCookie(nextLocale);
         persistPreferredLanguage(nextLocale);
         startTransition(() => {
             router.refresh();
@@ -61,16 +78,60 @@ export function LanguageSwitcher() {
     const current = LOCALES.find((l) => l.code === locale) ?? LOCALES[0];
     const other = LOCALES.find((l) => l.code !== locale) ?? LOCALES[1];
 
+    // Sidebar (account menu): list every language, current one marked, so
+    // the user sees the alternative instead of having to guess that the
+    // single flag is a toggle (Teams BugFix, Neven 2026-09-09 — users
+    // thought only one language existed). Order is fixed: English, then
+    // Hrvatski underneath.
+    if (variant === "sidebar") {
+        return (
+            <div role="group" aria-label={t("label")}>
+                {LOCALES.map((l) => {
+                    const isCurrent = l.code === locale;
+                    return (
+                        <button
+                            key={l.code}
+                            type="button"
+                            onClick={() => handleSwitch(l.code)}
+                            disabled={isPending || isCurrent}
+                            aria-current={isCurrent ? "true" : undefined}
+                            className={cn(
+                                "flex w-full items-center gap-2 rounded-md px-4 py-2 text-left text-sm transition-colors",
+                                isCurrent
+                                    ? "bg-secondary text-foreground"
+                                    : "text-foreground hover:bg-accent",
+                                isPending && "opacity-50",
+                            )}
+                        >
+                            <CountryFlag
+                                code={l.country}
+                                label={t(l.code)}
+                                className="text-base"
+                            />
+                            <span>{t(l.code)}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        );
+    }
+
     return (
         <button
             type="button"
             onClick={() => handleSwitch(other.code)}
             disabled={isPending}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors disabled:opacity-50"
+            aria-label={t("label")}
+            className={cn(
+                "inline-flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-lg leading-none transition-colors hover:bg-accent disabled:opacity-50",
+            )}
             title={t("label")}
         >
-            <Globe className="h-3.5 w-3.5" />
-            <span>{current.flag} {t(locale as "en" | "hr")}</span>
+            <CountryFlag
+                code={current.country}
+                label={t(locale as "en" | "hr")}
+                className="text-lg"
+            />
         </button>
     );
 }

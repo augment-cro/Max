@@ -12,6 +12,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isModelAvailable } from "@/app/lib/modelAvailability";
+import { cn } from "@/lib/utils";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 
@@ -28,60 +29,45 @@ export interface ModelOption {
     label: string;
     group: "Anthropic" | "Google" | "OpenAI" | "LocalLLM" | "Mistral";
     /**
+     * Coarse capability tier reported to analytics as `model_tier` (never
+     * the raw model id). Required so a newly added model can't silently
+     * ship as "unknown" in metrics.
+     */
+    tier: "pro" | "standard" | "lite";
+    /**
      * Whether this model accepts a reasoning-effort knob. Mirrors the
      * server-side mapping in backend/src/lib/llm/{claude,openai,gemini}.ts:
      *   - Claude 4.x: `output_config.effort`
      *   - GPT-5 family: `reasoning_effort`
      *   - Gemini 3.x: `thinkingConfig.thinkingLevel`
-     * LocalLLM, Mistral, and lite/nano tiers don't expose one and
-     * silently ignore the value, so we hide the picker for them.
+     * LocalLLM and lite/nano tiers don't expose one and silently ignore
+     * the value, so we hide the picker for them.
      */
     supportsReasoningEffort?: boolean;
+    /**
+     * Shape of the reasoning-effort control. "standard" (default) is the
+     * Low/Medium/High dial. "binary" is Mistral's none|high switch, shown
+     * as "Nema" / "Visoka" — Mistral Small/Medium expose only those two
+     * (see the SDK's ReasoningEffort enum), mapped onto the shared
+     * low/high effort values.
+     */
+    reasoningVariant?: "standard" | "binary";
 }
 
 export const MODELS: ModelOption[] = [
-    { id: "localllm-main", label: "LocalLLM Main", group: "LocalLLM" },
-    { id: "localllm-lite", label: "LocalLLM Lite", group: "LocalLLM" },
     {
-        id: "claude-opus-4-7",
-        label: "Claude Opus 4.7",
+        id: "claude-sonnet-5",
+        label: "Claude Sonnet 5",
         group: "Anthropic",
+        tier: "standard",
         supportsReasoningEffort: true,
     },
-    {
-        id: "claude-sonnet-4-6",
-        label: "Claude Sonnet 4.6",
-        group: "Anthropic",
-        supportsReasoningEffort: true,
-    },
-    {
-        id: "gemini-3.1-pro-preview",
-        label: "Gemini 3.1 Pro",
-        group: "Google",
-        supportsReasoningEffort: true,
-    },
-    {
-        id: "gemini-3-flash-preview",
-        label: "Gemini 3 Flash",
-        group: "Google",
-        supportsReasoningEffort: true,
-    },
-    {
-        id: "gpt-5.5",
-        label: "GPT-5.5",
-        group: "OpenAI",
-        supportsReasoningEffort: true,
-    },
-    { id: "gpt-5.4-nano", label: "GPT-5.4 Nano", group: "OpenAI" },
-    { id: "mistral-large-latest", label: "Mistral Large", group: "Mistral" },
-    { id: "mistral-medium-latest", label: "Mistral Medium", group: "Mistral" },
-    { id: "mistral-small-latest", label: "Mistral Small", group: "Mistral" },
 ];
 
 // Primary model for the web composer. Backend deploy ships with ANTHROPIC_API_KEY
 // wired from Secret Manager (see cloudbuild.yaml), so every signed-in user
-// gets Claude Sonnet 4.6 by default without pasting their own key.
-export const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
+// gets Claude Sonnet 5 by default without pasting their own key.
+export const DEFAULT_MODEL_ID = "claude-sonnet-5";
 
 export const ALLOWED_MODEL_IDS = new Set(MODELS.map((m) => m.id));
 
@@ -93,12 +79,25 @@ export function modelSupportsReasoningEffort(modelId: string): boolean {
     return REASONING_MODEL_IDS.has(modelId);
 }
 
+const MODEL_TIER_BY_ID = new Map(MODELS.map((m) => [m.id, m.tier]));
+
+/**
+ * Coarse `model_tier` analytics label for a model id, straight from the
+ * MODELS registry (single source of truth). "unknown" only for ids that
+ * aren't in the registry at all.
+ */
+export function modelTierOf(modelId: string | undefined): string {
+    return (modelId && MODEL_TIER_BY_ID.get(modelId)) || "unknown";
+}
+
 const GROUP_ORDER: ModelOption["group"][] = [
-    "LocalLLM",
     "Anthropic",
     "Google",
     "OpenAI",
     "Mistral",
+    // LocalLLM is shown last and rendered disabled (greyed out) in the
+    // picker — see the `disabled` branch in the item map below.
+    "LocalLLM",
 ];
 
 interface Props {
@@ -146,12 +145,12 @@ export function ModelToggle({
                     aria-label={t("triggerAria", {
                         model: selected?.label ?? "Model",
                     })}
-                    className={`relative flex items-center justify-center rounded-lg h-8 w-8 transition-colors cursor-pointer text-gray-400 hover:bg-gray-100 hover:text-gray-700 ${isOpen ? "bg-gray-100 text-gray-700" : ""}`}
+                    className={`relative flex items-center justify-center rounded-lg h-8 w-8 transition-colors cursor-pointer text-muted-foreground/70 hover:bg-accent hover:text-foreground ${isOpen ? "bg-secondary text-foreground" : ""}`}
                     title={triggerTitle}
                 >
                     <Brain className="h-4 w-4" />
                     {!selectedAvailable && (
-                        <AlertCircle className="absolute -top-0.5 -right-0.5 h-3 w-3 text-red-500" />
+                        <AlertCircle className="absolute -top-0.5 -right-0.5 h-3 w-3 text-destructive" />
                     )}
                 </button>
             </DropdownMenuTrigger>
@@ -166,45 +165,63 @@ export function ModelToggle({
                     return (
                         <div key={group}>
                             {gi > 0 && <DropdownMenuSeparator />}
-                            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-gray-400">
+                            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
                                 {group}
                             </DropdownMenuLabel>
                             {items.map((m) => {
+                                // LocalLLM is intentionally shown but not
+                                // selectable — greyed out at the bottom of
+                                // the list (server-side self-hosted tier).
+                                const disabled = m.group === "LocalLLM";
                                 const available = apiKeys
                                     ? isModelAvailable(m.id, apiKeys)
                                     : true;
                                 const isSelected = m.id === value;
                                 const showsEffort =
-                                    !!m.supportsReasoningEffort && available;
+                                    !!m.supportsReasoningEffort &&
+                                    available &&
+                                    !disabled;
                                 return (
                                     <DropdownMenuItem
                                         key={m.id}
-                                        className="cursor-pointer flex flex-col items-stretch gap-1.5 py-1.5"
+                                        disabled={disabled}
+                                        className={cn(
+                                            "flex flex-col items-stretch gap-1.5 py-1.5",
+                                            disabled
+                                                ? "cursor-not-allowed"
+                                                : "cursor-pointer",
+                                        )}
                                         onSelect={(e) => {
                                             e.preventDefault();
+                                            if (disabled) return;
                                             onChange(m.id);
                                         }}
                                     >
                                         <div className="flex items-center w-full">
                                             <span
-                                                className={`flex-1 ${available ? "" : "text-gray-400"}`}
+                                                className={cn(
+                                                    "flex-1",
+                                                    (!available || disabled) &&
+                                                        "text-muted-foreground/70",
+                                                )}
                                             >
                                                 {m.label}
                                             </span>
                                             {!available && (
                                                 <AlertCircle
-                                                    className="h-3.5 w-3.5 text-red-500 ml-1"
+                                                    className="h-3.5 w-3.5 text-destructive ml-1"
                                                     aria-label={t(
                                                         "apiKeyMissingTitle",
                                                     )}
                                                 />
                                             )}
-                                            {isSelected && available && (
-                                                <Check className="h-3.5 w-3.5 text-gray-600 ml-1" />
+                                            {isSelected && available && !disabled && (
+                                                <Check className="h-3.5 w-3.5 text-muted-foreground ml-1" />
                                             )}
                                         </div>
                                         {showsEffort && (
                                             <EffortPicker
+                                                variant={m.reasoningVariant}
                                                 value={
                                                     isSelected
                                                         ? effort
@@ -231,39 +248,54 @@ export function ModelToggle({
 interface EffortPickerProps {
     value: ReasoningEffort;
     onChange: (effort: ReasoningEffort) => void;
+    variant?: "standard" | "binary";
 }
 
-function EffortPicker({ value, onChange }: EffortPickerProps) {
+function EffortPicker({ value, onChange, variant = "standard" }: EffortPickerProps) {
     const t = useTranslations("assistant.modelToggle.effort");
+    // Mistral exposes only a binary reasoning switch (off | high — see the
+    // SDK's ReasoningEffort enum), surfaced as "Nema" / "Visoka". We map it
+    // onto the shared low/high effort values so the rest of the effort
+    // plumbing needs no separate "none" state; mistral.ts treats anything
+    // other than "high" as reasoning off.
+    const options: { value: ReasoningEffort; key: string; active: boolean }[] =
+        variant === "binary"
+            ? [
+                  { value: "low", key: "off", active: value !== "high" },
+                  { value: "high", key: "high", active: value === "high" },
+              ]
+            : REASONING_EFFORT_VALUES.map((o) => ({
+                  value: o,
+                  key: o,
+                  active: o === value,
+              }));
     return (
         <div
-            className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 p-0.5"
+            className="flex items-center gap-1 rounded-md border border-border bg-muted p-0.5"
             role="radiogroup"
             aria-label={t("label")}
         >
-            {REASONING_EFFORT_VALUES.map((option) => {
-                const active = option === value;
-                return (
-                    <button
-                        key={option}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        title={t(`${option}Title`)}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onChange(option);
-                        }}
-                        className={`flex-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                            active
-                                ? "bg-white text-gray-800 shadow-sm border border-gray-200"
-                                : "text-gray-500 hover:text-gray-700"
-                        }`}
-                    >
-                        {t(option)}
-                    </button>
-                );
-            })}
+            {options.map((opt) => (
+                <button
+                    key={opt.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={opt.active}
+                    title={t(`${opt.key}Title`)}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onChange(opt.value);
+                    }}
+                    className={cn(
+                        "flex-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors",
+                        opt.active
+                            ? "bg-surface-elevated text-foreground border border-border"
+                            : "text-muted-foreground hover:text-foreground",
+                    )}
+                >
+                    {t(opt.key)}
+                </button>
+            ))}
         </div>
     );
 }

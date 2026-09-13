@@ -89,6 +89,8 @@ export interface SendOptions {
     model?: string;
     /** Workflow handed off from the Workflows tab. */
     workflow?: { id: string; title: string };
+    /** Formatted summary of existing tracked changes to include as context. */
+    trackedChangesContext?: string;
 }
 
 interface UseChatState {
@@ -219,13 +221,31 @@ export function useChat() {
             const controller = new AbortController();
             abortRef.current = controller;
 
+            // Enrich selection context with tracked changes summary
+            // when the user toggled the "Changes" button.
+            let selectionPayload = opts.selection;
+            if (opts.trackedChangesContext && selectionPayload) {
+                selectionPayload = {
+                    ...selectionPayload,
+                    text:
+                        selectionPayload.text +
+                        "\n\n" +
+                        opts.trackedChangesContext,
+                };
+            } else if (opts.trackedChangesContext && !selectionPayload) {
+                selectionPayload = {
+                    text: opts.trackedChangesContext,
+                    has_selection: false,
+                };
+            }
+
             const payload: StreamChatPayload = {
                 messages: apiMessages,
                 chat_id: state.chatId ?? undefined,
                 model: opts.model,
                 files: opts.files,
                 workflow: opts.workflow,
-                selection: opts.selection,
+                selection: selectionPayload,
                 editMode: opts.editMode,
                 creation_mode: opts.creationMode,
                 // Tells the backend to inject the Word add-in addendum

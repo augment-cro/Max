@@ -1,9 +1,16 @@
 "use client";
 
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { useTranslations } from "next-intl";
 
 type DialogKind = "confirm" | "alert";
@@ -51,6 +58,8 @@ export type AlertOptions = {
  * as the dialog "flickering" and the user's intent being dropped on the
  * floor. Routing those calls through an in-app modal sidesteps that quirk
  * entirely and lets us style the prompt to match the rest of the UI.
+ *
+ * Now built on shadcn Dialog (Radix UI) for accessible, animated behaviour.
  */
 export function useConfirmDialog() {
     const [state, setState] = useState<DialogState>(DEFAULT_STATE);
@@ -103,6 +112,7 @@ export function useConfirmDialog() {
         if (!state.open) return null;
         return (
             <ConfirmDialog
+                open={state.open}
                 kind={state.kind}
                 title={state.title}
                 message={state.message}
@@ -119,6 +129,7 @@ export function useConfirmDialog() {
 }
 
 function ConfirmDialog({
+    open,
     kind,
     title,
     message,
@@ -128,6 +139,7 @@ function ConfirmDialog({
     onConfirm,
     onCancel,
 }: {
+    open: boolean;
     kind: DialogKind;
     title: string;
     message: string;
@@ -137,73 +149,61 @@ function ConfirmDialog({
     onConfirm: () => void;
     onCancel: () => void;
 }) {
-    if (typeof document === "undefined") return null;
+    const handleOpenChange = (isOpen: boolean) => {
+        if (!isOpen) {
+            // Closing via Esc or overlay click
+            kind === "confirm" ? onCancel() : onConfirm();
+        }
+    };
 
-    return createPortal(
-        <>
-            <div
-                className="fixed inset-0 bg-black/40 z-[199]"
-                onClick={kind === "confirm" ? onCancel : onConfirm}
-            />
-            <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="confirm-dialog-title"
-                className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] w-full max-w-md px-4"
+    return (
+        <Dialog open={open} onOpenChange={handleOpenChange}>
+            <DialogContent
+                className="sm:max-w-md"
+                // Don't show the default X button — we handle close via onOpenChange
+                showCloseButton={false}
             >
-                <div className="relative bg-white rounded-2xl shadow-2xl p-6">
-                    <button
-                        onClick={kind === "confirm" ? onCancel : onConfirm}
-                        className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 transition-colors"
-                        aria-label="Close"
-                    >
-                        <X className="h-5 w-5" />
-                    </button>
-
-                    <div className="flex items-start gap-3 mb-4">
+                <DialogHeader>
+                    <div className="flex items-start gap-3">
                         {destructive && (
-                            <div className="shrink-0 mt-0.5 rounded-full bg-red-50 p-2">
-                                <AlertTriangle className="h-5 w-5 text-red-600" />
+                            <div className="shrink-0 mt-0.5 rounded-full bg-destructive/10 p-2 border border-destructive/20">
+                                <AlertTriangle className="h-4 w-4 text-destructive" />
                             </div>
                         )}
-                        <div className="flex-1">
-                            <h2
-                                id="confirm-dialog-title"
-                                className="text-lg font-medium text-gray-900"
-                            >
+                        <div className="flex-1 min-w-0">
+                            <DialogTitle className="text-base font-semibold text-foreground leading-snug">
                                 {title}
-                            </h2>
-                            <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">
+                            </DialogTitle>
+                            <DialogDescription className="mt-1.5 text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                                 {message}
-                            </p>
+                            </DialogDescription>
                         </div>
                     </div>
+                </DialogHeader>
 
-                    <div className="flex justify-end gap-2 pt-2">
-                        {kind === "confirm" && (
-                            <Button
-                                variant="outline"
-                                onClick={onCancel}
-                                autoFocus
-                            >
-                                {cancelLabel}
-                            </Button>
-                        )}
+                <DialogFooter className="mt-2 gap-2 sm:gap-2">
+                    {kind === "confirm" && (
                         <Button
-                            onClick={onConfirm}
-                            className={
-                                destructive
-                                    ? "bg-red-600 hover:bg-red-700 text-white"
-                                    : "bg-black hover:bg-gray-900 text-white"
-                            }
-                            autoFocus={kind === "alert"}
+                            variant="outline"
+                            onClick={onCancel}
+                            className="flex-1 sm:flex-none"
                         >
-                            {confirmLabel}
+                            {cancelLabel}
                         </Button>
-                    </div>
-                </div>
-            </div>
-        </>,
-        document.body,
+                    )}
+                    <Button
+                        onClick={onConfirm}
+                        autoFocus={kind === "alert"}
+                        className={
+                            destructive
+                                ? "flex-1 sm:flex-none bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                : "flex-1 sm:flex-none bg-primary hover:bg-primary/90 text-primary-foreground"
+                        }
+                    >
+                        {confirmLabel}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }

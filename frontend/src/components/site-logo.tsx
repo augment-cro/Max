@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { MikeIcon } from "@/components/chat/mike-icon";
 
 interface SiteLogoProps {
     size?: "sm" | "md" | "lg" | "xl";
@@ -7,6 +6,16 @@ interface SiteLogoProps {
     animate?: boolean;
     asLink?: boolean;
 }
+
+// Heights for the EULEX wordmark (w-auto keeps the aspect ratio). The mark is
+// the brand SVG shared with eulex-www (public/eulex-logo.svg), matching the
+// sidebar + landing so every surface shows the same EULEX logo.
+const heightClasses: Record<NonNullable<SiteLogoProps["size"]>, string> = {
+    sm: "h-5",
+    md: "h-6",
+    lg: "h-8",
+    xl: "h-14",
+};
 
 export function SiteLogo({
     size = "md",
@@ -16,37 +25,25 @@ export function SiteLogo({
 }: SiteLogoProps) {
     const landingHref =
         process.env.NODE_ENV === "production"
-            ? "https://max.eulex.ai"
+            ? "https://eulex.ai/desk"
             : "http://localhost:3000";
-    const sizeClasses = {
-        sm: "text-xl",
-        md: "text-2xl",
-        lg: "text-4xl",
-        xl: "text-6xl",
-    };
-
-    const iconSizes = {
-        sm: 24,
-        md: 30,
-        lg: 44,
-        xl: 64,
-    };
 
     const logo = (
-        <h1
-            className={`flex items-center gap-2 leading-none ${sizeClasses[size]} font-light font-serif ${
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+            src="/eulex-logo.svg"
+            alt="EULEX"
+            className={`w-auto ${heightClasses[size]} ${
                 animate ? "sidebar-fade-in" : ""
             } ${className}`}
-        >
-            <MikeIcon size={iconSizes[size]} />
-            <span className="leading-none">Max</span>
-        </h1>
+        />
     );
 
     if (asLink) {
         return (
             <Link
                 href={landingHref}
+                aria-label="EULEX"
                 className="cursor-pointer hover:opacity-80 transition-opacity"
             >
                 {logo}

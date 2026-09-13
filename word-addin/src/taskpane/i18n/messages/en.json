@@ -1,12 +1,12 @@
 {
     "login": {
-        "connectTitle": "Connect to Max",
-        "connectIntro": "Open Max on the web, go to Account → Word add-in, and generate a 6-digit pairing code.",
+        "connectTitle": "Connect to Eulex Desk",
+        "connectIntro": "Open Eulex Desk on the web, go to Account → Word add-in, and generate a 6-digit pairing code.",
         "codeLabel": "Pairing code",
         "codePlaceholder": "123456",
         "connect": "Connect",
         "connecting": "Connecting…",
-        "openMike": "Open Max",
+        "openMike": "Open Eulex Desk",
         "invalidCode": "Code must be 6 digits.",
         "genericError": "Something went wrong. Please try again."
     },
@@ -34,9 +34,9 @@
     },
     "chat": {
         "ready": "Ready to help",
-        "intro": "Attach this document, ask a question, or paste a clause for review. Max will reply here and can insert tracked changes or comments back into Word.",
+        "intro": "Attach this document, ask a question, or paste a clause for review. Eulex Desk will reply here and can insert tracked changes or comments back into Word.",
         "browseWorkflows": "Browse workflows →",
-        "placeholder": "Ask Max something…",
+        "placeholder": "Ask Eulex Desk something…",
         "send": "Send",
         "stop": "Stop generating",
         "history": "Recent chats",
@@ -47,7 +47,7 @@
         "workflow": "Workflow",
         "workflowTip": "Run a workflow",
         "selection": "Selection",
-        "footerNote": "Max will reply here and can edit Word.",
+        "footerNote": "Eulex Desk will reply here and can edit Word.",
         "trackChanges": "Track changes",
         "comments": "Comments",
         "removeWorkflow": "Remove workflow",
@@ -60,13 +60,16 @@
         "justNow": "just now",
         "minutesAgo": "{count}m ago",
         "hoursAgo": "{count}h ago",
-        "daysAgo": "{count}d ago"
+        "daysAgo": "{count}d ago",
+        "trackedChangesContext": "Changes",
+        "trackedChangesContextTip": "Include existing tracked changes as context for Eulex Desk",
+        "extractingChanges": "Extracting changes…"
     },
     "projects": {
         "title": "Projects",
         "searchPlaceholder": "Search projects…",
         "noProjects": "No projects.",
-        "noProjectsHint": "No projects yet — create one in Max on the web first.",
+        "noProjectsHint": "No projects yet — create one in Eulex Desk on the web first.",
         "openInChat": "Open in chat",
         "documents": "Documents",
         "noDocuments": "No documents.",
@@ -206,6 +209,6 @@
         "untitled": "Untitled",
         "defaultBadge": "Default",
         "manageConnectors": "Manage connectors",
-        "manageHint": "Manage in the Max web app."
+        "manageHint": "Manage in the Eulex Desk web app."
     }
 }

@@ -1,5 +1,6 @@
 import { Mistral } from "@mistralai/mistralai";
 import type {
+    LlmUsage,
     StreamChatParams,
     StreamChatResult,
     NormalizedToolCall,
@@ -10,7 +11,42 @@ const MAX_TOKENS = 16384;
 
 function client(override?: string | null): Mistral {
     const apiKey = override?.trim() || process.env.MISTRAL_API_KEY || "";
-    return new Mistral({ apiKey });
+    // The SDK ships with no retry strategy by default, so a single
+    // transient 429/5xx/socket reset failed the whole call. Backoff caps
+    // at ~1 min total, in line with the other adapters' retry behaviour.
+    return new Mistral({
+        apiKey,
+        retryConfig: {
+            strategy: "backoff",
+            backoff: {
+                initialInterval: 500,
+                maxInterval: 10_000,
+                exponent: 1.8,
+                maxElapsedTime: 60_000,
+            },
+            retryConnectionErrors: true,
+        },
+    });
+}
+
+/**
+ * Mistral exposes a *binary* reasoning switch (`reasoning_effort: "none" | "high"`,
+ * see the SDK's ReasoningEffort enum) — there is no low/medium/high dial like
+ * Claude / Gemini / OpenAI. Only Small and Medium are reasoning models; Large 3
+ * is not, so we never send the param to it (and the picker hides it). The UI
+ * surfaces this as "Nema" / "Visoka" mapped onto our shared low/high effort, so
+ * here anything other than an explicit "high" disables reasoning.
+ */
+function mistralSupportsReasoningEffort(model: string): boolean {
+    return model.startsWith("mistral-small") || model.startsWith("mistral-medium");
+}
+
+function mistralReasoningEffort(
+    model: string,
+    effort: "low" | "medium" | "high" | undefined,
+): "none" | "high" | undefined {
+    if (!mistralSupportsReasoningEffort(model)) return undefined;
+    return effort === "high" ? "high" : "none";
 }
 
 type MistralMessage = {
@@ -32,6 +68,7 @@ export async function streamMistral(
         apiKeys,
     } = params;
     const maxIter = params.maxIterations ?? 10;
+    const reasoningEffort = mistralReasoningEffort(model, params.reasoningEffort);
     const mistral = client(apiKeys?.mistral);
 
     // Mistral rejects assistant messages with empty/blank content and no tool_calls.
@@ -58,6 +95,17 @@ export async function streamMistral(
     ];
 
     let fullText = "";
+    // Per-turn token usage accumulated across the tool-use loop.
+    // Mistral surfaces an OpenAI-shape `usage` block on the final chunk
+    // of each streaming call (no cache fields — Mistral does not expose
+    // prompt caching).
+    const usage: LlmUsage = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        iterations: 0,
+    };
 
     const mistralTools = tools.map((t) => ({
         type: "function" as const,
@@ -76,6 +124,7 @@ export async function streamMistral(
                 messages: messages as Parameters<typeof mistral.chat.stream>[0]["messages"],
                 tools: mistralTools.length ? mistralTools : undefined,
                 maxTokens: MAX_TOKENS,
+                ...(reasoningEffort ? { reasoningEffort } : {}),
             });
         } catch (err: unknown) {
             const body = (err as { body?: string }).body ?? "";
@@ -96,6 +145,17 @@ export async function streamMistral(
         let finishReason = "";
 
         for await (const chunk of stream) {
+            // Mistral surfaces `usage` on chunks at end-of-stream. Sum
+            // across the loop. Some chunks don't carry usage at all,
+            // hence the optional chain.
+            const u = (chunk.data as unknown as {
+                usage?: { promptTokens?: number; completionTokens?: number };
+            }).usage;
+            if (u && (u.promptTokens || u.completionTokens)) {
+                usage.iterations += 1;
+                usage.inputTokens += u.promptTokens ?? 0;
+                usage.outputTokens += u.completionTokens ?? 0;
+            }
             const choice = chunk.data.choices[0];
             if (!choice) continue;
 
@@ -176,7 +236,7 @@ export async function streamMistral(
         }
     }
 
-    return { fullText };
+    return { fullText, usage: usage.iterations > 0 ? usage : undefined };
 }
 
 export async function completeMistralText(params: {
@@ -185,7 +245,7 @@ export async function completeMistralText(params: {
     user: string;
     maxTokens?: number;
     apiKeys?: { mistral?: string | null };
-}): Promise<string> {
+}): Promise<{ text: string; usage?: LlmUsage }> {
     const mistral = client(params.apiKeys?.mistral);
     const resp = await mistral.chat.complete({
         model: params.model,
@@ -198,7 +258,25 @@ export async function completeMistralText(params: {
         ],
     });
     const content = resp.choices?.[0]?.message?.content;
-    return typeof content === "string" ? content : "";
+    const text = typeof content === "string" ? content : "";
+
+    // Mistral exposes prompt/completion totals — no cache distinction
+    // (Mistral does not bill caching separately for the models we use),
+    // so cacheRead/Write stay 0.
+    const mu = (resp as unknown as {
+        usage?: { promptTokens?: number; completionTokens?: number };
+    }).usage;
+    const usage: LlmUsage | undefined =
+        mu && (mu.promptTokens || mu.completionTokens)
+            ? {
+                  iterations: 1,
+                  inputTokens: mu.promptTokens ?? 0,
+                  outputTokens: mu.completionTokens ?? 0,
+                  cacheCreationInputTokens: 0,
+                  cacheReadInputTokens: 0,
+              }
+            : undefined;
+    return { text, usage };
 }
 
 export type { NormalizedToolResult };

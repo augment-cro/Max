@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { supabase } from "@/lib/supabase";
 
+import { API_BASE } from "@/app/lib/apiBase";
 /**
  * /display returns either PDF bytes (when the active version has a PDF
  * rendition) or raw DOCX bytes otherwise. Reporting the type lets the
@@ -18,6 +20,7 @@ export function useFetchSingleDoc(
     documentId: string | null | undefined,
     versionId?: string | null,
 ) {
+    const t = useTranslations("docPanel");
     const [result, setResult] = useState<DocResult>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -43,9 +46,7 @@ export function useFetchSingleDoc(
                 const token = session?.access_token;
                 if (cancelled) return;
 
-                const apiBase =
-                    process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
-                    "http://localhost:3001";
+                const apiBase = API_BASE;
                 const qs = versionId
                     ? `?version_id=${encodeURIComponent(versionId)}`
                     : "";
@@ -73,7 +74,7 @@ export function useFetchSingleDoc(
                     if (!cancelled) setResult({ type: "docx" });
                 }
             } catch {
-                if (!cancelled) setError("Failed to load document.");
+                if (!cancelled) setError(t("loadError"));
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -83,7 +84,9 @@ export function useFetchSingleDoc(
             cancelled = true;
             prevKeyRef.current = null;
         };
-    }, [documentId, versionId]);
+        // prevKeyRef short-circuits repeat runs, so including `t` cannot
+        // re-trigger the fetch.
+    }, [documentId, versionId, t]);
 
     return { result, loading, error };
 }

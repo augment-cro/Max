@@ -15,7 +15,7 @@
  *       }
  *     Returns: SearchResponse JSON (provider, query, results, optional answer/context).
  *
- * Used by Max clients (Word add-in "Find sources" panel, debug UI)
+ * Used by Eulex Desk clients (Word add-in "Find sources" panel, debug UI)
  * that want to search without going through the LLM toolcall flow.
  * The LLM toolcall path lives in chatTools.ts and shares the same
  * underlying webSearch() function — so config and behavior stay in
@@ -23,9 +23,12 @@
  */
 
 import { Router } from "express";
+import { recordAuditEvent, recordFeatureUse } from "../lib/audit";
 import { requireAuth } from "../middleware/auth";
 import { webSearch, type SearchProvider } from "../lib/search";
 import { resolveProjectSearchConfig } from "../lib/search/search_config";
+import { computeSearchCallCostUsd } from "../lib/searchPricing";
+import { recordLlmUsage } from "../lib/llmUsage";
 
 export const searchRouter = Router();
 
@@ -80,6 +83,7 @@ searchRouter.post("/", requireAuth, async (req, res) => {
     const exclude_domains = asStringArray(body.exclude_domains);
     const source_keys = asStringArray(body.source_keys) ?? cfg.source_keys;
 
+    const turnStartedAt = Date.now();
     const resp = await webSearch({
         query,
         provider,
@@ -91,5 +95,51 @@ searchRouter.post("/", requireAuth, async (req, res) => {
         allowed_providers: cfg.providers,
     });
 
-    res.json(resp);
+    // Bill the REST search exactly like a chat-tool search: one
+    // llm_usage row with zero token counts and cost_usd = provider
+    // call cost. Adminmax SUM(cost_usd) picks it up automatically; we
+    // tag `provider` so spike forensics can filter web-search billings
+    // separately from real LLM calls when needed.
+    const userId =
+        typeof res.locals.userId === "string" ? res.locals.userId : null;
+    if (userId && resp.provider) {
+        const cost = computeSearchCallCostUsd(
+            resp.provider as SearchProvider,
+            Array.isArray(resp.results) ? resp.results.length : 0,
+        );
+        if (cost > 0) {
+            // Fire-and-forget; recordLlmUsage swallows its own failures.
+            void recordFeatureUse({ userId, feature: "search", surface: "search", projectId });
+            void recordAuditEvent({
+                userId,
+                eventType: "search.performed",
+                projectId,
+                surface: "search",
+                metadata: { provider: resp.provider, results: Array.isArray(resp.results) ? resp.results.length : 0 },
+            });
+            void recordLlmUsage({
+                userId,
+                client: "search",
+                provider: "web_search",
+                model: resp.provider,
+                projectId,
+                usage: {
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cacheCreationInputTokens: 0,
+                    cacheReadInputTokens: 0,
+                    iterations: 1,
+                },
+                durationMs: Date.now() - turnStartedAt,
+                status: resp.error ? "error" : "ok",
+                errorMessage: resp.error ?? null,
+                extraCostUsd: cost,
+            });
+        }
+    }
+
+    // Strip the upstream provider id from the public response so the
+    // Word add-in / debug UI never sees "tavily" / "exa" / "parallel".
+    // Internal billing above keyed off the real provider already.
+    res.json({ ...resp, provider: "eulex" });
 });

@@ -33,7 +33,7 @@ const RESULT_HTML = (success: boolean, message?: string) => `<!doctype html>
   }</h1>
   <p>${
       success
-          ? "You can close this window and return to Max."
+          ? "You can close this window and return to Eulex Desk."
           : (message ?? "Something went wrong. Close this window and try again.")
   }</p>
   <script>

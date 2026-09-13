@@ -1,8 +1,8 @@
-# Max Word Add-in
+# Eulex Desk Word Add-in
 
-Microsoft Word task pane that brings Max's chat, project context, and
+Microsoft Word task pane that brings Eulex Desk's chat, project context, and
 track-change suggestions directly inside Word. Same backend, same JWT
-auth — paired to your Max account via a one-time 6-digit code.
+auth — paired to your Eulex Desk account via a one-time 6-digit code.
 
 ## Architecture in 30 seconds
 
@@ -14,13 +14,13 @@ Word ──► Office.js ──► taskpane (React 18, this package)
 
 The taskpane bundle and `manifest.xml` are emitted into
 `frontend/public/word-addin/` by webpack and served from the same origin
-as the Max web frontend (e.g. `https://mike.example.com/word-addin/...`).
+as the Eulex Desk web frontend (e.g. `https://mike.example.com/word-addin/...`).
 That keeps `fetch()` from the taskpane same-origin, avoiding CORS for the
 streaming chat path.
 
 Auth flow:
 
-1. User logs into Max on the web (OAuth PKCE → eulex.ai).
+1. User logs into Eulex Desk on the web (OAuth PKCE → eulex.ai).
 2. On `Account → Word add-in`, frontend calls `POST /auth/pair/start`,
    gets a 6-digit code with a 5-minute TTL.
 3. User installs this add-in in Word, pastes the code into the Login
@@ -42,12 +42,12 @@ cp .env.example .env    # adjust API_BASE_URL if needed
 ```
 
 The default `.env` points the add-in at `http://localhost:3001` (the
-Max backend). Adjust if you run the backend on a different host.
+Eulex Desk backend). Adjust if you run the backend on a different host.
 
 ### Dev loop
 
 ```bash
-# Start the Max stack (in their own terminals)
+# Start the Eulex Desk stack (in their own terminals)
 npm run dev --prefix backend
 npm run dev --prefix frontend
 
@@ -62,7 +62,7 @@ Then sideload the add-in in Word:
 2. **Insert → Add-ins → My Add-ins → Upload My Add-in.**
 3. Browse to `word-addin/manifest.xml`.
 
-The Max pane appears on the Home tab. Click **Open Max**.
+The Eulex Desk pane appears on the Home tab. Click **Open Eulex Desk**.
 
 To pair: in the web frontend, open `Account → Word add-in`, click
 **Generate pairing code**, type the 6 digits into Word.
@@ -151,7 +151,7 @@ word-addin/
 ## Known limitations / non-goals (yet)
 
 - **Workflows / Tabular Review** are not exposed in the add-in. Users
-  who need those open Max on the web.
+  who need those open Eulex Desk on the web.
 - **Comment placement when no selection exists** anchors at the current
   caret. Fine, but not as good as multi-range placement.
 - **Rich formatting** (bold/italic, alignment) is stripped when applying

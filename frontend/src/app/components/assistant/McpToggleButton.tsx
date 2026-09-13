@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Plug, Plus } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, Plug } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
     DropdownMenu,
@@ -11,13 +11,21 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-    listMcpServers,
-    listBuiltinMcpServers,
-    updateMcpServer,
-    updateBuiltinMcpServer,
-    type McpServer,
-    type BuiltinMcpServer,
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
+import type {
+    McpServer,
+    BuiltinMcpServer,
 } from "@/app/lib/mikeApi";
+import { useMcpServers } from "@/app/contexts/McpServersContext";
+import {
+    ConnectorEmblem,
+    CountryFlag,
+    connectorEmblem,
+    connectorFlagCode,
+} from "@/app/components/shared/CountryFlag";
 
 /**
  * Sit next to "Documents" / "Workflows" in the chat input. Opens a popover
@@ -30,76 +38,27 @@ import {
  * default to enabled for every user; a per-user opt-out is persisted in
  * `user_mcp_builtin_prefs` server-side. URL/headers stay server-side and
  * are not surfaced here.
+ *
+ * State (list + busy flags + toggling) lives in `McpServersContext` so
+ * the initial chat view can show an honest "still loading" indicator on
+ * the composer while these lists are in flight — see InitialView.
  */
 export function McpToggleButton() {
     const t = useTranslations("mcpToggle");
-    const [servers, setServers] = useState<McpServer[] | null>(null);
-    const [builtins, setBuiltins] = useState<BuiltinMcpServer[] | null>(null);
+    const { servers, builtins, busy, toggleUser, toggleBuiltin } =
+        useMcpServers();
     const [open, setOpen] = useState(false);
-    const [busy, setBusy] = useState<Record<string, boolean>>({});
-
-    const reload = useCallback(async () => {
-        try {
-            const [userList, builtinList] = await Promise.all([
-                listMcpServers(),
-                listBuiltinMcpServers(),
-            ]);
-            setServers(userList);
-            setBuiltins(builtinList);
-        } catch {
-            setServers([]);
-            setBuiltins([]);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (open) reload();
-        else if (servers === null) reload();
-    }, [open, reload, servers]);
-
-    const handleToggleUser = async (server: McpServer) => {
-        setBusy((s) => ({ ...s, [server.id]: true }));
-        setServers((prev) =>
-            prev
-                ? prev.map((s) =>
-                      s.id === server.id ? { ...s, enabled: !s.enabled } : s,
-                  )
-                : prev,
-        );
-        try {
-            await updateMcpServer(server.id, { enabled: !server.enabled });
-        } catch {
-            await reload();
-        } finally {
-            setBusy((s) => ({ ...s, [server.id]: false }));
-        }
-    };
-
-    const handleToggleBuiltin = async (server: BuiltinMcpServer) => {
-        const key = `builtin:${server.slug}`;
-        setBusy((s) => ({ ...s, [key]: true }));
-        setBuiltins((prev) =>
-            prev
-                ? prev.map((b) =>
-                      b.slug === server.slug ? { ...b, enabled: !b.enabled } : b,
-                  )
-                : prev,
-        );
-        try {
-            await updateBuiltinMcpServer(server.slug, {
-                enabled: !server.enabled,
-            });
-        } catch {
-            await reload();
-        } finally {
-            setBusy((s) => ({ ...s, [key]: false }));
-        }
-    };
 
     const builtinCount = builtins?.length ?? 0;
     const userCount = servers?.length ?? 0;
 
-    if (servers !== null && builtins !== null && userCount === 0 && builtinCount === 0) return null;
+    if (
+        servers !== null &&
+        builtins !== null &&
+        userCount === 0 &&
+        builtinCount === 0
+    )
+        return null;
 
     const enabledCount =
         (servers?.filter((s) => s.enabled).length ?? 0) +
@@ -108,32 +67,40 @@ export function McpToggleButton() {
 
     return (
         <DropdownMenu onOpenChange={setOpen}>
-            <DropdownMenuTrigger asChild>
-                <button
-                    type="button"
-                    aria-label="Manage connectors for this chat"
-                    title={
-                        servers === null
-                            ? t("loadingConnectors")
-                            : t("connectorStatus", { enabled: enabledCount, total: totalCount })
-                    }
-                    className={`flex items-center gap-1.5 rounded-lg px-2 h-8 text-sm transition-colors ${
-                        enabledCount > 0
-                            ? "text-blue-600 hover:bg-blue-50"
-                            : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                    } ${open ? "bg-gray-100" : ""}`}
-                >
-                    <Plug className="h-3.5 w-3.5" />
-                    {enabledCount > 0 && totalCount > 0 && (
-                        <span className="text-xs font-medium text-blue-600">
-                            {enabledCount}
-                        </span>
-                    )}
-                </button>
-            </DropdownMenuTrigger>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                        <button
+                            type="button"
+                            aria-label={t("manageContextAria")}
+                            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2 h-8 text-sm transition-colors ${
+                                enabledCount > 0
+                                    ? "bg-brand text-brand-foreground hover:bg-brand/90"
+                                    : `text-foreground hover:bg-accent ${open ? "bg-secondary" : ""}`
+                            }`}
+                        >
+                            <Plug className="h-3.5 w-3.5 shrink-0" />
+                            {enabledCount > 0 && totalCount > 0 && (
+                                <span className="text-xs font-medium text-brand-foreground">
+                                    {enabledCount}
+                                </span>
+                            )}
+                        </button>
+                    </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-60">
+                    {t("tooltip")}{" "}
+                    {servers === null
+                        ? t("loadingConnectors")
+                        : t("connectorStatus", {
+                              enabled: enabledCount,
+                              total: totalCount,
+                          })}
+                </TooltipContent>
+            </Tooltip>
             <DropdownMenuContent align="start" className="w-72 p-1">
-                <DropdownMenuLabel className="text-xs text-gray-500 font-normal">
-                    {t("connectors")}
+                <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+                    {t("legislation")}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
 
@@ -143,7 +110,7 @@ export function McpToggleButton() {
                         key={`builtin:${b.slug}`}
                         server={b}
                         busy={busy[`builtin:${b.slug}`] === true}
-                        onToggle={() => handleToggleBuiltin(b)}
+                        onToggle={() => toggleBuiltin(b)}
                         defaultLabel={t("defaultBadge")}
                     />
                 ))}
@@ -154,19 +121,12 @@ export function McpToggleButton() {
                         key={s.id}
                         server={s}
                         busy={busy[s.id] === true}
-                        onToggle={() => handleToggleUser(s)}
+                        onToggle={() => toggleUser(s)}
                         t={t}
                     />
                 ))}
 
-                <DropdownMenuSeparator />
-                <a
-                    href="/account/mcp"
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-sm"
-                >
-                    <Plus className="h-3.5 w-3.5" />
-                    {t("manageConnectors")}
-                </a>
+
             </DropdownMenuContent>
         </DropdownMenu>
     );
@@ -183,17 +143,27 @@ function BuiltinRow({
     onToggle: () => void;
     defaultLabel: string;
 }) {
+    const flag = connectorFlagCode(server.slug);
+    const emblem = connectorEmblem(server.slug);
     return (
         <button
             type="button"
             onClick={onToggle}
             disabled={busy}
-            className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 rounded-sm disabled:opacity-50"
+            className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm disabled:opacity-50"
         >
             <span className="flex items-center gap-2 min-w-0">
-                <Plug className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                <span className="truncate">{server.name}</span>
-                <span className="text-[10px] uppercase tracking-wide text-blue-700/70 bg-blue-50 px-1 py-0.5 rounded shrink-0 leading-none">
+                {flag ? (
+                    <CountryFlag code={flag} label={server.name} />
+                ) : emblem ? (
+                    <ConnectorEmblem src={emblem.src} label={server.name} />
+                ) : (
+                    <Plug className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+                )}
+                <span className="truncate">
+                    {flag ? flag.toUpperCase() : emblem ? emblem.short : server.name}
+                </span>
+                <span className="text-[10px] uppercase tracking-wide text-foreground/70 bg-accent px-1 py-0.5 rounded shrink-0 leading-none">
                     {defaultLabel}
                 </span>
             </span>
@@ -211,7 +181,7 @@ function McpRow({
     server: McpServer;
     busy: boolean;
     onToggle: () => void;
-    t: (key: string) => string;
+    t: (key: string, values?: Record<string, string>) => string;
 }) {
     const safeName =
         server.name.trim().length > 0 ? server.name.trim() : t("untitled");
@@ -220,15 +190,17 @@ function McpRow({
             type="button"
             onClick={onToggle}
             disabled={busy}
-            className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 rounded-sm disabled:opacity-50"
+            className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm disabled:opacity-50"
         >
             <span className="flex items-center gap-2 min-w-0">
-                <Plug className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <Plug className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                 <span className="truncate">{safeName}</span>
                 {server.last_error && (
                     <AlertCircle
-                        className="h-3 w-3 text-red-500 shrink-0"
-                        aria-label={`Error: ${server.last_error}`}
+                        className="h-3 w-3 text-destructive shrink-0"
+                        aria-label={t("errorAria", {
+                            error: server.last_error,
+                        })}
                     />
                 )}
             </span>
@@ -241,11 +213,11 @@ function ToggleSwitch({ on }: { on: boolean }) {
     return (
         <span
             className={`shrink-0 inline-flex items-center w-7 h-4 rounded-full transition-colors ${
-                on ? "bg-blue-600" : "bg-gray-300"
+                on ? "bg-primary" : "bg-secondary"
             }`}
         >
             <span
-                className={`inline-block w-3 h-3 rounded-full bg-white transition-transform ${
+                className={`inline-block w-3 h-3 rounded-full bg-background transition-transform ${
                     on ? "translate-x-3.5" : "translate-x-0.5"
                 }`}
             />

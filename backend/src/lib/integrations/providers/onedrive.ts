@@ -49,7 +49,12 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 export const oneDriveAdapter: ProviderAdapter = {
     id: "onedrive",
-    display_name: "OneDrive",
+    // Display label uses Microsoft's umbrella brand "Microsoft 365" since
+    // the underlying Microsoft Graph token can reach OneDrive (personal),
+    // OneDrive for Business and SharePoint document libraries through the
+    // same Files.Read.All scope. The provider id stays `onedrive` to keep
+    // the integration_accounts.provider CHECK constraint stable.
+    display_name: "Microsoft 365",
 
     isConfigured(): boolean {
         return Boolean(

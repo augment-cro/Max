@@ -3,7 +3,7 @@
 // Called once at the top of each chat request. Reads the user's enabled MCP
 // servers from Postgres, opens a Streamable-HTTP client to each in parallel,
 // fetches its tool list, and converts each tool to the OpenAI-style schema
-// Max's LLM adapter speaks. Tool names are prefixed with `mcp__<slug>__` so
+// Eulex Desk's LLM adapter speaks. Tool names are prefixed with `mcp__<slug>__` so
 // the dispatcher in chatTools can route calls back to the right server.
 
 import { createHash } from "crypto";
@@ -112,8 +112,10 @@ async function loadOne(
         row,
         tools,
         toolNameMap,
+        instructions: client.getInstructions(),
         client: {
             callTool: (name, args) => client.callTool(name, args),
+            callToolRich: (name, args) => client.callToolRich(name, args),
             close: () => client.close(),
         },
     };
