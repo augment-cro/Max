@@ -17,8 +17,17 @@ function getKey(): Buffer {
   if (explicit && explicit.length === 64) {
     return Buffer.from(explicit, 'hex');
   }
-  // Derive from JWT secret as fallback
-  const secret = process.env.EULEX_MCP_JWT_SECRET ?? 'mike-default-key';
+  // Derive from JWT secret as fallback. Fail closed instead of using a
+  // hardcoded default: EULEX_MCP_JWT_SECRET is always set in prod, and existing
+  // integration_accounts ciphertext was encrypted with this derivation — so we
+  // must keep deriving from it (never silently switch to a default key, which
+  // would render stored tokens undecryptable).
+  const secret = process.env.EULEX_MCP_JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      'API_KEY_ENCRYPTION_KEY (or EULEX_MCP_JWT_SECRET) not configured',
+    );
+  }
   return createHash('sha256').update(secret).digest();
 }
 

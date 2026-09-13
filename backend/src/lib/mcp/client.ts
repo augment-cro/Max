@@ -1,6 +1,6 @@
 // Thin wrapper around the MCP TypeScript SDK's Streamable-HTTP client.
 //
-// Max opens one client per (user, MCP server) per chat request. Connections
+// Eulex Desk opens one client per (user, MCP server) per chat request. Connections
 // are short-lived: we initialize, list tools, run any tools the model calls,
 // then close in a `finally` on the request handler. There is no connection
 // pool — each chat request pays an `initialize` round-trip per enabled
@@ -92,6 +92,15 @@ export class McpHttpClient {
         );
     }
 
+    /**
+     * The server's initialize-time `instructions` — its own usage guidance
+     * for clients (tool selection, identifier formats, query language).
+     * Available after connect(); undefined when the server ships none.
+     */
+    getInstructions(): string | undefined {
+        return this.client?.getInstructions();
+    }
+
     async listTools(): Promise<Tool[]> {
         if (!this.client) throw new Error("MCP client not connected");
         const result = await withTimeout(
@@ -120,15 +129,23 @@ export class McpHttpClient {
     }
 
     /**
-     * Calls a tool and returns its text content joined by blank lines.
-     * Errors (transport failures, MCP `isError`) are turned into a text
-     * response so the model can surface them rather than crashing the chat.
+     * Calls a tool and returns BOTH the joined text content AND the typed
+     * `structuredContent` (when the server ships it). The text is what the
+     * model consumes; `structured` is the un-flattened tool output (e.g. the
+     * `sources[]` arrays the legal MCP servers return) that callers can read
+     * without regex-parsing the text blob. `structured` is `undefined` when
+     * the server only returns text blocks, or on any error.
+     *
+     * Note: the SDK's `outputSchema` validator is cleared in `listTools()`
+     * (see comment there) precisely so consuming `structuredContent` here
+     * can't be taken offline by a server whose schema doesn't match its
+     * actual output. Do not re-enable that validation.
      */
-    async callTool(
+    async callToolRich(
         name: string,
         args: Record<string, unknown>,
-    ): Promise<string> {
-        if (!this.client) return "MCP client not connected";
+    ): Promise<{ text: string; structured?: unknown }> {
+        if (!this.client) return { text: "MCP client not connected" };
         try {
             const result = await withTimeout(
                 this.client.callTool({ name, arguments: args }),
@@ -143,14 +160,36 @@ export class McpHttpClient {
                 .filter((b) => b?.type === "text" && typeof b.text === "string")
                 .map((b) => b.text)
                 .join("\n\n");
+            const structured = (result as { structuredContent?: unknown })
+                .structuredContent;
             if (result.isError) {
-                return `MCP tool '${name}' returned error: ${text || "(no detail)"}`;
+                return {
+                    text: `MCP tool '${name}' returned error: ${text || "(no detail)"}`,
+                };
             }
-            return text || "(tool returned no text content)";
+            return {
+                text: text || "(tool returned no text content)",
+                structured,
+            };
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            return `MCP tool '${name}' failed: ${msg}`;
+            return { text: `MCP tool '${name}' failed: ${msg}` };
         }
+    }
+
+    /**
+     * Calls a tool and returns its text content joined by blank lines.
+     * Thin convenience wrapper over `callToolRich` for the many callers that
+     * only need the text. Errors (transport failures, MCP `isError`) are
+     * turned into a text response so the model can surface them rather than
+     * crashing the chat.
+     */
+    async callTool(
+        name: string,
+        args: Record<string, unknown>,
+    ): Promise<string> {
+        const { text } = await this.callToolRich(name, args);
+        return text;
     }
 
     async close(): Promise<void> {

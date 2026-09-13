@@ -50,7 +50,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
             <button
                 ref={btnRef}
                 onClick={handleToggle}
-                className="flex items-center justify-center w-6 h-6 rounded text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors leading-none"
+                className="flex items-center justify-center w-6 h-6 rounded text-foreground hover:text-foreground hover:bg-accent transition-colors leading-none"
             >
                 <span className="tracking-widest text-xs">···</span>
             </button>
@@ -58,13 +58,13 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
             {open && (
                 <div
                     style={{ position: "fixed", top: coords.top, right: coords.right }}
-                    className="z-50 w-48 rounded-xl border border-gray-100 bg-white shadow-lg overflow-hidden"
+                    className="z-50 w-48 rounded-xl border border-border bg-surface-elevated overflow-hidden"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {onRename && (
                         <button
                             onClick={() => { setOpen(false); onRename(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <Pencil className="h-3.5 w-3.5" />
                             {t("rename")}
@@ -73,7 +73,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onUpdateCmNumber && (
                         <button
                             onClick={() => { setOpen(false); onUpdateCmNumber(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <Hash className="h-3.5 w-3.5" />
                             {t("editCmNo")}
@@ -82,7 +82,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onDownload && (
                         <button
                             onClick={() => { setOpen(false); onDownload(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <Download className="h-3.5 w-3.5" />
                             {t("download")}
@@ -91,7 +91,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onShowAllVersions && (
                         <button
                             onClick={() => { setOpen(false); onShowAllVersions(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <History className="h-3.5 w-3.5 shrink-0" />
                             {t("showAllVersions")}
@@ -100,7 +100,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onUploadNewVersion && (
                         <button
                             onClick={() => { setOpen(false); onUploadNewVersion(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <Upload className="h-3.5 w-3.5 shrink-0" />
                             {t("uploadNewVersion")}
@@ -109,7 +109,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onRemoveFromFolder && (
                         <button
                             onClick={() => { setOpen(false); onRemoveFromFolder(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <FolderMinus className="h-3.5 w-3.5 shrink-0" />
                             {t("removeFromSubfolder")}
@@ -118,7 +118,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onUnhide && (
                         <button
                             onClick={() => { setOpen(false); onUnhide(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <Eye className="h-3.5 w-3.5" />
                             {t("unhide")}
@@ -127,7 +127,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                     {onHide && (
                         <button
                             onClick={() => { setOpen(false); onHide(); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <EyeOff className="h-3.5 w-3.5" />
                             {t("hide")}
@@ -137,7 +137,7 @@ export function RowActions({ onDelete, onHide, onUnhide, onDownload, onRemoveFro
                         <button
                             onClick={() => { setOpen(false); onDelete(); }}
                             disabled={deleting}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40"
                         >
                             <Trash2 className="h-3.5 w-3.5" />
                             {tc("delete")}

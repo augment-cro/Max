@@ -1,6 +1,6 @@
 -- ============================================================
 -- MikeOSS Cloud SQL Bootstrap
--- Project: mikeoss-495610 | Instance: mike-db | Database: mike
+-- Project: <GCP_PROJECT> | Instance: <CLOUD_SQL_INSTANCE> | Database: mike
 -- Run as: postgres (admin) after instance creation
 -- ============================================================
 
@@ -37,8 +37,8 @@ END $$;
 GRANT CONNECT ON DATABASE mike TO mike_readonly;
 
 -- Map IAM Service Account to mike_app role
--- (mike-backend@mikeoss-495610.iam connects via Cloud SQL Connector)
-GRANT mike_app TO "mike-backend@mikeoss-495610.iam";
+-- (mike-backend@<GCP_PROJECT>.iam connects via Cloud SQL Connector)
+GRANT mike_app TO "mike-backend@<GCP_PROJECT>.iam";
 
 -- ============================================================
 -- 2. EXTENSIONS

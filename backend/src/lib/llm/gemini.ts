@@ -1,5 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import type {
+    LlmUsage,
     StreamChatParams,
     StreamChatResult,
     NormalizedToolCall,
@@ -30,7 +31,39 @@ type GeminiContent = {
 
 function client(override?: string | null): GoogleGenAI {
     const apiKey = override?.trim() || process.env.GEMINI_API_KEY || "";
-    return new GoogleGenAI({ apiKey });
+    // Without explicit retryOptions the SDK performs no retries at all, so
+    // a single transient 429/5xx/socket reset failed the whole call (a
+    // tabular cell, a chat turn). 5 attempts + a 10-min per-request ceiling
+    // match the Claude and OpenAI adapters.
+    return new GoogleGenAI({
+        apiKey,
+        httpOptions: { retryOptions: { attempts: 5 }, timeout: 600_000 },
+    });
+}
+
+/**
+ * Billable output tokens for a Gemini response.
+ *
+ * Google bills the output rate on *visible output + thinking tokens*, but
+ * surfaces them inconsistently: on the Gemini Developer API
+ * `candidatesTokenCount` already folds in thoughts, on Vertex it does not,
+ * and some preview models (e.g. gemini-3-flash-preview) omit
+ * `thoughtsTokenCount` entirely. `totalTokenCount - promptTokenCount`
+ * equals candidates + thoughts on *both* surfaces, so we prefer it and only
+ * fall back to candidates(+thoughts) when the total is missing. Using
+ * `candidatesTokenCount` alone undercounts (and under-bills) every thinking
+ * turn — which is most of them, since interactive chat enables thinking.
+ */
+function geminiOutputTokens(meta: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    thoughtsTokenCount?: number;
+    totalTokenCount?: number;
+}): number {
+    const prompt = meta.promptTokenCount ?? 0;
+    const total = meta.totalTokenCount ?? 0;
+    if (total > prompt) return total - prompt;
+    return (meta.candidatesTokenCount ?? 0) + (meta.thoughtsTokenCount ?? 0);
 }
 
 function toNativeContents(messages: StreamChatParams["messages"]): GeminiContent[] {
@@ -60,6 +93,15 @@ export async function streamGemini(
 
     const contents: GeminiContent[] = toNativeContents(params.messages);
     let fullText = "";
+    // Per-turn usage. Gemini surfaces `usageMetadata` on the final
+    // chunk of each streaming call; we sum across the tool-use loop.
+    const usage: LlmUsage = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        iterations: 0,
+    };
 
     for (let iter = 0; iter < maxIter; iter++) {
         const stream = await ai.models.generateContentStream({
@@ -90,6 +132,29 @@ export async function streamGemini(
 
         for await (const chunk of stream) {
             console.log("[gemini stream chunk]", JSON.stringify(chunk, null, 2));
+            // Capture `usageMetadata` whenever Gemini surfaces it
+            // (typically on the final chunk of each call). Map fields
+            // onto our LlmUsage shape — `cachedContentTokenCount` lines
+            // up with Anthropic's `cache_read_input_tokens`.
+            const meta = (
+                chunk as unknown as {
+                    usageMetadata?: {
+                        promptTokenCount?: number;
+                        candidatesTokenCount?: number;
+                        cachedContentTokenCount?: number;
+                        thoughtsTokenCount?: number;
+                        totalTokenCount?: number;
+                    };
+                }
+            ).usageMetadata;
+            if (meta) {
+                usage.iterations += 1;
+                const cached = meta.cachedContentTokenCount ?? 0;
+                const promptTotal = meta.promptTokenCount ?? 0;
+                usage.inputTokens += Math.max(0, promptTotal - cached);
+                usage.cacheReadInputTokens += cached;
+                usage.outputTokens += geminiOutputTokens(meta);
+            }
             const parts =
                 (chunk as { candidates?: { content?: { parts?: GeminiPart[] } }[] })
                     .candidates?.[0]?.content?.parts ?? [];
@@ -153,7 +218,7 @@ export async function streamGemini(
         });
     }
 
-    return { fullText };
+    return { fullText, usage: usage.iterations > 0 ? usage : undefined };
 }
 
 export async function completeGeminiText(params: {
@@ -161,7 +226,7 @@ export async function completeGeminiText(params: {
     systemPrompt?: string;
     user: string;
     apiKeys?: { gemini?: string | null };
-}): Promise<string> {
+}): Promise<{ text: string; usage?: LlmUsage }> {
     const ai = client(params.apiKeys?.gemini);
     const resp = await ai.models.generateContent({
         model: params.model,
@@ -170,5 +235,32 @@ export async function completeGeminiText(params: {
             ? { systemInstruction: params.systemPrompt }
             : undefined,
     });
-    return resp.text ?? "";
+
+    // Gemini surfaces `usageMetadata` on every response. We map
+    // `cachedContentTokenCount` onto `cacheReadInputTokens` to keep
+    // the cost model symmetric with Anthropic — see streamGemini for
+    // the same pattern.
+    const meta = (resp as unknown as {
+        usageMetadata?: {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+            cachedContentTokenCount?: number;
+            thoughtsTokenCount?: number;
+            totalTokenCount?: number;
+        };
+    }).usageMetadata;
+    const usage: LlmUsage | undefined = meta
+        ? (() => {
+              const cached = meta.cachedContentTokenCount ?? 0;
+              const promptTotal = meta.promptTokenCount ?? 0;
+              return {
+                  iterations: 1,
+                  inputTokens: Math.max(0, promptTotal - cached),
+                  outputTokens: geminiOutputTokens(meta),
+                  cacheCreationInputTokens: 0,
+                  cacheReadInputTokens: cached,
+              };
+          })()
+        : undefined;
+    return { text: resp.text ?? "", usage };
 }

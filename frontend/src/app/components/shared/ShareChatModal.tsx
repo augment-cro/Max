@@ -11,6 +11,7 @@ import {
 } from "@/app/lib/mikeApi";
 import { EmailPillInput } from "./EmailPillInput";
 import { useTranslations } from "next-intl";
+import { track } from "@/app/lib/analytics";
 
 interface Props {
     chatId: string;
@@ -63,6 +64,7 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
             const sentCount = res.sent?.length ?? 0;
             const failedCount = res.failures?.length ?? 0;
             if (sentCount > 0) {
+                track("chat_shared");
                 setInfo(
                     failedCount === 0
                         ? t("inviteSent", { count: sentCount })
@@ -106,28 +108,28 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
     }
 
     return createPortal(
-        <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/30 backdrop-blur-xs px-4">
-            <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[85vh]">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <Mail className="h-4 w-4 text-gray-400" />
+        <div className="fixed inset-0 z-[101] flex items-center justify-center bg-primary/30 backdrop-blur-xs px-4">
+            <div className="w-full max-w-xl rounded-2xl bg-background border border-border flex flex-col max-h-[85vh]">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                        <Mail className="h-4 w-4 text-muted-foreground/70" />
                         <span className="font-medium">{t("title")}</span>
                         {chatTitle && (
-                            <span className="text-gray-400 truncate max-w-[280px]">
+                            <span className="text-muted-foreground/70 truncate max-w-[280px]">
                                 · {chatTitle}
                             </span>
                         )}
                     </div>
                     <button
                         onClick={onClose}
-                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
                 </div>
 
                 <div className="px-5 py-4 flex flex-col gap-4 flex-1 overflow-y-auto">
-                    <p className="text-xs text-gray-500 leading-relaxed">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
                         {t("explainer")}
                     </p>
 
@@ -139,18 +141,18 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
                     />
 
                     {error && (
-                        <div className="text-xs rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2">
+                        <div className="text-xs rounded-md bg-destructive/10 border border-destructive/20 text-destructive px-3 py-2">
                             {error}
                         </div>
                     )}
                     {info && (
-                        <div className="text-xs rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2">
+                        <div className="text-xs rounded-md bg-success/10 border border-success/20 text-success px-3 py-2">
                             {info}
                         </div>
                     )}
 
                     <div>
-                        <p className="text-xs font-medium text-gray-700 mb-2">
+                        <p className="text-xs font-medium text-foreground mb-2">
                             {t("peopleWithAccess")}
                         </p>
                         {loading ? (
@@ -160,13 +162,13 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
                                         key={i}
                                         className="flex items-center justify-between"
                                     >
-                                        <div className="h-3 w-44 rounded bg-gray-100 animate-pulse" />
-                                        <div className="h-3 w-16 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-3 w-44 rounded bg-muted animate-pulse" />
+                                        <div className="h-3 w-16 rounded bg-muted animate-pulse" />
                                     </div>
                                 ))}
                             </div>
                         ) : existing.length === 0 ? (
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-muted-foreground/70">
                                 {t("none")}
                             </p>
                         ) : (
@@ -178,7 +180,7 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
                                             key={s.id}
                                             className="flex items-center justify-between py-1.5"
                                         >
-                                            <span className="text-sm text-gray-800 truncate">
+                                            <span className="text-sm text-foreground truncate">
                                                 {s.shared_with_email}
                                             </span>
                                             <div className="flex items-center gap-3 shrink-0">
@@ -191,7 +193,7 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
                                                                     s.id,
                                                                 )
                                                             }
-                                                            className="text-gray-300 hover:text-red-500 transition-colors"
+                                                            className="text-muted-foreground/70 hover:text-destructive transition-colors"
                                                             title={t("revoke")}
                                                         >
                                                             <X className="h-3.5 w-3.5" />
@@ -206,17 +208,17 @@ export function ShareChatModal({ chatId, chatTitle, onClose }: Props) {
                     </div>
                 </div>
 
-                <div className="border-t border-gray-100 px-5 py-3 flex justify-end gap-2 shrink-0">
+                <div className="border-t border-border px-5 py-3 flex justify-end gap-2 shrink-0">
                     <button
                         onClick={onClose}
-                        className="rounded-lg px-5 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                        className="rounded-lg px-5 py-2 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
                     >
                         {tCommon("cancel")}
                     </button>
                     <button
                         onClick={handleSubmit}
                         disabled={saving || pendingEmails.length === 0}
-                        className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40 transition-colors"
+                        className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
                     >
                         {saving ? t("sharing") : t("sendInvites")}
                     </button>
@@ -231,7 +233,7 @@ function StatusBadge({ status }: { status: ShareStatus }) {
     const t = useTranslations("shareChat");
     if (status === "accepted") {
         return (
-            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+            <span className="inline-flex items-center gap-1 text-[11px] text-success">
                 <CheckCircle2 className="h-3 w-3" />
                 {t("statusAccepted")}
             </span>
@@ -239,7 +241,7 @@ function StatusBadge({ status }: { status: ShareStatus }) {
     }
     if (status === "expired") {
         return (
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-400">
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
                 <Clock className="h-3 w-3" />
                 {t("statusExpired")}
             </span>
@@ -247,14 +249,14 @@ function StatusBadge({ status }: { status: ShareStatus }) {
     }
     if (status === "revoked") {
         return (
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-400">
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
                 <Ban className="h-3 w-3" />
                 {t("statusRevoked")}
             </span>
         );
     }
     return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
             <Clock className="h-3 w-3" />
             {t("statusPending")}
         </span>

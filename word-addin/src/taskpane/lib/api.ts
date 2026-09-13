@@ -435,7 +435,7 @@ export async function getTabularReview(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// MCP servers — Max web parity (`McpToggleButton`): built-ins + user rows,
+// MCP servers — Eulex Desk web parity (`McpToggleButton`): built-ins + user rows,
 // toggles PATCH `enabled`; backend builds per-request MCP tool lists from flags.
 // ---------------------------------------------------------------------------
 

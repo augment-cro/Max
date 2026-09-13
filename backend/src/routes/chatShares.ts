@@ -21,7 +21,9 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { requireAuth } from "../middleware/auth";
+import { requireEntitlement } from "../lib/entitlements";
 import { createServerSupabase } from "../lib/supabase";
+import { query } from "../lib/db";
 import { checkProjectAccess } from "../lib/access";
 import { getEmailProvider } from "../lib/email/provider";
 import { renderChatShareEmail } from "../lib/email/templates/chatShare";
@@ -36,11 +38,18 @@ function ttlDays(): number {
 }
 
 function frontendBaseUrl(): string {
-    // FRONTEND_URL is set in env; fall back to localhost for dev.
-    return (process.env.FRONTEND_URL ?? "http://localhost:3000").replace(
-        /\/+$/,
-        "",
-    );
+    // FRONTEND_URL is a comma-separated CORS-origins list (see index.ts) —
+    // e.g. "https://max.eulex.ai,https://mike-frontend-…run.app". A share
+    // link needs exactly ONE canonical origin, so take the first non-empty
+    // entry (the public domain). Using the whole string produced a
+    // comma-joined, unusable link in emailed invites:
+    //   https://max.eulex.ai,https://mike-frontend-…run.app/share/<token>
+    const first =
+        (process.env.FRONTEND_URL ?? "http://localhost:3000")
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)[0] ?? "http://localhost:3000";
+    return first.replace(/\/+$/, "");
 }
 
 // --- Rate limit (in-memory) -------------------------------------------------
@@ -76,6 +85,19 @@ function normalizeEmail(raw: unknown): string | null {
     return e;
 }
 
+/**
+ * Mask an email for a "wrong account" hint without disclosing the full
+ * invited address to any token holder (issue #98). `bob@firm.hr` → `b***@firm.hr`.
+ */
+export function maskEmail(email: string): string {
+    const at = email.indexOf("@");
+    if (at <= 0) return "***";
+    const local = email.slice(0, at);
+    const domain = email.slice(at + 1);
+    const head = local[0] ?? "";
+    return `${head}***@${domain}`;
+}
+
 function generateToken(): { token: string; hash: string } {
     const token = crypto.randomBytes(32).toString("base64url");
     const hash = crypto.createHash("sha256").update(token).digest("hex");
@@ -84,6 +106,44 @@ function generateToken(): { token: string; hash: string } {
 
 function hashToken(token: string): string {
     return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+// Public-preview limits — keep the unauthenticated teaser deliberately small.
+const PREVIEW_QUESTION_CHARS = 500;
+const PREVIEW_ANSWER_CHARS = 400;
+
+/**
+ * Flatten a chat_messages `content` field to plain text. User rows store a
+ * string; assistant rows store an AssistantEvent[] where the visible answer
+ * is the concatenation of `type: "content"` events. We deliberately ignore
+ * every other event kind (tool calls, retrieved snippets) and the
+ * annotations column so the PUBLIC preview can never leak them.
+ */
+function extractPlainText(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+        return content
+            .map((e) =>
+                e &&
+                typeof e === "object" &&
+                (e as { type?: string }).type === "content"
+                    ? ((e as { text?: string }).text ?? "")
+                    : "",
+            )
+            .join("");
+    }
+    return "";
+}
+
+/** Trim to `max` chars on a word boundary, adding an ellipsis when cut. */
+function clampText(raw: string, max: number): string | null {
+    const text = raw.trim();
+    if (!text) return null;
+    if (text.length <= max) return text;
+    const slice = text.slice(0, max);
+    const lastSpace = slice.lastIndexOf(" ");
+    const cut = lastSpace > max * 0.6 ? slice.slice(0, lastSpace) : slice;
+    return cut.trimEnd() + "…";
 }
 
 /**
@@ -107,10 +167,12 @@ async function loadChatForShare(
     | { ok: false; status: number; detail: string }
 > {
     const db = createServerSupabase();
+    // Soft-deleted chats (migration 132) are 404 on every share path too.
     const { data: chat } = await db
         .from("chats")
         .select("id, user_id, project_id, title")
         .eq("id", chatId)
+        .neq("status", "deleted")
         .single();
     if (!chat) return { ok: false, status: 404, detail: "Chat not found" };
     const c = chat as {
@@ -177,6 +239,7 @@ async function loadRecipientPreferredLanguage(
 chatSharesRouter.post(
     "/chat/:chatId/share",
     requireAuth,
+    requireEntitlement("shareResearchLink"),
     async (req, res) => {
         const userId = res.locals.userId as string;
         const userEmail = res.locals.userEmail as string | undefined;
@@ -232,7 +295,7 @@ chatSharesRouter.post(
 
         const ownerDisplayName =
             owner?.display_name?.trim() ||
-            (ownerEmail ? ownerEmail.split("@")[0] : "Max user");
+            (ownerEmail ? ownerEmail.split("@")[0] : "Eulex Desk user");
 
         const successes: string[] = [];
         const failures: { email: string; reason: string }[] = [];
@@ -398,6 +461,104 @@ chatSharesRouter.delete(
     },
 );
 
+// GET /share/:token/preview
+//
+// PUBLIC (no auth) teaser, shown BEFORE sign-in so an invited recipient
+// can see what's being shared. Returns ONLY the first question and a
+// truncated start of the first answer — never the full thread, never
+// assistant events/annotations (retrieved snippets, citations), never the
+// bound recipient email. Still validates the token so expired/revoked/
+// unknown links don't render a teaser. The complete, email-bound snapshot
+// stays behind the authenticated GET /share/:token below.
+//
+// NOTE: this relaxes the strict email-binding — anyone holding the link
+// (links get forwarded) sees the teaser. Kept intentionally minimal for
+// exactly that reason.
+chatSharesRouter.get("/share/:token/preview", async (req, res) => {
+    const { token } = req.params;
+    if (!token)
+        return void res.status(400).json({ detail: "Missing token" });
+
+    const tokenHash = hashToken(token);
+    const db = createServerSupabase();
+    const { data: share } = await db
+        .from("chat_shares")
+        .select(
+            "id, chat_id, shared_by_user_id, snapshot_at, expires_at, revoked_at",
+        )
+        .eq("token_hash", tokenHash)
+        .single();
+    if (!share) {
+        return void res
+            .status(404)
+            .json({ detail: "Share not found", code: "not_found" });
+    }
+    const s = share as {
+        id: string;
+        chat_id: string;
+        shared_by_user_id: string;
+        snapshot_at: string;
+        expires_at: string;
+        revoked_at: string | null;
+    };
+    if (s.revoked_at) {
+        return void res
+            .status(410)
+            .json({ detail: "Share was revoked", code: "revoked" });
+    }
+    if (new Date(s.expires_at).getTime() < Date.now()) {
+        return void res
+            .status(410)
+            .json({ detail: "Share has expired", code: "expired" });
+    }
+
+    const { data: chat } = await db
+        .from("chats")
+        .select("id, title")
+        .eq("id", s.chat_id)
+        .neq("status", "deleted")
+        .single();
+    if (!chat) {
+        return void res
+            .status(404)
+            .json({ detail: "Chat not found", code: "chat_missing" });
+    }
+
+    // Same snapshot rule as the pre-accept full view: created_at <= snapshot_at.
+    const { data: messages } = await db
+        .from("chat_messages")
+        .select("role, content, created_at")
+        .eq("chat_id", s.chat_id)
+        .lte("created_at", s.snapshot_at)
+        .order("created_at", { ascending: true });
+    const rows = (messages ?? []) as { role: string; content: unknown }[];
+
+    const firstUser = rows.find((m) => m.role === "user");
+    const firstAssistant = rows.find((m) => m.role === "assistant");
+    const answerExcerpt = clampText(
+        extractPlainText(firstAssistant?.content),
+        PREVIEW_ANSWER_CHARS,
+    );
+    const owner = await loadUser(s.shared_by_user_id);
+
+    res.json({
+        mode: "preview",
+        title: (chat as { title: string | null }).title,
+        owner_name: owner?.display_name ?? null,
+        question: clampText(
+            extractPlainText(firstUser?.content),
+            PREVIEW_QUESTION_CHARS,
+        ),
+        answer_excerpt: answerExcerpt,
+        // Is there more to unlock? The first answer was cut, or there are
+        // messages beyond the first question + answer.
+        answer_truncated:
+            (answerExcerpt?.endsWith("…") ?? false) || rows.length > 2,
+        total_messages: rows.length,
+        expires_at: s.expires_at,
+    });
+});
+
 // GET /share/:token
 //
 // View the snapshot (or live thread, post-accept). Always requires
@@ -451,10 +612,13 @@ chatSharesRouter.get(
                 .json({ detail: "Share has expired", code: "expired" });
         }
         if (s.shared_with_email.toLowerCase() !== callerEmail) {
+            // Don't disclose the full invited email to any token holder who
+            // opens a forwarded link — mask it (GDPR, issue #98).
+            const masked = maskEmail(s.shared_with_email);
             return void res.status(403).json({
                 detail: "This share is bound to a different email",
                 code: "email_mismatch",
-                expectedEmail: s.shared_with_email,
+                expectedEmail: masked,
             });
         }
 
@@ -462,6 +626,7 @@ chatSharesRouter.get(
             .from("chats")
             .select("id, project_id, title, created_at")
             .eq("id", s.chat_id)
+            .neq("status", "deleted")
             .single();
         if (!chat) {
             return void res
@@ -559,33 +724,32 @@ chatSharesRouter.post(
                     code: "email_mismatch",
                 });
 
-        // Append the recipient's email to chats.shared_with (jsonb array).
-        // Read-modify-write because the dbShim doesn't expose
-        // jsonb_array_append directly, and the array is small (<=100s).
-        const { data: chat } = await db
-            .from("chats")
-            .select("id, project_id, shared_with")
-            .eq("id", s.chat_id)
-            .single();
-        if (!chat)
+        // Append the recipient's email to chats.shared_with ATOMICALLY.
+        // The old read-modify-write (SELECT array → push → write whole array)
+        // dropped a concurrent accept — two recipients accepting at once
+        // could overwrite each other (issue #98). Do the dedup append in one
+        // jsonb UPDATE so no read window exists. Only touches non-deleted
+        // chats; RETURNING lets us 404 a missing/deleted chat.
+        const { rows: updatedRows } = await query<{
+            id: string;
+            project_id: string | null;
+        }>(
+            `UPDATE public.chats
+                SET shared_with = COALESCE((
+                    SELECT jsonb_agg(DISTINCT e)
+                    FROM jsonb_array_elements_text(
+                        COALESCE(shared_with, '[]'::jsonb) || to_jsonb($2::text)
+                    ) AS e
+                ), '[]'::jsonb)
+              WHERE id = $1 AND status <> 'deleted'
+              RETURNING id, project_id`,
+            [s.chat_id, callerEmail],
+        );
+        if (updatedRows.length === 0)
             return void res
                 .status(404)
                 .json({ detail: "Chat not found", code: "chat_missing" });
-
-        const current = Array.isArray(
-            (chat as { shared_with?: unknown }).shared_with,
-        )
-            ? ((chat as { shared_with: string[] }).shared_with.map((e) =>
-                  (e ?? "").toLowerCase(),
-              ) as string[])
-            : [];
-        if (!current.includes(callerEmail)) {
-            current.push(callerEmail);
-            await db
-                .from("chats")
-                .update({ shared_with: current })
-                .eq("id", s.chat_id);
-        }
+        const chat = updatedRows[0];
 
         if (!s.accepted_at) {
             await db

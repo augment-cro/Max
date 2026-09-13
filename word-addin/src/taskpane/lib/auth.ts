@@ -2,9 +2,9 @@
  * Auth helpers for the Word add-in.
  *
  * The add-in cannot run a full OAuth PKCE flow itself (Office blocks the
- * redirect popup pattern, and our Max auth provider — eulex.ai WordPress
+ * redirect popup pattern, and our Eulex Desk auth provider — eulex.ai WordPress
  * — issues per-app tokens via PKCE). Instead, the user logs in to the
- * Max web frontend, generates a 6-digit pairing code on the
+ * Eulex Desk web frontend, generates a 6-digit pairing code on the
  * Account → Word add-in page, and types the code here. The backend
  * exchanges that code for the JWT the frontend already holds.
  *
@@ -67,7 +67,7 @@ export function authHeader(): Record<string, string> {
  *
  * The Word add-in cannot run an OAuth refresh (Office blocks the
  * popup pattern eulex.ai's PKCE flow needs) — once the JWT expires the
- * user has to re-pair from the Max web app. We surface that via a
+ * user has to re-pair from the Eulex Desk web app. We surface that via a
  * DOM CustomEvent the root <App/> component listens for; it clears the
  * stored token and flips back to the Login view.
  *

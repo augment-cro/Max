@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, Pencil } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { supabase } from "@/lib/supabase";
 import { applyOptimisticResolution } from "../assistant/EditCard";
 import { DocView } from "./DocView";
-import { DocxView } from "./DocxView";
+import { DocxViewer } from "./DocxViewer";
 import {
     displayCitationQuote,
     expandCitationToEntries,
@@ -17,6 +18,7 @@ import type {
     MikeEditAnnotation,
 } from "./types";
 
+import { API_BASE } from "@/app/lib/apiBase";
 function isDocxFilename(name: string): boolean {
     const ext = name.split(".").pop()?.toLowerCase();
     return ext === "docx" || ext === "doc";
@@ -72,6 +74,24 @@ interface Props {
     onWarningDismiss?: () => void;
     initialScrollTop?: number | null;
     onScrollChange?: (scrollTop: number) => void;
+    /**
+     * Fires after the embedded SuperDoc editor saves a new version so the
+     * tab owner can repoint `versionId` to it (Bug 1 fix).
+     */
+    onSaved?: (args: {
+        versionId: string;
+        versionNumber: number | null;
+    }) => void;
+    /**
+     * Poziva se nakon što Draft Mode edit uspješno primijeni novu verziju.
+     * Parent treba bumparse refetchKey ili versionId kako bi reload pokazao
+     * novi dokument sa tracked change-om.
+     */
+    onDraftEditApplied?: (args: {
+        documentId: string;
+        versionId: string;
+        versionNumber: number | null;
+    }) => void;
 }
 
 /**
@@ -91,7 +111,13 @@ export function DocPanel({
     onWarningDismiss,
     initialScrollTop,
     onScrollChange,
+    onSaved,
+    onDraftEditApplied,
 }: Props) {
+    const t = useTranslations("docPanel");
+    // Draft Mode — lokalni toggle za SuperDoc inline selekcijsko uređivanje.
+    // Aktivan samo za DOCX dokumente (SuperDoc path); DocView (PDF) ignorira.
+    const [draftModeEnabled, setDraftModeEnabled] = useState(false);
     // Pick the viewer from the filename only, not from mode. Switching
     // headers (citation ↔ edit ↔ document) for the same document must
     // not unmount and remount the body — otherwise the user sees a full
@@ -136,15 +162,31 @@ export function DocPanel({
             ) : (
                 <div className="flex items-center justify-end gap-2 py-2">
                     <div className="mr-auto flex min-w-0 items-center gap-2">
-                        <span className="truncate text-sm text-gray-700">
+                        <span className="truncate text-sm text-foreground">
                             {filename}
                         </span>
                         {versionNumber && versionNumber > 0 && (
-                            <span className="shrink-0 inline-flex items-center rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                            <span className="shrink-0 inline-flex items-center rounded-md border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                                 V{versionNumber}
                             </span>
                         )}
                     </div>
+                    {useDocxView && (
+                        <button
+                            type="button"
+                            onClick={() => setDraftModeEnabled((v) => !v)}
+                            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                                draftModeEnabled
+                                    ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+                                    : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                            }`}
+                            title={draftModeEnabled ? t("exitDraftMode") : t("editSelection")}
+                            aria-pressed={draftModeEnabled}
+                        >
+                            <Pencil className="h-3.5 w-3.5" />
+                            {t("draftBadge")}
+                        </button>
+                    )}
                     <DownloadButton
                         documentId={documentId}
                         versionId={versionId}
@@ -155,7 +197,7 @@ export function DocPanel({
             )}
 
             {useDocxView ? (
-                <DocxView
+                <DocxViewer
                     documentId={documentId}
                     versionId={versionId ?? undefined}
                     quotes={quotes}
@@ -164,6 +206,15 @@ export function DocPanel({
                     onWarningDismiss={onWarningDismiss}
                     initialScrollTop={initialScrollTop ?? null}
                     onScrollChange={onScrollChange}
+                    onSaved={onSaved}
+                    draftModeEnabled={draftModeEnabled}
+                    onDraftEditApplied={(result) => {
+                        onDraftEditApplied?.({
+                            documentId: result.document_id,
+                            versionId: result.version_id,
+                            versionNumber: result.version_number ?? null,
+                        });
+                    }}
                 />
             ) : (
                 <DocView
@@ -183,7 +234,7 @@ export function DocPanel({
 // ---------------------------------------------------------------------------
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-    return <p className="text-xs font-medium text-gray-700">{children}</p>;
+    return <p className="text-xs font-medium text-foreground">{children}</p>;
 }
 
 function CitationHeader({
@@ -199,12 +250,13 @@ function CitationHeader({
     filename: string;
     isReloading: boolean;
 }) {
+    const t = useTranslations("docPanel");
     const displayQuote = displayCitationQuote(citation);
     const pagesLabel = formatCitationPage(citation);
     return (
         <div className="pt-2 pb-3">
             <div className="flex items-center gap-2 mb-2">
-                <SectionLabel>Citation</SectionLabel>
+                <SectionLabel>{t("citation")}</SectionLabel>
                 <div className="ml-auto shrink-0">
                     <DownloadButton
                         documentId={documentId}
@@ -214,11 +266,11 @@ function CitationHeader({
                     />
                 </div>
             </div>
-            <div className="w-full rounded-md bg-gray-50 border border-gray-200 px-2 py-2">
-                <p className="text-sm font-serif text-gray-600">
+            <div className="w-full rounded-md bg-muted border border-border px-2 py-2">
+                <p className="text-sm font-serif text-muted-foreground">
                     &ldquo;{displayQuote}&rdquo;
                     {pagesLabel && (
-                        <span className="ml-1 text-gray-400">
+                        <span className="ml-1 text-muted-foreground/70">
                             ({pagesLabel})
                         </span>
                     )}
@@ -241,11 +293,12 @@ function TrackedChangeHeader({
     filename: string;
     isReloading: boolean;
 }) {
+    const t = useTranslations("docPanel");
     const { edit, isEditReloading, onResolveStart, onResolved, onError } = mode;
     return (
         <div className="pt-2 pb-3">
             <div className="flex items-center gap-2 mb-2">
-                <SectionLabel>Tracked Change</SectionLabel>
+                <SectionLabel>{t("trackedChange")}</SectionLabel>
                 <div className="ml-auto flex items-center gap-2 shrink-0">
                     <EditResolveButtons
                         edit={edit}
@@ -263,17 +316,17 @@ function TrackedChangeHeader({
                 </div>
             </div>
             {edit.reason && (
-                <p className="mb-2 text-xs text-gray-500">{edit.reason}</p>
+                <p className="mb-2 text-xs text-muted-foreground">{edit.reason}</p>
             )}
-            <div className="w-full rounded-md bg-gray-50 border border-gray-200 px-2 py-2">
+            <div className="w-full rounded-md bg-muted border border-border px-2 py-2">
                 <div className="text-sm leading-relaxed font-serif">
                     {edit.inserted_text && (
-                        <span className="text-green-700">
+                        <span className="text-success">
                             {edit.inserted_text}
                         </span>
                     )}
                     {edit.deleted_text && (
-                        <span className="text-red-600 line-through">
+                        <span className="text-destructive line-through">
                             {edit.deleted_text}
                         </span>
                     )}
@@ -321,6 +374,8 @@ function EditResolveButtons({
         message: string;
     }) => void;
 }) {
+    const t = useTranslations("assistant.editCard");
+    const tp = useTranslations("docPanel");
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState<"pending" | "accepted" | "rejected">(
         edit.status,
@@ -359,9 +414,7 @@ function EditResolveButtons({
                     data: { session },
                 } = await supabase.auth.getSession();
                 const token = session?.access_token;
-                const apiBase =
-                    process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
-                    "http://localhost:3001";
+                const apiBase = API_BASE;
                 const resp = await fetch(
                     `${apiBase}/single-documents/${edit.document_id}/edits/${edit.edit_id}/${verb}`,
                     {
@@ -405,14 +458,14 @@ function EditResolveButtons({
                     versionId: edit.version_id ?? null,
                     message:
                         verb === "accept"
-                            ? "Couldn't save accept — please retry."
-                            : "Couldn't save reject — please retry.",
+                            ? tp("acceptSaveFailed")
+                            : tp("rejectSaveFailed"),
                 });
             } finally {
                 setBusy(false);
             }
         },
-        [busy, resolved, edit, onResolveStart, onResolved, onError],
+        [busy, resolved, edit, onResolveStart, onResolved, onError, tp],
     );
 
     const inFlight = busy || !!isReloading;
@@ -421,16 +474,16 @@ function EditResolveButtons({
             <button
                 onClick={() => handle("accept")}
                 disabled={inFlight || resolved}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-900 bg-gray-900 px-2 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1 rounded-lg border border-primary bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {status === "accepted" ? "Accepted" : "Accept"}
+                {status === "accepted" ? t("accepted") : t("accept")}
             </button>
             <button
                 onClick={() => handle("reject")}
                 disabled={inFlight || resolved}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {status === "rejected" ? "Rejected" : "Reject"}
+                {status === "rejected" ? t("rejected") : t("reject")}
             </button>
         </div>
     );
@@ -451,6 +504,7 @@ function DownloadButton({
     filename: string;
     isReloading?: boolean;
 }) {
+    const t = useTranslations("docPanel");
     const [busy, setBusy] = useState(false);
 
     const handleClick = async () => {
@@ -461,8 +515,7 @@ function DownloadButton({
                 data: { session },
             } = await supabase.auth.getSession();
             const token = session?.access_token;
-            const apiBase =
-                process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:3001";
+            const apiBase = API_BASE;
             const qs = versionId
                 ? `?version_id=${encodeURIComponent(versionId)}`
                 : "";
@@ -492,14 +545,14 @@ function DownloadButton({
         <button
             onClick={handleClick}
             disabled={spinning}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
         >
             {spinning ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
                 <Download className="h-3.5 w-3.5" />
             )}
-            Download
+            {t("download")}
         </button>
     );
 }

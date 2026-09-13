@@ -15,6 +15,7 @@ import {
     DropdownMenuRadioItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 
 export interface TREditColumnMenuProps {
     column: ColumnConfig;
@@ -31,6 +32,7 @@ export function TREditColumnMenu({
 }: TREditColumnMenuProps) {
     const t = useTranslations("addColumn");
     const tFmt = useTranslations("columnFormats");
+    const { confirm, dialog: confirmDialogEl } = useConfirmDialog();
     const [open, setOpen] = useState(false);
     const [name, setName] = useState(column.name);
     const [prompt, setPrompt] = useState(column.prompt);
@@ -92,12 +94,36 @@ export function TREditColumnMenu({
     // Close on outside click / Escape — required because the popover
     // now lives in a portal so the parent's stopPropagation no longer
     // covers it implicitly.
+    //
+    // NOTE: the Format <DropdownMenu> inside us is Radix, and Radix
+    // renders its menu content into ITS OWN portal (also attached to
+    // document.body). A click on a Format option therefore lands
+    // outside both `buttonRef` and `popoverRef` — and a naive
+    // outside-click listener would close the whole edit popover
+    // before the radio-group has a chance to flush the new value.
+    // To preserve nested portals we treat anything inside a Radix
+    // popper container as "inside" too. The selectors below cover
+    // all current Radix primitives we use here (DropdownMenu,
+    // Popover, Tooltip) — Radix tags every floating element with
+    // `data-radix-popper-content-wrapper`, and the menu content
+    // also carries `data-radix-menu-content`. Either match means
+    // the click belongs to a child UI we opened on purpose.
     useEffect(() => {
         if (!open) return;
         const onDown = (e: MouseEvent) => {
-            const target = e.target as Node;
+            const target = e.target as Element | null;
+            if (!target) return;
             if (buttonRef.current?.contains(target)) return;
             if (popoverRef.current?.contains(target)) return;
+            // Clicks inside any Radix popper (our Format dropdown,
+            // or a tooltip we might add later) must not close us.
+            if (
+                target.closest?.(
+                    "[data-radix-popper-content-wrapper], [data-radix-menu-content], [data-radix-select-content]",
+                )
+            ) {
+                return;
+            }
             setOpen(false);
         };
         const onKey = (e: KeyboardEvent) => {
@@ -151,6 +177,13 @@ export function TREditColumnMenu({
     }
 
     async function handleDelete() {
+        const ok = await confirm({
+            title: t("deleteConfirmTitle"),
+            message: t("deleteConfirmBody", { name: column.name }),
+            confirmLabel: t("delete"),
+            destructive: true,
+        });
+        if (!ok) return;
         setDeleting(true);
         try {
             await onDelete(column.index);
@@ -184,55 +217,56 @@ export function TREditColumnMenu({
                       right: pos.right,
                       zIndex: 9999,
                   }}
-                  className="w-72 rounded-xl border border-gray-100 bg-white p-3 shadow-lg"
+                  className="w-72 rounded-xl border border-border bg-surface-elevated p-3"
                   onClick={(e) => e.stopPropagation()}
               >
                     <div className="flex items-center justify-between mb-3">
-                        <p className="text-sm font-medium text-gray-800">
+                        <p className="text-sm font-medium text-foreground">
                             {t("editColumn")}
                         </p>
                         <button
                             type="button"
                             onClick={() => setOpen(false)}
-                            className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                            className="rounded p-0.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground transition-colors"
                         >
                             <X className="h-3.5 w-3.5" />
                         </button>
                     </div>
-                    <label className="text-xs font-medium text-gray-800">
+                    <label className="text-xs font-medium text-foreground">
                         {t("columnName")}
                     </label>
                     <input
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-gray-800 text-xs font-normal focus:border-gray-400 focus:outline-none"
+                        className="mt-1 w-full rounded-md border border-input px-2 py-1 text-foreground text-xs font-normal focus:border-ring focus:outline-none"
                     />
 
                     {/* Format */}
                     <div className="mt-3">
-                        <label className="text-xs font-medium text-gray-800">
+                        <label className="text-xs font-medium text-foreground">
                             {t("format")}
                         </label>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <button className="mt-1 flex w-full items-center justify-between rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 hover:border-gray-400 focus:outline-none">
+                                <button className="mt-1 flex w-full items-center justify-between rounded-md border border-input bg-surface-elevated px-2 py-1 text-xs text-foreground hover:border-ring focus:outline-none">
                                     <span className="flex items-center gap-1.5">
                                         {(() => {
                                             const Icon = formatIcon(format);
                                             return (
-                                                <Icon className="h-3 w-3 text-gray-400" />
+                                                <Icon className="h-3 w-3 text-muted-foreground/70" />
                                             );
                                         })()}
                                         {formatLabelT(format, tFmt)}
                                     </span>
-                                    <ChevronDown className="h-3 w-3 text-gray-400" />
+                                    <ChevronDown className="h-3 w-3 text-muted-foreground/70" />
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                                 align="start"
                                 style={{
                                     width: "var(--radix-dropdown-menu-trigger-width)",
+                                    zIndex: 10000,
                                 }}
                             >
                                 <DropdownMenuRadioGroup
@@ -249,7 +283,7 @@ export function TREditColumnMenu({
                                             value={o.value}
                                             className="text-xs"
                                         >
-                                            <o.icon className="h-3 w-3 text-gray-400" />
+                                            <o.icon className="h-3 w-3 text-muted-foreground/70" />
                                             {tFmt(o.labelKey)}
                                         </DropdownMenuRadioItem>
                                     ))}
@@ -261,7 +295,7 @@ export function TREditColumnMenu({
                     {/* Tag input */}
                     {format === "tag" && (
                         <div className="mt-2">
-                            <div className="flex flex-wrap gap-1 rounded-md border border-gray-200 px-2 py-1 focus-within:border-gray-400 min-h-[28px]">
+                            <div className="flex flex-wrap gap-1 rounded-md border border-input px-2 py-1 focus-within:border-ring min-h-[28px]">
                                 {tags.map((tag, tagIdx) => (
                                     <span
                                         key={tag}
@@ -277,7 +311,7 @@ export function TREditColumnMenu({
                                                     ),
                                                 )
                                             }
-                                            className="text-gray-400 hover:text-gray-600"
+                                            className="text-muted-foreground/70 hover:text-muted-foreground"
                                         >
                                             <X className="h-2 w-2" />
                                         </button>
@@ -294,7 +328,7 @@ export function TREditColumnMenu({
                                     placeholder={
                                         tags.length === 0 ? t("addTag") : ""
                                     }
-                                    className="min-w-[60px] flex-1 bg-transparent text-xs text-gray-700 placeholder-gray-300 focus:outline-none"
+                                    className="min-w-[60px] flex-1 bg-transparent text-xs text-foreground placeholder-muted-foreground/70 focus:outline-none"
                                 />
                             </div>
                         </div>
@@ -303,14 +337,14 @@ export function TREditColumnMenu({
                     {/* Prompt */}
                     <div className="mt-3">
                         <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-gray-800">
+                            <label className="text-xs font-medium text-foreground">
                                 {t("prompt")}
                             </label>
                             <button
                                 type="button"
                                 onClick={handleAutoGenerate}
                                 disabled={!name.trim() || generating}
-                                className="inline-flex items-center gap-1 text-xs text-gray-600 transition-colors hover:text-gray-700 disabled:text-gray-300"
+                                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:text-muted-foreground/70"
                             >
                                 {generating ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -324,7 +358,7 @@ export function TREditColumnMenu({
                             rows={6}
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-800 placeholder-gray-300 focus:border-gray-400 focus:outline-none resize-none leading-relaxed"
+                            className="mt-2 w-full rounded-lg border border-input bg-surface-elevated px-3 py-2 text-xs font-normal text-foreground placeholder-muted-foreground/70 focus:border-ring focus:outline-none resize-none leading-relaxed"
                         />
                     </div>
 
@@ -333,7 +367,7 @@ export function TREditColumnMenu({
                             type="button"
                             onClick={handleDelete}
                             disabled={deleting || saving}
-                            className="inline-flex items-center gap-1.5 text-xs text-red-500 transition-colors hover:text-red-600 disabled:text-red-300"
+                            className="inline-flex items-center gap-1.5 text-xs text-destructive transition-colors hover:text-destructive disabled:text-destructive/70"
                         >
                             <Trash2 className="h-3.5 w-3.5" />
                             {t("delete")}
@@ -348,7 +382,7 @@ export function TREditColumnMenu({
                                 !name.trim() ||
                                 !prompt.trim()
                             }
-                            className="rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-40"
+                            className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
                         >
                             {saving ? t("saving") : t("saveChanges")}
                         </button>
@@ -370,13 +404,14 @@ export function TREditColumnMenu({
                 disabled={disabled}
                 className={`flex h-4 w-4 items-center justify-center rounded transition-colors ${
                     disabled
-                        ? "text-gray-300 cursor-default"
-                        : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        ? "text-muted-foreground/70 cursor-default"
+                        : "text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
                 }`}
             >
                 <MoreHorizontal className="h-4 w-4" />
             </button>
             {popover}
+            {confirmDialogEl}
         </div>
     );
 }

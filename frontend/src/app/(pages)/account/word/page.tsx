@@ -5,6 +5,9 @@ import { useTranslations } from "next-intl";
 import { AlertCircle, Copy, Download, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { startPairingCode, type PairingCode } from "@/app/lib/mikeApi";
+import { useUserProfile } from "@/contexts/UserProfileContext";
+import { ProFeatureLock } from "@/app/components/account/ProFeatureLock";
+import { hasProFeatures } from "@/lib/tiers";
 
 function formatRemaining(seconds: number): string {
     const m = Math.floor(seconds / 60);
@@ -15,6 +18,7 @@ function formatRemaining(seconds: number): string {
 export default function WordAddinPage() {
     const t = useTranslations("wordAddin");
     const tc = useTranslations("common");
+    const { profile } = useUserProfile();
 
     const [code, setCode] = useState<PairingCode | null>(null);
     const [remaining, setRemaining] = useState(0);
@@ -75,13 +79,20 @@ export default function WordAddinPage() {
         });
     }, [code]);
 
+    // The Word add-in is a Pro entitlement (pairing is the only way the add-in
+    // gets a token, and that route is entitlement-gated). Free/plus see the
+    // upsell instead of a generator that would 403.
+    if (!hasProFeatures(profile?.tierKey)) {
+        return <ProFeatureLock kind="word" />;
+    }
+
     return (
         <div className="space-y-8">
             <div className="pb-2">
                 <h2 className="text-2xl font-medium font-serif mb-2">
                     {t("title")}
                 </h2>
-                <p className="text-sm text-gray-600 max-w-2xl">
+                <p className="text-sm text-muted-foreground max-w-2xl">
                     {t("description")}
                 </p>
             </div>
@@ -89,7 +100,7 @@ export default function WordAddinPage() {
             {/* Step 1: Pairing code */}
             <section className="space-y-3">
                 <h3 className="text-lg font-medium">{t("steps.pair.title")}</h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                     {t("steps.pair.description")}
                 </p>
 
@@ -97,7 +108,7 @@ export default function WordAddinPage() {
                     <Button
                         onClick={handleGenerate}
                         disabled={generating}
-                        className="bg-black hover:bg-gray-900 text-white"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground"
                     >
                         {generating ? (
                             <>
@@ -109,12 +120,12 @@ export default function WordAddinPage() {
                         )}
                     </Button>
                 ) : (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 max-w-md space-y-3">
+                    <div className="rounded-lg border border-border bg-muted p-4 max-w-md space-y-3">
                         <div className="flex items-center justify-between">
-                            <span className="text-xs uppercase tracking-wider text-gray-500">
+                            <span className="text-xs uppercase tracking-wider text-muted-foreground">
                                 {t("steps.pair.codeLabel")}
                             </span>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-muted-foreground">
                                 {t("steps.pair.expiresIn", {
                                     time: formatRemaining(remaining),
                                 })}
@@ -150,7 +161,7 @@ export default function WordAddinPage() {
                 )}
 
                 {error ? (
-                    <div className="flex items-start gap-2 text-sm text-red-600">
+                    <div className="flex items-start gap-2 text-sm text-destructive">
                         <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>{error}</span>
                     </div>
@@ -162,7 +173,7 @@ export default function WordAddinPage() {
                 <h3 className="text-lg font-medium">
                     {t("steps.install.title")}
                 </h3>
-                <ol className="text-sm text-gray-700 space-y-2 list-decimal pl-5 max-w-2xl">
+                <ol className="text-sm text-foreground space-y-2 list-decimal pl-5 max-w-2xl">
                     <li>{t("steps.install.step1")}</li>
                     <li>{t("steps.install.step2")}</li>
                     <li>{t("steps.install.step3")}</li>
@@ -171,7 +182,7 @@ export default function WordAddinPage() {
                 <a
                     href="/word-addin/manifest.xml"
                     download="mike-manifest.xml"
-                    className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    className="inline-flex items-center gap-2 text-sm text-foreground underline underline-offset-3 font-medium"
                 >
                     <Download className="h-4 w-4" />
                     {t("steps.install.downloadManifest")}
@@ -181,7 +192,7 @@ export default function WordAddinPage() {
             {/* Step 3: Use in Word */}
             <section className="space-y-3">
                 <h3 className="text-lg font-medium">{t("steps.use.title")}</h3>
-                <p className="text-sm text-gray-600 max-w-2xl">
+                <p className="text-sm text-muted-foreground max-w-2xl">
                     {t("steps.use.description")}
                 </p>
             </section>

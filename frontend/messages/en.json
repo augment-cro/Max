@@ -1,4 +1,86 @@
 {
+  "rateLimit": {
+    "softTitle": "{tier} · approaching your daily quota",
+    "softBody": "Used {used} of {limit} tokens ({percent}%) in the last 24 hours.",
+    "softHintTopup": "Top up more tokens to keep going past your daily limit.",
+    "softHintUpgrade": "Consider upgrading to Plus for a larger daily quota.",
+    "hardTitle": "{tier} · daily limit reached",
+    "hardBody": "Limit resets in approximately {relief}. New replies will be available after that.",
+    "chatNoticeTitle": "Daily limit reached",
+    "chatNoticeBody": "You've reached the daily limit for {tier}. To continue, choose a larger plan.",
+    "chatNoticeRelief": "Limit resets in approximately {relief}.",
+    "bonusBadge": "bonus tokens available",
+    "topupCta": "Top up",
+    "upgradeCta": "See Plus",
+    "usageRingTitle": "Daily usage",
+    "usageRingUsed": "Used: {percent}%",
+    "usageRingRemaining": "Remaining: {remaining}%",
+    "usageRingBonus": "Includes bonus tokens",
+    "usageRingReset": "Replenishes in {relief}",
+    "usageRingResetSoon": "Replenishes soon",
+    "usageRingAria": "Daily usage: {percent}%",
+    "topupTitle": "Buy more tokens",
+    "topupSubtitle": "Choose a pack — tokens never expire and apply after the daily limit.",
+    "topupDisabled": "Top-up is currently unavailable — please contact support for a bank transfer.",
+    "topupPlusOnly": "Top-up is available to Plus subscribers only.",
+    "topupBankTransferHint": "Bank transfer? Email podrska@eulex.ai and tokens will be granted manually once payment clears.",
+    "buyCta": "Buy",
+    "redirecting": "Redirecting…",
+    "loading": "Loading catalog…",
+    "plusUpgradeTitle": "Upgrade to Eulex Plus",
+    "plusUpgradeCancelAnytime": "Cancel anytime",
+    "plusUpgradeSubscription": "Subscription",
+    "plusUpgradeVat": "VAT",
+    "plusUpgradeTotal": "Total",
+    "plusUpgradeSecure": "Secure checkout · Stripe",
+    "plusUpgradeCancel": "Cancel",
+    "plusUpgradeProcessing": "Processing…",
+    "plusUpgradeSubmit": "Subscribe",
+    "plusProxyDisabled": "Plus upgrade is temporarily unavailable. Please try again shortly.",
+    "plusUpgradeLoading": "Preparing checkout…",
+    "plusUpgradeLoadingPayment": "Loading payment methods…",
+    "plusUpgradeError": "We can't open checkout right now.",
+    "plusUpgradeRetry": "Try again",
+    "plusUpgradePerks": {
+      "tokens": "{tokens} tokens per day",
+      "tokensFallback": "Increased daily token limit",
+      "models": "Access to advanced Claude models",
+      "topup": "Top-up packs available",
+      "support": "Priority support"
+    },
+    "promoHave": "I have a promo code",
+    "promoPlaceholder": "e.g. SUMMER25",
+    "promoApply": "Apply",
+    "promoApplied": "Code {code} applied",
+    "promoRemove": "Remove",
+    "promoInvalid": "Unknown or inactive promo code",
+    "notSignedIn": "You are not signed in.",
+    "reliefSoon": "soon",
+    "perMonthSuffix": "/mo",
+    "billingTitle": "Billing details",
+    "billingHint": "Name and country are required — without a country Stripe cannot calculate VAT. Add a company name and VAT ID if the invoice is for a business.",
+    "billingName": "Full name",
+    "billingCountry": "Country",
+    "billingCountryPlaceholder": "Select your country…",
+    "billingOrganisation": "Company name (optional)",
+    "billingVatId": "VAT ID (optional)",
+    "billingVatPlaceholder": "HR12345678901",
+    "billingVatHint": "Shown on the invoice. A valid EU VAT ID from another member state enables reverse charge.",
+    "billingContinue": "Continue to payment",
+    "billingRequired": "Name and country are required. For a business invoice, company name, OIB/VAT ID, street and city are required too.",
+    "billingTaxUnresolved": "Stripe could not resolve a tax location for the selected country. Check the country or contact us.",
+    "billingPlanUpgraded": "Plan changed to {plan}. The difference for the remaining period has been prorated and charged to your saved card; the unused part of the old plan was credited.",
+    "billingPlanScheduled": "Switch to {plan} is scheduled for {date} — your current, already-paid plan runs until then, and the new price starts with the automatic renewal.",
+    "billingPlanClose": "Done",
+    "billingActiveSubExists": "You already have an active subscription. Change the plan instead of adding one — try again or pick a plan under Settings → Billing.",
+    "billingBusiness": "Invoice to a company (business)",
+    "billingBusinessHint": "Under Art. 79 of the Croatian VAT Act an invoice must carry the buyer's name, address and OIB or VAT ID — all fields are required. No phone number needed.",
+    "billingAddressLine1": "Street and number",
+    "billingAddressCity": "City",
+    "billingAddressPostal": "Postal code",
+    "billingPhone": "Phone (optional)",
+    "billingPhonePlaceholder": "+385 1 2345 678"
+  },
   "common": {
     "save": "Save",
     "saving": "Saving...",
@@ -17,7 +99,9 @@
     "email": "Email",
     "rename": "Rename",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "createAction": "Create",
+    "dismissWarning": "Dismiss warning"
   },
   "columnFormats": {
     "freeText": "Free text",
@@ -39,6 +123,9 @@
     "tabularPlaceholder": "Add, change or remove columns — e.g. \"add a column for Term\"…",
     "tabularSubmit": "Apply",
     "tabularRunning": "Applying…",
+    "confirmDeleteTitle": "Confirm deletion",
+    "confirmDeleteBody": "This change will delete the following columns: {names}. Do you want to continue?",
+    "confirmDeleteApply": "Delete",
     "error": "Something went wrong. Try again.",
     "statusThinking": "Reviewing existing columns…",
     "statusSearching": "Searching the web…",
@@ -57,18 +144,21 @@
     "exportPdf": "Export to PDF",
     "flagTooltip": "Not appropriate answer",
     "unflagTooltip": "Remove flag",
-    "documentTitle": "Max Assistant Answer",
-    "brandLabel": "Max Legal AI Assistant",
+    "documentTitle": "Eulex Desk Assistant Answer",
+    "brandLabel": "Eulex Desk Legal AI Assistant",
     "generatedOn": "Generated",
     "watermark": "Confidential · For internal use",
     "marketingTagline": "Trusted AI for legal excellence",
-    "disclaimer": "AI can make mistakes. Answers are not legal advice."
+    "disclaimer": "AI can make mistakes. Answers are not legal advice.",
+    "poweredBy": "Powered by",
+    "pageLabel": "Page"
   },
   "sidebar": {
     "assistant": "Assistant",
     "projects": "Projects",
     "tabularReview": "Tabular Review",
     "workflows": "Workflows",
+    "contexts": "Contexts",
     "account": "Account",
     "accountSettings": "Account Settings",
     "signOut": "Sign Out",
@@ -76,7 +166,15 @@
     "assistantHistory": "Assistant History",
     "noChatsYet": "No chats yet",
     "closeSidebar": "Close sidebar",
-    "openSidebar": "Open sidebar"
+    "openSidebar": "Open sidebar",
+    "pinned": "Pinned",
+    "ungrouped": "Ungrouped",
+    "showMore": "Show more",
+    "archived": "Archived",
+    "backToActive": "Back",
+    "noArchived": "No archived conversations",
+    "groupOptions": "Group options",
+    "resizeSidebar": "Resize sidebar"
   },
   "login": {
     "title": "Log In",
@@ -86,37 +184,81 @@
     "redirecting": "Redirecting...",
     "noAccount": "Sign in with your EULEX account. Don't have one?",
     "createAccount": "Create account",
-    "legalNotice": "By signing in, you accept the <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy> on eulex.ai and confirm that you are 18 years of age or older."
+    "legalNotice": "By signing in, you accept the <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy> on eulex.ai and confirm that you are 18 years of age or older.",
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "signInButton": "Sign in",
+    "signingIn": "Signing in...",
+    "orContinueWith": "or continue with",
+    "invalidCredentials": "Invalid email address or password.",
+    "emailNotConfirmed": "Please confirm your email address via the link we sent you.",
+    "callbackCompleting": "Completing sign-in...",
+    "callbackFailedTitle": "Sign-in failed",
+    "callbackTryAgain": "Try again",
+    "forgotPasswordLink": "Forgot your password?",
+    "forgotTitle": "Reset password",
+    "forgotInstructions": "Enter your account email address and we will send you a link to set a new password.",
+    "forgotSubmit": "Send link",
+    "forgotSending": "Sending...",
+    "forgotSentTitle": "Check your email",
+    "forgotSentBody": "If an account exists for {email}, we sent a password reset link.",
+    "backToLogin": "Back to sign-in",
+    "resetTitle": "New password",
+    "resetNewPassword": "New password (at least 8 characters)",
+    "resetSubmit": "Set password",
+    "resetSaving": "Saving...",
+    "resetInvalidLink": "The link is invalid or has expired. Open it in the same browser you requested the reset from, or request a new one.",
+    "resetRequestAgain": "Request a new link",
+    "magicLinkButton": "Email me a sign-in link",
+    "magicLinkSending": "Sending link...",
+    "magicLinkNoEmail": "Enter your email address first.",
+    "magicLinkError": "We couldn't send the link. Please try again.",
+    "magicLinkSentTitle": "Check your email",
+    "magicLinkSentBody": "We sent a sign-in link to {email}. Open it in this browser to finish signing in.",
+    "otpOrEnterCode": "or enter the code from the email",
+    "otpCodeLabel": "8-digit code",
+    "otpVerifyButton": "Verify code",
+    "otpVerifying": "Verifying...",
+    "otpInvalid": "The code is invalid or has expired. Request a new link.",
+    "sourceCode": "Source code (AGPL-3.0)",
+    "callbackGenericError": "We couldn't complete the sign-in. Please try again.",
+    "callbackAccessDenied": "Sign-in was cancelled or access was denied.",
+    "callbackLinkExpired": "This link has expired or has already been used. Please request a new one.",
+    "callbackMissingCode": "The sign-in link is incomplete. Please try signing in again.",
+    "resetWeakPassword": "The password is too weak. Choose a longer, less common password.",
+    "resetSamePassword": "The new password must be different from your current password.",
+    "resetGenericError": "Password change failed. Please try again."
   },
   "landing": {
     "nav": {
       "logIn": "Log in",
       "signUp": "Create account",
       "openApp": "Open app",
+      "openAppShort": "Open",
       "signInWithEulex": "Sign in with EULEX"
     },
     "hero": {
       "eyebrow": "Legal AI platform",
       "title": "Everything the incumbents ship,\ninside the Eulex.ai environment.",
       "tagline": "Integrated Croatian and European legal content.",
-      "subtitle": "Max reads your documents, cites verbatim and writes with you — from first draft to signature.",
+      "subtitle": "Eulex Desk reads your documents, cites verbatim and writes with you — from first draft to signature.",
       "primaryCta": "Sign in with EULEX",
       "secondaryCta": "Learn more",
-      "imageCaption": "Max — reads, cites and writes with you"
+      "imageCaption": "Eulex Desk — reads, cites and writes with you"
     },
     "signin": {
       "eyebrow": "EULEX access",
       "title": "Sign in and get started.",
-      "subtitle": "Existing EULEX users go straight into Max. No account? Create one in seconds.",
+      "subtitle": "Existing EULEX users go straight into Eulex Desk. No account? Create one in seconds.",
       "legalNotice": "By signing in, you accept the terms of service and privacy policy on eulex.ai.",
       "noAccount": "No EULEX account?",
       "createAccount": "Create one here",
-      "imageAlt": "Max interface"
+      "imageAlt": "Eulex Desk interface"
     },
     "demo": {
-      "eyebrow": "Max in practice",
+      "eyebrow": "Eulex Desk in practice",
       "title": "Question. Document. Citation.\nOn a single screen.",
-      "description": "Ask in English or Croatian, Max opens your documents, extracts the relevant passage and quotes it exactly — including page and article. No guessing, no fabricated sources."
+      "description": "Ask in English or Croatian, Eulex Desk opens your documents, extracts the relevant passage and quotes it exactly — including page and article. No guessing, no fabricated sources."
     },
     "features": {
       "title": "Everything Harvey and Legora ship,\nrefined for Croatian and European practice.",
@@ -167,7 +309,7 @@
       "items": {
         "byok": {
           "title": "Integrated Croatian and European legal content.",
-          "description": "Max connects your documents with relevant Croatian and European sources, with citations you can verify and defend."
+          "description": "Eulex Desk connects your documents with relevant Croatian and European sources, with citations you can verify and defend."
         },
         "eulex": {
           "title": "Secure EULEX sign-in.",
@@ -190,10 +332,16 @@
       "secondary": "Create account"
     },
     "footer": {
-      "tagline": "Max — your firm's legal AI platform.",
+      "tagline": "Eulex Desk — your firm's legal AI platform.",
       "privacy": "Privacy",
       "terms": "Terms",
       "contact": "Contact"
+    },
+    "tokenBanner": {
+      "message": "We're giving away the first <b>200,000,000 tokens</b> free for testing.",
+      "remaining": "Remaining: {amount}",
+      "used": "{amount} used",
+      "percentUsed": "{pct}% used"
     }
   },
   "signup": {
@@ -204,17 +352,44 @@
     "createOnEulex": "Create your free account on eulex.ai, then come back here to sign in.",
     "createAccountOnEulex": "Create Account on EULEX",
     "alreadyHaveAccount": "Already have an account?",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "nameLabel": "Full name",
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "passwordHint": "At least 8 characters.",
+    "signUpButton": "Sign up",
+    "signingUp": "Signing up...",
+    "orContinueWith": "or continue with",
+    "checkEmailTitle": "Check your email",
+    "checkEmailBody": "We sent a confirmation link to {email}. After confirming you will be signed in.",
+    "genericError": "Sign-up failed. Please try again."
   },
   "account": {
     "settings": "Settings",
     "tabs": {
       "general": "General",
+      "billing": "Billing & tokens",
       "models": "Models & API Keys",
-      "connectors": "Connectors",
+      "connectors": "Context",
       "fileSources": "File sources",
-      "wordAddin": "Word Add-in",
-      "changelog": "What's new"
+      "privacy": "Privacy & PII",
+      "wordAddin": "Word Add-in"
+    },
+    "proLock": {
+      "badge": "Pro",
+      "cta": "Upgrade to Pro",
+      "pii": {
+        "title": "Anonymization (PII)",
+        "description": "Anonymization of queries and uploaded documents is available with the Pro plan. Upgrade to protect personal data before it's sent to the AI."
+      },
+      "word": {
+        "title": "Word Add-in",
+        "description": "The Word add-in for side-by-side document review is available with the Pro plan. Upgrade to connect Eulex Desk with Microsoft Word."
+      },
+      "mcp": {
+        "title": "Context",
+        "description": "Connecting external tools via the Model Context Protocol (MCP) is available with the Pro plan. Upgrade to add legal databases, web research, and internal APIs as context in chat."
+      }
     },
     "profile": {
       "title": "Profile",
@@ -222,11 +397,211 @@
       "displayNamePlaceholder": "Enter your name",
       "organisation": "Organisation",
       "organisationPlaceholder": "Enter your organisation",
-      "email": "Email"
+      "country": "Country",
+      "countryPlaceholder": "Select your country…",
+      "countryHint": "Used to calculate VAT when a subscription is charged.",
+      "vatNumber": "VAT number",
+      "vatNumberPlaceholder": "e.g. HR12345678901",
+      "vatNumberHint": "EU VAT registration number. Shown on your invoice and may allow zero-rating on B2B purchases.",
+      "email": "Email",
+      "addressLine1": "Street and number",
+      "addressLine1Placeholder": "Ilica 1",
+      "addressCity": "City",
+      "addressCityPlaceholder": "Zagreb",
+      "addressPostalCode": "Postal code",
+      "addressPostalCodePlaceholder": "10000",
+      "addressHint": "Billing address for the invoice. Required together with a company name and OIB/VAT ID (Art. 79 VAT Act). Sent to Stripe.",
+      "phone": "Phone (optional)",
+      "phonePlaceholder": "+385 1 2345 678"
     },
     "plan": {
       "title": "Usage Plan",
-      "free": "Free"
+      "free": "Free",
+      "popular": "Popular",
+      "current": "Your plan",
+      "currentCta": "Current",
+      "includedCta": "Included",
+      "modalTitle": "Choose a plan",
+      "modalSubtitle": "Compare the plans and pick the one that suits you best.",
+      "upgradeTo": "Upgrade to {plan}",
+      "loading": "Loading plans…",
+      "loadError": "Couldn't load plans right now.",
+      "vatNote": "+ VAT",
+      "cancelRenewal": {
+        "cta": "Cancel renewal",
+        "title": "Cancel renewal?",
+        "bodyWithDate": "Your plan stays active until {date} — the end of the period you already paid for. There is no refund or proration; the plan simply won't renew.",
+        "body": "Your plan stays active until the end of the period you already paid for. There is no refund or proration; the plan simply won't renew.",
+        "confirm": "Cancel renewal",
+        "keep": "Keep plan",
+        "pending": "Cancelling…",
+        "endsNote": "Renewal cancelled — active until {date}.",
+        "endsNoteNoDate": "Renewal cancelled.",
+        "error": "Cancellation failed. Please try again."
+      },
+      "tabs": {
+        "individual": "Individual",
+        "teamsEnterprise": "Teams & Enterprise"
+      },
+      "tiers": {
+        "free": {
+          "name": "Free",
+          "tagline": "For the first question. No commitment.",
+          "price": "€0.00",
+          "period": "/ month",
+          "cta": "Start free",
+          "features": [
+            "EU regulation (EUR-Lex corpus)",
+            "European national law corpus (basic)",
+            "Save up to 5 research projects",
+            "Document analysis",
+            "PDF export (EULEX-branded)",
+            "Daily usage limit",
+            "Trial access to Eulex Desk legal workbench",
+            "MCP access with daily usage limit"
+          ]
+        },
+        "plus": {
+          "name": "Plus",
+          "tagline": "For the deadline-driven researcher.",
+          "price": "€24.00",
+          "period": "/ month",
+          "intro": "Everything in Free, plus:",
+          "cta": "Upgrade to Plus",
+          "features": [
+            "5x daily usage limits",
+            "Full access to Eulex Desk legal workbench",
+            "Share research results via link",
+            "Word and Markdown export of research",
+            "Full MCP access with daily usage limit"
+          ]
+        },
+        "pro": {
+          "name": "Pro",
+          "tagline": "For the professional who needs more.",
+          "price": "€99.00",
+          "period": "/ month",
+          "intro": "Everything in Plus, plus:",
+          "cta": "Upgrade to Pro",
+          "features": [
+            "Including one national deep coverage pack including timeline and temporal snapshots*",
+            "20x daily usage limit to support full day usage of Eulex Desk",
+            "Anonymization of query and uploaded documents",
+            "Word Plugin for side by side document review",
+            "Company billing"
+          ]
+        },
+        "legal_pro": {
+          "name": "Legal Pro",
+          "tagline": "For daily professional use.",
+          "price": "€399.00",
+          "period": "/ month",
+          "intro": "Everything in Pro, plus:",
+          "cta": "Upgrade to Legal Pro",
+          "features": [
+            "80x daily usage limit to support full day usage of Eulex Desk",
+            "Use your own API-keys to extend AI capacity at cost",
+            "Customer support to define workflows"
+          ]
+        },
+        "team": {
+          "name": "Team",
+          "tagline": "For safe collaboration in teams.",
+          "price": "€89.00",
+          "period": "/ per user per month",
+          "intro": "Everything in Pro, plus:",
+          "cta": "Upgrade to Teams",
+          "features": [
+            "Share Workbench projects",
+            "Login with your company account to protect your data",
+            "Add users as your company grows",
+            "Usage limit pooled across the whole team",
+            "Minimum 5 seats"
+          ]
+        },
+        "eulex_legal_team": {
+          "name": "Legal Team",
+          "tagline": "For cutting edge legal teams.",
+          "price": "€349.00",
+          "period": "/ per user per month",
+          "intro": "Everything in Teams, plus:",
+          "cta": "Upgrade to Legal Team",
+          "features": [
+            "80x daily usage limit to support full day usage of Eulex Desk",
+            "Use your own API-keys to extend AI capacity at cost",
+            "Customer support to define workflows",
+            "Minimum 5 seats"
+          ]
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "tagline": "For large organisations.",
+          "price": "On demand",
+          "period": "",
+          "cta": "Contact us",
+          "features": [
+            "Custom integration with your knowledge base",
+            "Private cloud and hybrid deployment",
+            "Provide Eulex functionality to your customers without Eulex account"
+          ]
+        }
+      },
+      "manageBilling": "Manage billing",
+      "openingBillingPortal": "Opening…",
+      "manageBillingHint": "Invoices, payment method and subscription cancellation — securely via Stripe."
+    },
+    "billing": {
+      "title": "Billing & tokens",
+      "subtitle": "An overview of your daily usage and top-ups.",
+      "topupSuccess": "Payment successful. Your tokens will be credited within a few seconds.",
+      "topupCancelled": "Payment was cancelled — you have not been charged.",
+      "subscription": "Subscription",
+      "used24h": "Used (24h)",
+      "usedOf": "of {limit} ({remaining} remaining)",
+      "bonusTokens": "Bonus tokens",
+      "bonusHint": "Never expire",
+      "requests24h": "Requests in 24h",
+      "changePlan": {
+        "title": "Change plan",
+        "subtitle": "Upgrades take effect immediately with a prorated charge; downgrades apply at the end of the current billing period.",
+        "current": "Current plan",
+        "downgradeCta": "Downgrade",
+        "upgradeTitle": "Upgrade to {plan}?",
+        "upgradeBody": "Your subscription switches to {plan} immediately. You will be charged the prorated price difference for the remainder of the current billing period.",
+        "downgradeTitle": "Switch to {plan}?",
+        "downgradeBodyWithDate": "Your current plan stays active until {date}. {plan} and its price apply from the next billing period — no refunds or partial charges.",
+        "downgradeBody": "Your current plan stays active until the end of the paid period. {plan} and its price apply from the next billing period — no refunds or partial charges.",
+        "confirm": "Confirm change",
+        "cancel": "Cancel",
+        "pending": "Processing…",
+        "successUpgraded": "You are now on {plan}.",
+        "successScheduled": "Plan change scheduled — {plan} starts on {date}.",
+        "successScheduledNoDate": "Plan change scheduled — {plan} starts at the end of the current period.",
+        "error": "Plan change failed. Please try again or contact support.",
+        "loadError": "Could not load plans.",
+        "loading": "Loading plans…"
+      }
+    },
+    "team": {
+      "title": "Team",
+      "seats": "{used} / {total} seats",
+      "you": "You",
+      "pending": "Pending",
+      "roleOwner": "Owner",
+      "roleAdmin": "Admin",
+      "roleMember": "Member",
+      "remove": "Remove member",
+      "confirmRemove": "Remove",
+      "removing": "Removing…",
+      "cancel": "Cancel",
+      "add": "Add",
+      "adding": "Adding…",
+      "addPlaceholder": "colleague@company.com",
+      "seatsFull": "All seats are taken. Remove a member or add more seats.",
+      "hint": "An added colleague gets access immediately; if they don't have an account yet, they're linked on first login. Add colleagues to a specific case from within that case.",
+      "errSeats": "No seats available.",
+      "errEmail": "Invalid email address.",
+      "errGeneric": "Action failed. Please try again."
     },
     "actions": {
       "title": "Actions",
@@ -242,7 +617,11 @@
     "alerts": {
       "failedDeleteAccount": "Failed to delete account. Please try again.",
       "failedUpdateName": "Failed to update display name. Please try again.",
-      "failedUpdateOrg": "Failed to update organisation. Please try again."
+      "failedUpdateOrg": "Failed to update organisation. Please try again.",
+      "failedUpdateCountry": "Failed to update country. Please try again.",
+      "failedUpdateVat": "Failed to update VAT number. Please try again.",
+      "failedOpenBillingPortal": "Could not open the billing portal. Please try again.",
+      "failedUpdateAddress": "Could not save the address."
     }
   },
   "models": {
@@ -251,37 +630,29 @@
     "localLlmNote": "LocalLLM models are configured by the server administrator and are available to all users.",
     "selectModel": "Select a model",
     "apiKeys": {
-      "title": "API Keys",
-      "description": "You must provide your own API keys for the app to work or add your API keys into the .env file if you are running your own instance of Max.",
-      "titleGenNote": "Title generation automatically routes to the cheapest model of whichever provider you've configured (LocalLLM Lite if available, otherwise Gemini Flash Lite, otherwise Claude Haiku).",
-      "anthropic": "Anthropic (Claude) API Key",
-      "google": "Google (Gemini) API Key",
-      "openai": "OpenAI API Key",
-      "mistral": "Mistral AI API Key",
-      "addKeyTooltip": "Add a {provider} API key to use this model",
-      "failedSave": "Failed to save {label}.",
-      "sharedKeyBadge": "Shared key available",
-      "sharedKeyPlaceholder": "Using shared key — paste your own to override",
-      "sharedKeyHint": "Max will use a shared key configured by the administrator. You only need to paste your own if you want to use a separate account."
+      "title": "Providers",
+      "addKeyTooltip": "{provider} is currently unavailable on this Eulex Desk instance.",
+      "serverManagedTitle": "Centrally managed",
+      "serverManagedDescription": "All providers (Claude, OpenAI, Gemini, Mistral) run through shared keys configured by the administrator. Your usage is metered against your subscription plan."
     }
   },
   "connectors": {
-    "title": "Connectors",
+    "title": "Context",
     "hideForm": "Hide form",
-    "addConnector": "Add connector",
-    "description": "Connectors plug external tools into Max via the <link>Model Context Protocol</link> (MCP) — legal-data sources, web research, internal company APIs, and so on. Tools discovered from each connector become available to the chat assistant under the <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code> name.",
+    "addConnector": "Add context",
+    "description": "Context plugs external tools into Eulex Desk via the <link>Model Context Protocol</link> (MCP) — legal-data sources, web research, internal company APIs, and so on. Tools discovered from each context source become available to the chat assistant under the <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code> name.",
     "trustWarning": {
-      "title": "Only add connectors you trust",
-      "description": "A connector's operator can see anything Max sends in tool calls — your prompts, document excerpts, and the tool's own response. Custom headers (including <code>Authorization</code> tokens) are sent on every request."
+      "title": "Only add context sources you trust",
+      "description": "A context source's operator can see anything Eulex Desk sends in tool calls — your prompts, document excerpts, and the tool's own response. Custom headers (including <code>Authorization</code> tokens) are sent on every request."
     },
     "loadingServers": "Loading servers…",
-    "noConnectors": "No connectors configured yet.",
-    "builtinTitle": "Built-in connectors",
+    "noConnectors": "No context sources configured yet.",
+    "builtinTitle": "Built-in context",
     "builtinAlwaysOn": "Always on",
-    "customTitle": "Your connectors",
+    "customTitle": "Your context",
     "addForm": {
       "name": "Name",
-      "namePlaceholder": "My connector",
+      "namePlaceholder": "My context",
       "url": "URL",
       "urlPlaceholder": "https://example.com/mcp",
       "authentication": "Authentication",
@@ -295,7 +666,7 @@
       "headerValue": "Value",
       "addHeader": "Add header",
       "saveAndSignIn": "Save & sign in",
-      "saveConnector": "Save connector",
+      "saveConnector": "Save context",
       "nameUrlRequired": "Name and URL are required.",
       "removeHeader": "Remove header"
     },
@@ -306,7 +677,7 @@
       "disabled": "Disabled",
       "signIn": "Sign in",
       "headers": "Headers:",
-      "untitledConnector": "Untitled connector",
+      "untitledConnector": "Untitled context",
       "nameContainedSecret": "Name contained what looks like a secret — displayed redacted. Edit the server to fix.",
       "unknownError": "Unknown error",
       "discoveredTools": "Discovered {count} tool{count, plural, one {} other {s}}",
@@ -316,14 +687,14 @@
       "show": "Show",
       "deleteServer": "Delete server",
       "defaultBadge": "Default",
-      "builtinHint": "Preset connector — you can disable it, but the configuration is managed by the administrator."
+      "builtinHint": "Preset context — you can disable it, but the configuration is managed by the administrator."
     },
     "confirm": {
-      "removeTitle": "Remove connector",
+      "removeTitle": "Remove context",
       "removeMessage": "Are you sure you want to remove \"{name}\"? This also deletes any saved sign-in tokens.",
       "removeConfirm": "Remove",
       "resetOauthTitle": "Reset OAuth and sign in again",
-      "resetOauthMessage": "This wipes saved tokens and re-registers Max with \"{name}\" from scratch. Use when the connector is stuck on \"Client Not Registered\" or refuses to refresh. You'll be asked to sign in again.",
+      "resetOauthMessage": "This wipes saved tokens and re-registers Eulex Desk with \"{name}\" from scratch. Use when the context source is stuck on \"Client Not Registered\" or refuses to refresh. You'll be asked to sign in again.",
       "resetOauthConfirm": "Reset and sign in",
       "resetOauth": "Reset OAuth",
       "resetOauthTryAgain": "Reset OAuth and try again"
@@ -346,24 +717,97 @@
     "greeting": "Hi, {username}",
     "disclaimer": "AI can make mistakes. Answers are not legal advice.",
     "placeholder": "Ask a question...",
+    "pastedText": "Pasted text",
+    "loadingPlaceholder": "Loading chat history and context…",
     "projects": "Projects",
+    "projectsTooltip": "Open your matters and their documents.",
     "workflows": "Workflows",
+    "workflowsTooltip": "Run a saved workflow — a prompt or review template.",
     "addDocuments": "Add Documents",
     "openProjects": "Open projects",
     "openWorkflows": "Open workflows",
+    "piiPreview": {
+      "loading": "Checking for PII…",
+      "errorTitle": "PII review failed",
+      "errorStrict": "The document was not attached (strict mode). Try again or change the mode in privacy settings.",
+      "errorOpen": "The document was attached without a PII review. Check your connection and try again for full protection.",
+      "messageLabel": "Your message",
+      "errorStrictTyped": "The message was NOT sent (strict mode). Your draft is still in the input field — try again."
+    },
+    "editCard": {
+      "accept": "Accept",
+      "accepted": "Accepted",
+      "reject": "Reject",
+      "rejected": "Rejected",
+      "view": "View",
+      "viewDisabledTitle": "This change has been resolved and is no longer in the document.",
+      "acceptSaveError": "Couldn't save accept — reverted.",
+      "rejectSaveError": "Couldn't save reject — reverted."
+    },
     "modelToggle": {
       "trigger": "Model: {model}",
       "triggerAria": "Choose model and reasoning effort. Currently {model}.",
       "apiKeyMissingTitle": "API key missing for selected model",
       "effort": {
         "label": "Reasoning effort",
+        "off": "None",
         "low": "Low",
         "medium": "Medium",
         "high": "High",
+        "offTitle": "No reasoning — the model answers directly.",
         "lowTitle": "Faster, cheaper. Minimal thinking before responding.",
         "mediumTitle": "Balanced. A moderate amount of thinking before responding.",
         "highTitle": "Deepest thinking. Slower and more expensive, best on hard problems."
       }
+    },
+    "enrichment": {
+      "button": "Improve",
+      "buttonAria": "Improve query",
+      "tooltip": "Turns a short question into a more precise query with relevant context.",
+      "selectVariant": "Select one of the improved queries:",
+      "loading": "Improving query…",
+      "error": "Improvement failed. Try again.",
+      "generating": "generating…",
+      "generatingVariants": "Generating variants…",
+      "lens": {
+        "normative": "Normative",
+        "compliance": "Compliance",
+        "systemic": "Systemic"
+      },
+      "hint": {
+        "navigate": "navigate",
+        "select": "select",
+        "shortcuts": "shortcuts",
+        "close": "close"
+      },
+      "closeAria": "Close"
+    },
+    "webSearch": {
+      "label": "Web",
+      "tooltipOn": "Web search is on — Eulex Desk can check official sources, the web, and news. Click to turn off.",
+      "tooltipOff": "Web search is off — Eulex Desk answers without searching the internet. Click to turn on."
+    },
+    "errors": {
+      "generic": "Sorry, something went wrong. Please try again.",
+      "network": "Can't reach the server. Check your internet connection and try again.",
+      "sessionExpired": "Your session has expired. Please sign in again.",
+      "projectNotFound": "This project no longer exists or you no longer have access to it.",
+      "streamError": "The response was interrupted by a server error. Please try again.",
+      "piiUnavailable": "The message was not sent: PII protection is temporarily unavailable, and your privacy mode does not allow sending unprotected text. Please try again in a moment.",
+      "cancelled": "You cancelled the response"
+    },
+    "greetingAnonymous": "Hi there",
+    "dismiss": "Dismiss",
+    "piiBadge": {
+      "restoredTooltip": "PII shield: original values restored on your device only.",
+      "restoringTooltip": "PII shield: restoring original values…",
+      "failedTooltip": "PII shield: placeholders shown (de-anon failed).",
+      "decrypting": "Decrypting PII…",
+      "restored": "PII restored locally",
+      "placeholders": "PII placeholders"
+    },
+    "sidePanel": {
+      "closePanel": "Close panel"
     }
   },
   "projects": {
@@ -401,7 +845,8 @@
     "apiKeyRequired": {
       "title": "API key required",
       "message": "You haven't added a {provider} API key yet. Add one in your account settings to use this model.",
-      "goToSettings": "Go to account settings"
+      "goToSettings": "Go to account settings",
+      "genericProvider": "this provider"
     }
   },
   "practices": {
@@ -445,6 +890,13 @@
     "en": "English",
     "hr": "Hrvatski"
   },
+  "theme": {
+    "label": "Theme",
+    "paper": "EULEX Light",
+    "dark": "EULEX Dark",
+    "mike": "Classic Light",
+    "mikeDark": "Classic Dark"
+  },
   "ownerOnly": {
     "defaultTitle": "Owner-only action",
     "defaultMessage": "Only the project owner can perform this action.",
@@ -463,7 +915,20 @@
   "chatItem": {
     "untitledChat": "Untitled chat",
     "renameThisChat": "rename this chat",
-    "deleteThisChat": "delete this chat"
+    "deleteThisChat": "delete this chat",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "moveToGroup": "Move to group",
+    "removeFromGroup": "Remove from group",
+    "newGroup": "New group…",
+    "newGroupTitle": "New group",
+    "groupNamePlaceholder": "Group name",
+    "archive": "Archive",
+    "restore": "Restore",
+    "pinThisChat": "pin this chat",
+    "restoreThisChat": "restore this chat",
+    "moveThisChat": "move this chat to a group",
+    "archiveThisChat": "archive this chat"
   },
   "rowActions": {
     "rename": "Rename",
@@ -474,6 +939,12 @@
     "removeFromSubfolder": "Remove from subfolder",
     "unhide": "Unhide",
     "hide": "Hide"
+  },
+  "emailPillInput": {
+    "placeholder": "Add by email…",
+    "invalidEmail": "Enter a valid email address.",
+    "verifyFailed": "Could not verify email. Try again.",
+    "checking": "Checking…"
   },
   "people": {
     "addByEmail": "Add by email…",
@@ -518,6 +989,14 @@
     "openInChat": "Open in chat",
     "continueConversation": "Continue conversation",
     "continueExplainer": "Continue the conversation together — you'll be added as a collaborator.",
+    "previewSignIn": "Sign in",
+    "previewBanner": "{name} shared this conversation with you. This is just the start — sign in with the invited email to see the full answer and continue.",
+    "previewQuestionLabel": "Question",
+    "previewAnswerLabel": "Answer",
+    "previewLockTitle": "Sign in to see the rest",
+    "previewLockBody": "This is just the beginning of the answer. Sign in with the email this was sent to, to read the full conversation and continue it.",
+    "previewMismatchBanner": "You're signed in with a different account. To see the full conversation, sign in with {email}.",
+    "previewSwitchCta": "Sign in as {email}",
     "emptyChat": "This conversation is empty.",
     "errorEmailMismatchTitle": "This invite is bound to a different email",
     "errorEmailMismatchBody": "Sign in with the email address the invitation was sent to.",
@@ -528,22 +1007,67 @@
     "errorNotFoundBody": "The link may have been mistyped or the share was deleted."
   },
   "documents": {
+    "editor": {
+      "bold": "Bold (Ctrl+B)",
+      "italic": "Italic (Ctrl+I)",
+      "underline": "Underline (Ctrl+U)",
+      "strike": "Strikethrough",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "paragraph": "Normal text",
+      "bulletList": "Bullet list",
+      "orderedList": "Numbered list",
+      "undo": "Undo (Ctrl+Z)",
+      "redo": "Redo (Ctrl+Shift+Z)",
+      "editorNotReady": "Waiting for the document to load"
+    },
     "searchPlaceholder": "Search…",
     "noMatches": "No matches found",
     "noDocuments": "No documents yet",
+    "noProjectDocuments": "No documents in this project yet",
+    "alreadyAdded": "Already added",
     "uploading": "Uploading…",
     "upload": "Upload",
     "uploadFiles": "Upload files",
     "browseAll": "Browse all",
     "addDocuments": "Add documents",
+    "addDocumentsTooltip": "Attach documents from your computer, matters, or integrations.",
     "documentLabel": "Document",
     "documentsLabel": "Documents",
     "selected": "{count} selected",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "deleteSelected": "Delete",
+    "emptyFolder": "Empty",
     "confirm": "Confirm",
     "ownerOnlyDelete": "delete these documents — only the document creator can delete a document",
     "ownerOnlyDeletePartial": "delete {count} of the selected documents — only the document creator can delete a document",
-    "connectProvider": "Connect {name}…",
-    "browseProvider": "From {name}…"
+    "connectProvider": "Connect {name}",
+    "browseProvider": "From {name}",
+    "connectorsButton": "Context",
+    "noConnectorsConfigured": "No context configured",
+    "picker": {
+      "title": "From {name}",
+      "searchPlaceholder": "Search files…",
+      "loading": "Loading…",
+      "empty": "No files found",
+      "emptyRoot": "This folder is empty",
+      "loadMore": "Load more",
+      "importing": "Importing…"
+    },
+    "importing": {
+      "title": "Importing from {name}",
+      "progress": "Imported {done} of {total}",
+      "done": "Import from {name} finished",
+      "failed": "Import from {name} failed",
+      "summaryDone": "{count, plural, one {1 file imported} other {{count} files imported}}",
+      "summaryMixed": "{done} succeeded, {failed} failed"
+    },
+    "processing": "Processing…",
+    "uploadFailed": "Upload failed",
+    "removeDocument": "Remove document",
+    "clearSearch": "Clear search"
   },
   "uploadVersion": {
     "title": "Upload new version",
@@ -572,8 +1096,29 @@
     "reviewsTitle": "Delete reviews",
     "reviewsBody": "Are you sure you want to delete {count} {count, plural, one {review} other {reviews}}? This cannot be undone.",
     "disconnectAction": "Disconnect",
-    "connectorTitle": "Disconnect connector",
-    "connectorBody": "Are you sure you want to disconnect {name}? Max won't be able to access files in that account again until you reconnect. Already-imported files stay in Max."
+    "connectorTitle": "Disconnect context",
+    "connectorBody": "Are you sure you want to disconnect {name}? Eulex Desk won't be able to access files in that account again until you reconnect. Already-imported files stay in Eulex Desk.",
+    "projectTitle": "Delete project",
+    "projectBodyNamed": "Are you sure you want to delete the project \"{title}\"? All documents, chats and reviews in it will be permanently removed and this cannot be undone.",
+    "projectsTitle": "Delete projects",
+    "projectsBody": "Are you sure you want to delete {count} {count, plural, one {project} other {projects}}? All documents, chats and reviews in them will be permanently removed and this cannot be undone.",
+    "archiveAction": "Archive",
+    "groupArchiveTitle": "Archive group",
+    "groupArchiveBody": "Archiving the group \"{name}\" will also archive all conversations in it. You can restore them from the archived view.",
+    "groupDeleteTitle": "Delete group",
+    "groupDeleteBody": "Deleting the group \"{name}\" will also delete all conversations in it. This cannot be undone.",
+    "documentTitle": "Delete document",
+    "documentBodyNamed": "Are you sure you want to delete the document \"{title}\"? All versions will be permanently removed and this cannot be undone.",
+    "documentsTitle": "Delete documents",
+    "documentsBody": "Are you sure you want to delete {count} documents? All versions will be permanently removed and this cannot be undone.",
+    "folderTitle": "Delete folder",
+    "folderBodyNamed": "Are you sure you want to delete the folder \"{title}\"? All subfolders will be removed and its documents moved to the project root.",
+    "workflowTitle": "Delete workflow",
+    "workflowBodyNamed": "Are you sure you want to delete the workflow \"{title}\"? This cannot be undone.",
+    "workflowsTitle": "Delete workflows",
+    "workflowsBody": "Are you sure you want to delete {count} workflows? This cannot be undone.",
+    "contextTitle": "Delete context",
+    "contextBodyNamed": "Are you sure you want to delete the context \"{title}\"? All its sources and shares will be permanently removed and this cannot be undone."
   },
   "newWorkflow": {
     "breadcrumbRoot": "Workflows",
@@ -602,7 +1147,8 @@
     "canEdit": "Can edit",
     "readOnly": "Read-only",
     "sharing": "Sharing…",
-    "share": "Share"
+    "share": "Share",
+    "isTheOwner": "{email} is already the owner."
   },
   "displayWorkflow": {
     "breadcrumbRoot": "Workflows",
@@ -633,7 +1179,10 @@
     "starting": "Starting…",
     "startChat": "Start Chat",
     "creating": "Creating…",
-    "createReview": "Create Review"
+    "createReview": "Create Review",
+    "runWorkflowMessage": "Run workflow",
+    "additionalInstructionsLabel": "Additional instructions",
+    "applyError": "Applying the workflow failed. Please try again."
   },
   "addColumn": {
     "tabularReview": "Tabular Review",
@@ -648,13 +1197,30 @@
     "pressEnterToAddTag": "Press Enter or comma to add a tag.",
     "prompt": "Prompt",
     "autoGeneratePrompt": "Auto-Generate Prompt",
-    "promptPlaceholder": "Write the analysis prompt — describe what Max should extract from each document for this column…",
+    "promptPlaceholder": "Write the analysis prompt — describe what Eulex Desk should extract from each document for this column…",
     "addAnotherColumn": "Add another column",
     "delete": "Delete",
+    "deleteConfirmTitle": "Delete column",
+    "deleteConfirmBody": "Delete the column “{name}”? This action cannot be undone.",
     "cancel": "Cancel",
     "saving": "Saving…",
     "saveChanges": "Save changes",
     "addColumns": "Add columns"
+  },
+  "newProject": {
+    "breadcrumbProjects": "Projects",
+    "breadcrumbNew": "New project",
+    "namePlaceholder": "Project name",
+    "cmPlaceholder": "Add a CM number…",
+    "members": "Members",
+    "membersPlaceholder": "Add colleagues by email…",
+    "selectDocuments": "Select documents",
+    "noExistingDocuments": "No existing documents",
+    "uploadFiles": "Upload files",
+    "cancel": "Cancel",
+    "create": "Create project",
+    "creating": "Creating…",
+    "failedToCreate": "Failed to create project"
   },
   "addNewTR": {
     "projects": "Projects",
@@ -678,14 +1244,18 @@
     "create": "Create"
   },
   "mcpToggle": {
-    "loadingConnectors": "Loading connectors",
-    "connectorStatus": "{enabled} of {total} connectors enabled",
-    "connectors": "Connectors",
+    "tooltip": "Legislation and connectors — turn sources on or off for this chat.",
+    "loadingConnectors": "Loading context",
+    "connectorStatus": "{enabled} of {total} context enabled",
+    "connectors": "Context",
+    "legislation": "Legislation",
     "builtinConnectors": "Built-in",
     "alwaysOn": "Always on",
     "defaultBadge": "Default",
-    "manageConnectors": "Manage connectors",
-    "untitled": "Untitled"
+    "manageConnectors": "Manage context",
+    "untitled": "Untitled",
+    "manageContextAria": "Manage context for this chat",
+    "errorAria": "Error: {error}"
   },
   "projectPage": {
     "untitledChat": "Untitled Chat",
@@ -713,6 +1283,7 @@
     "newSubfolderInside": "New subfolder inside",
     "renameFolder": "Rename folder",
     "deleteFolder": "Delete folder",
+    "deleteFolderAction": "delete this folder",
     "folderName": "Folder name",
     "searchPlaceholder": "Search…",
     "peopleWithAccess": "People with access",
@@ -727,7 +1298,33 @@
     "downloadLimitTitle": "Download limit",
     "downloadLimitBody": "You can download at most {max} documents in one ZIP. Select fewer files or download in several batches.",
     "downloadFailedTitle": "Download failed",
-    "downloadFailedBody": "The documents could not be downloaded. Try again in a moment."
+    "downloadFailedBody": "The documents could not be downloaded. Try again in a moment.",
+    "loadingProject": "Loading matter…",
+    "openingChat": "Opening chat…",
+    "newChatTitle": "New chat",
+    "deleteChatTitle": "Delete chat",
+    "uploadDocumentsTitle": "Upload documents",
+    "collapseExplorer": "Collapse explorer",
+    "expandExplorer": "Expand explorer",
+    "docViewerEmptyTitle": "Click a document to view it.",
+    "docViewerEmptyHint": "Tip: drag a document from the Project explorer into the Assistant to have it read or edit it.",
+    "deleteFile": "Delete file",
+    "noDocumentsInProject": "No documents in this project.",
+    "loadingVersions": "Loading versions…",
+    "noVersionHistory": "No version history.",
+    "versionOriginal": "Original",
+    "renameVersion": "Rename version",
+    "downloadVersion": "Download this version",
+    "creatingChat": "Creating a new chat…",
+    "people": "People",
+    "deleteDocument": "delete this document",
+    "renameProject": "rename this project",
+    "renameChat": "rename this chat",
+    "deleteChat": "delete this chat",
+    "ownerOnlyDeleteChatsPartial": "delete {count} of the selected chats — only the chat creator can delete a chat",
+    "docViewerTabPlaceholder": "Document preview",
+    "explorerHeading": "Explorer",
+    "noSearchResults": "No results for that search."
   },
   "tabularReview": {
     "untitledReview": "Untitled Review",
@@ -740,6 +1337,28 @@
     "export": "Export",
     "running": "Running…",
     "run": "Run",
+    "runProgressTitle": "Generating results",
+    "runProgressSubtitle": "The assistant is filling in columns for all documents.",
+    "runProgressProcessing": "Processing…",
+    "runProgressCurrent": "Currently processing",
+    "runProgressOverall": "{done} of {total} cells completed",
+    "runProgressDone": "{count} done",
+    "runProgressInProgress": "{count} in progress",
+    "runProgressFailed": "{count} failed",
+    "runProgressCompleted": "Generation finished",
+    "runProgressKeepOpen": "You can close this window — generation will continue in the background.",
+    "runProgressClose": "Close",
+    "runProgressMinimize": "Minimize",
+    "runProgressRestore": "Show progress",
+    "runProgressDoc": "Document",
+    "runProgressColumn": "Column",
+    "reasoningThinking": "Thinking…",
+    "reasoningPondering": "Pondering…",
+    "reasoningAnalyzing": "Analyzing…",
+    "reasoningReasoning": "Reasoning…",
+    "reasoningThoughtProcess": "Thought process",
+    "reasoningReading": "Reading",
+    "reasoningRead": "Read",
     "actions": "Actions",
     "clearResults": "Clear results",
     "delete": "Delete",
@@ -765,7 +1384,18 @@
     "flagDisplayGreen": "Green",
     "flagDisplayGrey": "Grey",
     "flagDisplayYellow": "Yellow",
-    "flagDisplayRed": "Red"
+    "flagDisplayRed": "Red",
+    "emptyHint": "Add columns and documents to get started.",
+    "citationTooltip": "Page {page}: \"{quote}\"",
+    "quoteUnverified": "Quote not found in the document",
+    "regenerate": "Regenerate",
+    "runProgressErrorTitle": "Run failed",
+    "runErrorInProgress": "A run is already in progress. Wait for it to finish and try again.",
+    "runErrorRateLimited": "You have reached your daily quota. Try later or upgrade your plan.",
+    "runErrorGeneric": "Starting the run failed. Please try again.",
+    "exportSheetName": "Review",
+    "exportDocumentHeader": "Document",
+    "exportErrorCell": "Error"
   },
   "tabularReviewsPage": {
     "title": "Tabular Reviews",
@@ -791,8 +1421,92 @@
       "noReviews": "No reviews found"
     },
     "ownerOnlyRename": "rename this tabular review",
+    "ownerOnlyRemoveDocs": "remove documents from this tabular review",
     "ownerOnlyDelete": "delete this tabular review",
     "ownerOnlyDeletePartial": "delete {count} of the selected reviews — only the review creator can delete a review"
+  },
+  "contextsPage": {
+    "title": "Contexts",
+    "new": "New context",
+    "empty": "No contexts yet",
+    "emptyDesc": "Create a reusable set of sources and instructions the assistant applies while the context is active.",
+    "sourcesTab": "Sources",
+    "instructionsTab": "Instructions",
+    "sharingTab": "Sharing",
+    "alertsToggle": "Alert me when a source changes",
+    "alertsTab": "Alerts",
+    "alertsEmpty": "No changes to tracked sources yet. Turn on 'Alert me when a source changes' and mark the sources you track.",
+    "alertChange_new_consolidated": "New consolidated version",
+    "alertChange_amendment": "Amendment",
+    "alertChange_effective_date": "Entry into force",
+    "alertChange_repeal": "Repealed",
+    "openContext": "Open",
+    "deactivate": "Deactivate",
+    "recentAlerts": "{count} recent source {count, plural, one {change} other {changes}}",
+    "toggleAria": "Activate or deactivate context",
+    "deleteAria": "Delete context",
+    "composerAria": "Manage active contexts",
+    "composerTooltip": "Activate saved contexts that are added to this chat.",
+    "toggleFailed": "Could not change the context. Please try again."
+  },
+  "newContext": {
+    "breadcrumbRoot": "Contexts",
+    "newContext": "New context",
+    "editContext": "Edit context",
+    "namePlaceholder": "Context name",
+    "descriptionPlaceholder": "What is this context for?",
+    "createContext": "Create context",
+    "creating": "Creating…",
+    "saving": "Saving…",
+    "saveChanges": "Save changes",
+    "failedCreate": "Failed to create context",
+    "failedUpdate": "Failed to update context",
+    "failedLoad": "Failed to load context",
+    "failedShare": "Failed to share",
+    "invalidInput": "The instructions exceed the allowed size or the input is invalid",
+    "addSource": "Add source",
+    "refPlaceholder": "CELEX number or URL",
+    "kindInstrument": "Legal instrument",
+    "kindArticle": "Article",
+    "kindCaselaw": "Case law",
+    "kindWeb": "Web link",
+    "noSources": "No sources yet",
+    "pin": "Pin (always in view)",
+    "retrievalNote": "How to use this source",
+    "trackAlerts": "Alert on changes",
+    "alertsUnavailable": "Alerts not yet available for this source",
+    "removeSource": "Remove source",
+    "sharePlaceholder": "Colleague email",
+    "allowEdit": "Can edit",
+    "share": "Share",
+    "noShares": "No one has access yet",
+    "removeShare": "Remove access",
+    "outOfActiveLimit": "You can activate at most 5 contexts at once"
+  },
+  "attachContexts": {
+    "title": "Contexts",
+    "aria": "Attach contexts",
+    "descriptionWorkflow": "Attached contexts apply automatically every time this runs.",
+    "descriptionProject": "Attached contexts apply in this project's conversations.",
+    "accessHint": "A context applies only for people who have access to it.",
+    "noEditHint": "Attaching requires edit access to the context.",
+    "failed": "The change failed. Please try again."
+  },
+  "saveAsContext": {
+    "affordance": "Save as context",
+    "breadcrumbRoot": "Contexts",
+    "title": "Save as context",
+    "namePlaceholder": "Context name",
+    "seededSources": "Sources from this chat ({count})",
+    "draftExplainer": "Eulex Desk will draft the instructions from this conversation. You can edit the draft before saving.",
+    "reviewExplainer": "Context “{name}” has been created. Review and edit the drafted instructions, then save.",
+    "createDraft": "Draft instructions",
+    "drafting": "Drafting…",
+    "saveContext": "Save context",
+    "saving": "Saving…",
+    "failedCreate": "Failed to create context",
+    "failedSave": "Failed to save instructions",
+    "invalidInput": "The instructions exceed the allowed size or the input is invalid"
   },
   "workflowsPage": {
     "title": "Workflows",
@@ -825,7 +1539,7 @@
       "allDesc": "Automate document analysis with reusable prompts and tabular review templates."
     },
     "source": {
-      "mike": "Max",
+      "mike": "Eulex",
       "myself": "Myself",
       "shared": "Shared",
       "sharedBy": "{name}"
@@ -836,12 +1550,14 @@
       "errors": {
         "invalidJson": "File is not valid JSON.",
         "notEnvelope": "File is not a workflow envelope.",
-        "wrongFormat": "Not a Max workflow file (missing or wrong 'format').",
+        "wrongFormat": "Not a Eulex Desk workflow file (missing or wrong 'format').",
         "unsupportedVersion": "Unsupported workflow file version.",
         "missingTitle": "Workflow file is missing a title.",
         "badType": "Workflow type must be 'assistant' or 'tabular'.",
         "badColumns": "columns_config must be an array.",
-        "generic": "Failed to upload workflow."
+        "generic": "Failed to upload workflow.",
+        "badPrompt": "The workflow prompt is not in a valid format.",
+        "badPractice": "The practice area is not in a valid format."
       }
     },
     "detail": {
@@ -888,9 +1604,18 @@
     "called": "Called",
     "failed": "Failed",
     "webSearchSearching": "Searching the web",
+    "webSearchSearchingOfficial": "Searching official sources",
+    "webSearchSearchingNews": "Searching the news",
     "webSearchFound": "Web search {count, plural, =0 {— no results} one {— # source} other {— # sources}}",
+    "webSearchFoundOfficial": "Official sources {count, plural, =0 {— no results} one {— # source} other {— # sources}}",
+    "webSearchFoundNews": "News {count, plural, =0 {— no results} one {— # source} other {— # sources}}",
     "webSearchFailed": "Web search failed",
-    "webSearchVia": "via Eulex Web",
+    "webExtractReading": "Reading link",
+    "webExtractRead": "Read page",
+    "webExtractReadPdf": "Read PDF",
+    "webExtractFailed": "Couldn’t read link",
+    "webExtractPreview": "preview",
+    "webSearchVia": "via Eulex.ai",
     "hideDetails": "Hide details",
     "showDetails": "Show details",
     "arguments": "Arguments",
@@ -911,11 +1636,88 @@
     "noMatches": "No matches.",
     "chat": "Chat",
     "running": "Running",
-    "tool": "tool"
+    "tool": "tool",
+    "toolLabels": {
+      "hrSearch": "Search legislation",
+      "hrFindPublication": "Find legislation",
+      "hrGetArticle": "Fetch article",
+      "hrGetFullDocument": "Fetch full regulation",
+      "hrSearchCaselaw": "Search case law",
+      "hrGetDecision": "Fetch decision",
+      "hrGetDecisionCitations": "Decision citations",
+      "hrGetRelatedDecisions": "Related decisions",
+      "euSearch": "Search EU law",
+      "euGetSection": "Fetch provision",
+      "euGetMetadata": "Document metadata",
+      "euGetStructure": "Document structure",
+      "euGetRelated": "Related acts",
+      "euFindByDate": "Search by date",
+      "euGetTimeline": "Timeline",
+      "euVerify": "Check in-force status",
+      "euTransposition": "Directive transposition",
+      "euEurostat": "Eurostat statistics",
+      "euListScopes": "Available filters",
+      "euAbout": "About source",
+      "frSearch": "Search French law",
+      "frGetArticle": "Fetch article",
+      "frGetArticleVersions": "Article versions",
+      "frListCodes": "Browse codes"
+    },
+    "bulkAcceptError": "Couldn't save one or more accepts.",
+    "bulkRejectError": "Couldn't save one or more rejects.",
+    "sourceFallback": "source",
+    "genericError": "Sorry, something went wrong."
+  },
+  "docPanel": {
+    "citation": "Citation",
+    "download": "Download",
+    "trackedChange": "Tracked Change",
+    "loadError": "Failed to load document.",
+    "exitDraftMode": "Exit Draft Mode",
+    "editSelection": "Edit selection (Draft Mode)",
+    "draftBadge": "Draft",
+    "acceptSaveFailed": "Couldn't save accept — please retry.",
+    "rejectSaveFailed": "Couldn't save reject — please retry."
+  },
+  "legalSource": {
+    "sourcesHeading": "Sources",
+    "citedPassage": "Cited passage",
+    "noText": "No text available for this source.",
+    "inForce": "In force",
+    "notInForce": "Not in force",
+    "viewOnEurLex": "Open on EUR-Lex",
+    "viewOnNarodneNovine": "Open on Narodne novine",
+    "viewOnCourtPortal": "Open on the case-law portal",
+    "viewOnLegifrance": "Open on Légifrance",
+    "viewOnPisrs": "Open on PISRS",
+    "viewOnGesetzeImInternet": "Open on Gesetze im Internet",
+    "loadingFullText": "Loading full text…",
+    "loadingLaw": "Loading law…",
+    "fullTextError": "Couldn't load the full text.",
+    "cited": "Cited",
+    "badge": {
+      "eu": "EU",
+      "hr": "HR",
+      "fr": "FR",
+      "si": "SI",
+      "de": "DE",
+      "caselaw": "Case law"
+    },
+    "timeline": {
+      "sliderLabel": "Regulation version timeline",
+      "olderVersion": "Older version",
+      "newerVersion": "Newer version",
+      "inForceFrom": "in force since {date}",
+      "inForceFromTo": "in force from {from} to {to}",
+      "entersIntoForce": "enters into force on {date}",
+      "historicalNotice": "Historical version — not the text in force",
+      "futureNotice": "Future version — not yet in force",
+      "versionTextUnavailable": "The text of this version is not available."
+    }
   },
   "wordAddin": {
     "title": "Word Add-in",
-    "description": "Use Max directly inside Microsoft Word. The add-in connects to this account so your projects, chats, and uploads stay in sync.",
+    "description": "Use Eulex Desk directly inside Microsoft Word. The add-in connects to this account so your projects, chats, and uploads stay in sync.",
     "steps": {
       "pair": {
         "title": "1. Generate a pairing code",
@@ -929,34 +1731,17 @@
         "title": "2. Install the add-in in Word",
         "step1": "Download the manifest.xml file below.",
         "step2": "In Word, open the Insert tab, click Add-ins → Get Add-ins → Upload My Add-in.",
-        "step3": "Select the downloaded manifest.xml. The Max sidebar will appear on the Home tab.",
-        "step4": "Open the Max pane and paste the 6-digit pairing code when prompted.",
+        "step3": "Select the downloaded manifest.xml. The Eulex Desk sidebar will appear on the Home tab.",
+        "step4": "Open the Eulex Desk pane and paste the 6-digit pairing code when prompted.",
         "downloadManifest": "Download manifest.xml"
       },
       "use": {
         "title": "3. Start working",
-        "description": "Once paired you can chat with Max, attach project documents, request track-change suggestions, and let the assistant comment on a selection — all without leaving Word."
+        "description": "Once paired you can chat with Eulex Desk, attach project documents, request track-change suggestions, and let the assistant comment on a selection — all without leaving Word."
       }
     },
     "errors": {
       "generic": "Something went wrong. Please try again."
-    }
-  },
-  "changelog": {
-    "title": "What's new",
-    "description": "Recent features, improvements, and fixes in Max. Newest entries at the top.",
-    "loading": "Loading changelog…",
-    "empty": "No entries yet.",
-    "errors": {
-      "loadFailed": "Failed to load the changelog."
-    },
-    "types": {
-      "added": "New",
-      "improved": "Improved",
-      "changed": "Changed",
-      "fixed": "Fixed",
-      "removed": "Removed",
-      "security": "Security"
     }
   },
   "projectPicker": {
@@ -1008,28 +1793,258 @@
     "litigation": "Litigation",
     "realEstate": "Real Estate",
     "privateEquity": "Private Equity",
-    "employment": "Employment"
+    "employment": "Employment",
+    "tax": "Tax",
+    "ip": "IP",
+    "competition": "Competition",
+    "techTransactions": "Tech Transactions",
+    "projectFinance": "Project Finance",
+    "ecVc": "EC/VC",
+    "privateCredit": "Private Credit",
+    "ecm": "ECM",
+    "dcm": "DCM",
+    "levFin": "Lev Fin",
+    "arbitration": "Arbitration",
+    "others": "Others"
   },
   "connectorsPage": {
     "title": "File sources",
-    "description": "Connect Google Drive, OneDrive, or Box to import documents directly into Max. Files are copied into Max at import time — later changes in the source don't modify the imported copy.",
-    "loading": "Loading connectors…",
-    "empty": "No file connectors are available right now. Contact your administrator.",
+    "description": "Connect Google Drive, OneDrive, or Box to import documents directly into Eulex Desk. Files are copied into Eulex Desk at import time — later changes in the source don't modify the imported copy.",
+    "loading": "Loading context…",
+    "empty": "No file context sources are available right now. Contact your administrator.",
     "notConfigured": "Not configured",
     "notConnected": "Not connected",
     "connectedAs": "Connected as {email}",
-    "contactAdmin": "The operator has not configured this connector",
+    "contactAdmin": "The operator has not configured this context",
     "connect": "Connect",
     "disconnect": "Disconnect",
     "toasts": {
-      "connected": "Connector {name} connected successfully.",
+      "connected": "Context {name} connected successfully.",
       "failed": "Failed to connect {name}.",
       "failedWithError": "Failed to connect {name}: {error}"
     },
     "errors": {
-      "loadFailed": "Failed to load the connectors list.",
+      "loadFailed": "Failed to load the context list.",
       "startFailed": "Failed to start the OAuth flow.",
       "disconnectFailed": "Disconnect failed."
     }
+  },
+  "countries": {
+    "HR": "Croatia",
+    "AT": "Austria",
+    "BE": "Belgium",
+    "BA": "Bosnia and Herzegovina",
+    "BG": "Bulgaria",
+    "CY": "Cyprus",
+    "CZ": "Czech Republic",
+    "DK": "Denmark",
+    "EE": "Estonia",
+    "FI": "Finland",
+    "FR": "France",
+    "DE": "Germany",
+    "GR": "Greece",
+    "HU": "Hungary",
+    "IS": "Iceland",
+    "IE": "Ireland",
+    "IT": "Italy",
+    "XK": "Kosovo",
+    "LV": "Latvia",
+    "LI": "Liechtenstein",
+    "LT": "Lithuania",
+    "LU": "Luxembourg",
+    "MT": "Malta",
+    "MD": "Moldova",
+    "ME": "Montenegro",
+    "NL": "Netherlands",
+    "MK": "North Macedonia",
+    "NO": "Norway",
+    "PL": "Poland",
+    "PT": "Portugal",
+    "RO": "Romania",
+    "RS": "Serbia",
+    "SK": "Slovakia",
+    "SI": "Slovenia",
+    "ES": "Spain",
+    "SE": "Sweden",
+    "CH": "Switzerland",
+    "TR": "Turkey",
+    "UA": "Ukraine",
+    "GB": "United Kingdom",
+    "US": "United States",
+    "CA": "Canada",
+    "AU": "Australia",
+    "NZ": "New Zealand",
+    "AE": "United Arab Emirates",
+    "JP": "Japan",
+    "SG": "Singapore"
+  },
+  "privacy": {
+    "title": "Privacy & PII",
+    "subtitle": "A single anonymization mode covers every outbound flow — to the AI model and to external tools (e.g. web search) — until you override it per conversation.",
+    "notConfigured": "PII Shield is not deployed in this environment yet — your choices are saved but currently have no effect.",
+    "engineVersion": "Engine version",
+    "loading": "Loading…",
+    "saved": "Saved",
+    "modeLabel": "Anonymization mode",
+    "modeOff": "Off",
+    "modeOffDesc": "Send everything to the AI (LLM) and external tools (e.g. web search) in plaintext, whether typed into a text box or contained in a document. No anonymization.",
+    "modeStandard": "Standard (recommended)",
+    "modeStandardDesc": "The system detects and masks PII — personal names, organisations, addresses — in both text input and documents, by default. No review prompt; it all happens seamlessly.",
+    "modeStrict": "Strict",
+    "modeStrictDesc": "Same detection and masking as Standard, plus the system asks you to review every text input and every document — typed, imported or created by the system — both initially and later.",
+    "demoTitle": "What the pre-AI review screen looks like",
+    "demoSubtitle": "In Strict mode, a modal with the detected data opens before every AI call. Click below to see what it looks like on a sample contract.",
+    "demoButton": "Open demo preview"
+  },
+  "pii": {
+    "shieldBadge": {
+      "active": "PII Shield active",
+      "inactive": "PII Shield off",
+      "hidden": "{count} hidden",
+      "tooltip": "Personal data in this chat is replaced with placeholders before it reaches the AI.",
+      "tooltipOn": "PII protection is on. Personal data is replaced with placeholders before it reaches the AI.",
+      "tooltipOff": "PII protection is paused for this chat."
+    },
+    "previewModal": {
+      "title": "Review detected PII",
+      "subtitle": "Check the data we recognized. Items left unchecked stay hidden from the AI; check an item to expose it.",
+      "noEntities": "No sensitive data was detected.",
+      "approveDisclosure": "Expose to AI",
+      "reasonPlaceholder": "Reason (audit)…",
+      "cancel": "Cancel",
+      "confirm": "Confirm and continue",
+      "submitting": "Saving…",
+      "entityType": {
+        "PERSON": "People",
+        "EMAIL_ADDRESS": "Email",
+        "PHONE_NUMBER": "Phone",
+        "LOCATION": "Locations",
+        "ORGANIZATION": "Organisations",
+        "CREDIT_CARD": "Credit cards",
+        "IBAN_CODE": "IBANs",
+        "HR_OIB": "OIBs",
+        "HR_IBAN": "Croatian IBANs",
+        "HR_MBS": "MBS",
+        "HR_COURT_NUMBER": "Court case",
+        "HR_ZIP": "ZIPs",
+        "DATE_TIME": "Dates",
+        "HR_ADDRESS": "Addresses"
+      },
+      "submitError": "Saving your choices failed. Please try again."
+    },
+    "rateLimit": {
+      "title": "Document withheld",
+      "body": "The PII proxy is temporarily unavailable. Try again in a few seconds."
+    }
+  },
+  "adminmaxBugfix": {
+    "navLink": "BugFix",
+    "title": "AdminMax · BugFix status",
+    "subtitle": "Live bug status from GitHub: issue → PR → LIVE.",
+    "backToList": "← Back to the list",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "statusOpen": "Open",
+    "statusPrOpen": "PR in review",
+    "statusMerged": "Merged — waiting for LIVE",
+    "statusLive": "Live — close the issue",
+    "statusClosed": "Closed",
+    "deployTitle": "Deploy",
+    "deployAhead": "main is {count, plural, one {# commit} other {# commits}} ahead of stable",
+    "deployUnknown": "The stable…main comparison is unavailable.",
+    "colNumber": "#",
+    "colTitle": "Title",
+    "colStatus": "Status",
+    "colPr": "Linked PR",
+    "colCreated": "Created",
+    "colClosed": "Closed",
+    "empty": "The repository has no issues.",
+    "fetchedAt": "Fetched: {time}",
+    "notConfiguredTitle": "GitHub token is not configured",
+    "notConfiguredBody": "Set the ADMINMAX_GITHUB_TOKEN (or GITHUB_TOKEN) environment variable on the backend service so this page can read the private repository {repo}. The repository can be changed via ADMINMAX_GITHUB_REPO."
+  },
+  "metadata": {
+    "title": "AI Platform",
+    "description": "AI-powered legal document analysis and contract review platform."
+  },
+  "errorPage": {
+    "title": "Something went wrong",
+    "description": "We encountered an unexpected error. This has been logged and our team will look into it.",
+    "home": "Home"
+  },
+  "notFoundPage": {
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist or may have been moved.",
+    "goHome": "Go home"
+  },
+  "oauthConsent": {
+    "title": "Authorize access",
+    "wantsAccess": "{client} is requesting access to your Eulex Max account.",
+    "unknownClient": "An application",
+    "redirectLabel": "After approval you will be redirected to:",
+    "permissionsTitle": "Requested data",
+    "scopeOpenid": "Basic sign-in (account identity)",
+    "scopeEmail": "Your email address",
+    "scopeProfile": "Basic profile information",
+    "approve": "Approve",
+    "deny": "Deny",
+    "working": "One moment…",
+    "loading": "Loading request…",
+    "missingId": "The authorization request identifier is missing.",
+    "loadFailed": "The authorization request could not be loaded. Try again from the application requesting access.",
+    "actionFailed": "The action could not be completed. Please try again."
+  },
+  "googleDrivePicker": {
+    "importFailed": "{count, plural, one {# file could not be imported.} other {# files could not be imported.}}",
+    "oauthError": "OAuth error",
+    "errorTitle": "Google Drive error",
+    "ok": "OK",
+    "pickerTitle": "Select files from Google Drive"
+  },
+  "superDoc": {
+    "modeViewing": "Viewing",
+    "modeEditing": "Editing",
+    "modeGroupLabel": "Document mode",
+    "applyFailed": "The change could not be applied — please try again.",
+    "saveFailed": "Saving failed.",
+    "savedAgoSeconds": "Saved · {n}s ago",
+    "savedAgoMinutes": "Saved · {n} min ago",
+    "savedAgoHours": "Saved · {n} h ago",
+    "changes": "Changes",
+    "autoSavePausedTitle": "Auto-save is paused until the error is resolved or you save manually.",
+    "autoSaveScheduledTitle": "Auto-save in 30 s — click Save to save now.",
+    "unsavedChanges": "Unsaved changes",
+    "saveNowTitle": "Save now (Ctrl/Cmd+S)",
+    "noChangesToSave": "No changes to save",
+    "saving": "Saving…",
+    "contentError": "The document cannot be displayed — the file may be damaged or in an unsupported format.",
+    "typeInsert": "Added",
+    "typeDelete": "Deleted",
+    "typeFormat": "Formatting",
+    "typeReplacement": "Replacement",
+    "trackedChanges": "Tracked changes",
+    "closePanel": "Close panel",
+    "noUnresolvedChanges": "No unresolved changes.",
+    "errorBoundary": {
+      "title": "The document viewer is temporarily unavailable",
+      "body": "Try loading it again or open a different document. Your conversation with Eulex Desk and your other projects keep working normally.",
+      "retry": "Try again"
+    }
+  },
+  "draftMode": {
+    "quickActions": {
+      "soften": "Soften the wording",
+      "strengthenLiability": "Strengthen liability",
+      "rephraseNeutral": "Rephrase neutrally",
+      "shorten": "Shorten"
+    },
+    "editorAria": "Draft Mode editor",
+    "badge": "Draft",
+    "selectedText": "Selected text",
+    "instructionPlaceholder": "Write instructions for the edit…",
+    "instructionAria": "Instructions for the Draft Mode edit",
+    "generateAria": "Generate edit",
+    "generating": "Generating edit…",
+    "footerHint": "Enter to confirm · Esc to cancel"
   }
 }

@@ -10,6 +10,7 @@ import {
 } from "@/app/lib/mikeApi";
 import { EmailPillInput } from "../shared/EmailPillInput";
 import { useTranslations } from "next-intl";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Share {
     id: string;
@@ -31,6 +32,16 @@ export function ShareWorkflowModal({
 }: Props) {
     const t = useTranslations("shareWorkflow");
     const tCommon = useTranslations("common");
+    const { user } = useAuth();
+    const ownerEmail = user?.email?.trim().toLowerCase() ?? null;
+
+    // Block sharing a workflow with yourself (the backend also strips it).
+    async function validateRecipient(email: string): Promise<string | null> {
+        if (ownerEmail && email.trim().toLowerCase() === ownerEmail) {
+            return t("isTheOwner", { email });
+        }
+        return null;
+    }
     const [pendingEmails, setPendingEmails] = useState<string[]>([]);
     const [allowEdit, setAllowEdit] = useState(false);
     const [existingShares, setExistingShares] = useState<Share[]>([]);
@@ -65,11 +76,11 @@ export function ShareWorkflowModal({
     }
 
     return createPortal(
-        <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/20 backdrop-blur-xs">
-            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px]">
+        <div className="fixed inset-0 z-[101] flex items-center justify-center bg-primary/20 backdrop-blur-xs">
+            <div className="w-full max-w-2xl rounded-2xl bg-background border border-border flex flex-col h-[600px]">
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
                         <span>{t("breadcrumbRoot")}</span>
                         <span>›</span>
                         <span className="truncate max-w-[220px]">
@@ -78,7 +89,7 @@ export function ShareWorkflowModal({
                         <span>›</span>
                         <span>{t("people")}</span>
                     </div>
-                    <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                    <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground">
                         <X className="h-4 w-4" />
                     </button>
                 </div>
@@ -87,46 +98,47 @@ export function ShareWorkflowModal({
                     <EmailPillInput
                         emails={pendingEmails}
                         onChange={setPendingEmails}
+                        validate={validateRecipient}
                         placeholder={t("addPeopleByEmail")}
                         autoFocus
                     />
 
                     {/* Permission toggle */}
                     <div className="flex flex-col gap-2">
-                        <span className="text-xs font-medium text-gray-700">{t("allowEditing")}</span>
+                        <span className="text-xs font-medium text-foreground">{t("allowEditing")}</span>
                         <button
                             type="button"
                             onClick={() => setAllowEdit((v) => !v)}
-                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ${allowEdit ? "bg-gray-900" : "bg-gray-200"}`}
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ${allowEdit ? "bg-primary" : "bg-secondary"}`}
                         >
-                            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${allowEdit ? "translate-x-4" : "translate-x-0"}`} />
+                            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background border border-border transition-transform duration-200 ${allowEdit ? "translate-x-4" : "translate-x-0"}`} />
                         </button>
                     </div>
 
                     {/* Existing access */}
                     <div>
-                        <p className="text-xs font-medium text-gray-700 mb-2">{t("peopleWithAccess")}</p>
+                        <p className="text-xs font-medium text-foreground mb-2">{t("peopleWithAccess")}</p>
                         {loading ? (
                             <div className="space-y-2">
                                 {[1, 2].map((i) => (
                                     <div key={i} className="flex items-center justify-between">
-                                        <div className="h-3 w-40 rounded bg-gray-100 animate-pulse" />
-                                        <div className="h-3 w-16 rounded bg-gray-100 animate-pulse" />
+                                        <div className="h-3 w-40 rounded bg-muted animate-pulse" />
+                                        <div className="h-3 w-16 rounded bg-muted animate-pulse" />
                                     </div>
                                 ))}
                             </div>
                         ) : existingShares.length === 0 ? (
-                            <p className="text-sm text-gray-400">{t("none")}</p>
+                            <p className="text-sm text-muted-foreground/70">{t("none")}</p>
                         ) : (
                             <div className="space-y-1">
                                 {existingShares.map((share) => (
                                     <div key={share.id} className="flex items-center justify-between py-1">
-                                        <span className="text-sm text-gray-700 truncate">{share.shared_with_email}</span>
+                                        <span className="text-sm text-foreground truncate">{share.shared_with_email}</span>
                                         <div className="flex items-center gap-3 shrink-0">
-                                            <span className="text-xs text-gray-400">{share.allow_edit ? t("canEdit") : t("readOnly")}</span>
+                                            <span className="text-xs text-muted-foreground/70">{share.allow_edit ? t("canEdit") : t("readOnly")}</span>
                                             <button
                                                 onClick={() => handleRemoveShare(share.id)}
-                                                className="text-gray-300 hover:text-red-500 transition-colors"
+                                                className="text-muted-foreground/70 hover:text-destructive transition-colors"
                                             >
                                                 <X className="h-3.5 w-3.5" />
                                             </button>
@@ -139,17 +151,17 @@ export function ShareWorkflowModal({
                 </div>
 
                 {/* Footer */}
-                <div className="border-t border-gray-100 px-5 py-3 flex justify-end gap-2 mt-auto shrink-0">
+                <div className="border-t border-border px-5 py-3 flex justify-end gap-2 mt-auto shrink-0">
                     <button
                         onClick={onClose}
-                        className="rounded-lg px-5 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                        className="rounded-lg px-5 py-2 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
                     >
                         {tCommon("cancel")}
                     </button>
                     <button
                         onClick={handleConfirm}
                         disabled={saving || pendingEmails.length === 0}
-                        className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40 transition-colors"
+                        className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
                     >
                         {saving ? t("sharing") : t("share")}
                     </button>

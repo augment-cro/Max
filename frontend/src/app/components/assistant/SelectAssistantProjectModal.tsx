@@ -43,18 +43,18 @@ export function SelectAssistantProjectModal({ open, onClose }: Props) {
     }
 
     return createPortal(
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 backdrop-blur-xs">
-            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px] font-sans [&_button]:font-sans">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-foreground/10 backdrop-blur-xs">
+            <div className="w-full max-w-2xl rounded-2xl bg-background border border-border flex flex-col h-[600px] font-sans [&_button]:font-sans">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
                         <span>{t("breadcrumbAssistant")}</span>
                         <span>›</span>
                         <span>{t("breadcrumbStartChat")}</span>
                     </div>
                     <button
                         onClick={onClose}
-                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -68,17 +68,17 @@ export function SelectAssistantProjectModal({ open, onClose }: Props) {
                 />
 
                 {/* Footer */}
-                <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-end gap-2">
+                <div className="border-t border-border px-4 py-3 flex items-center justify-end gap-2">
                     <button
                         onClick={onClose}
-                        className="rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100"
+                        className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent"
                     >
                         {t("cancel")}
                     </button>
                     <button
                         onClick={handleContinue}
                         disabled={!selectedId || creating}
-                        className="rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
+                        className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
                     >
                         {creating ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />

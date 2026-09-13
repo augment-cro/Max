@@ -18,7 +18,7 @@ import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.
 import type { createServerSupabase } from "../supabase";
 
 const STATE_TTL_SECONDS = 5 * 60; // 5 minutes
-const CLIENT_NAME = "Max";
+const CLIENT_NAME = "Eulex Desk";
 const CLIENT_URI = "https://github.com/willchen96/mike";
 
 function backendPublicUrl(): string {
@@ -40,11 +40,18 @@ export function oauthCallbackUrl(): string {
 // ---------------------------------------------------------------------------
 
 function getSecret(): string {
-    return (
-        process.env.DOWNLOAD_SIGNING_SECRET ??
-        process.env.SUPABASE_SECRET_KEY ??
-        "dev-secret"
-    );
+    // Fail closed, and align the fallback with downloadTokens.ts
+    // (EULEX_MCP_JWT_SECRET, always set in prod) rather than SUPABASE_SECRET_KEY,
+    // which is not guaranteed present. State tokens have a 5-minute TTL, so
+    // changing the signing secret only invalidates in-flight OAuth flows.
+    const secret =
+        process.env.DOWNLOAD_SIGNING_SECRET ?? process.env.EULEX_MCP_JWT_SECRET;
+    if (!secret) {
+        throw new Error(
+            "DOWNLOAD_SIGNING_SECRET (or EULEX_MCP_JWT_SECRET) not configured",
+        );
+    }
+    return secret;
 }
 
 function b64url(buf: Buffer): string {

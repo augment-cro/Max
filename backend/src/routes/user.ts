@@ -1,10 +1,85 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import { from } from "../lib/dbShim";
+import { syncSignupContact } from "../lib/brevoContacts";
 import { getPool } from "../lib/db";
-import { encryptApiKey, maskApiKey } from "../lib/crypto";
+import { maskApiKey } from "../lib/crypto";
+import { deleteFile } from "../lib/storage";
+import { safeErrorMessage, safeErrorLog } from "../lib/safeError";
+import {
+    isSupabaseAdminConfigured,
+    deleteSupabaseUser,
+} from "../lib/supabaseAdmin";
+import {
+    attachRateLimitHeaders,
+    getRateLimitSnapshot,
+    resolveTierLimits,
+    setRateLimitHeaders,
+    SOFT_WARNING_THRESHOLD,
+} from "../lib/rateLimit";
+import {
+    getEntitlements,
+    tierKeyForLevelId,
+    type Entitlements,
+    type TierKey,
+} from "../lib/entitlements";
+import { resolveModel, DEFAULT_TABULAR_MODEL } from "../lib/llm/models";
+import {
+    isStripeConfigured,
+    syncCustomerInvoiceDetails,
+} from "../lib/stripe";
 
 export const userRouter = Router();
+
+/**
+ * Resolve the caller's tier + entitlements for the profile response.
+ * Never throws — falls back to free defaults so a metering hiccup can't
+ * break the profile load.
+ */
+async function resolveProfileEntitlements(res: {
+    locals: Record<string, unknown>;
+}): Promise<{
+    tierLevelId: number;
+    tierKey: TierKey;
+    tierLabel: string;
+    entitlements: Entitlements;
+}> {
+    const tierLevelId =
+        typeof res.locals.tierLevelId === "number"
+            ? (res.locals.tierLevelId as number)
+            : 3;
+    const tierSlug =
+        typeof res.locals.tier === "string"
+            ? (res.locals.tier as string)
+            : null;
+    // Authoritative display label, keyed off the resolved tier_level_id
+    // (which the auth middleware sets from the UMP override). This must
+    // win over the legacy user_profiles.tier string, which is never
+    // updated on an out-of-band upgrade (UMP / homepage checkout) and so
+    // goes stale — see the overlay at the bottom of GET /profile.
+    let tierLabel = "Free";
+    try {
+        tierLabel = (await resolveTierLimits(tierLevelId, tierSlug))
+            .display_label;
+    } catch {
+        // Non-fatal — keep the safe "Free" default.
+    }
+    try {
+        return {
+            tierLevelId,
+            tierKey: tierKeyForLevelId(tierLevelId),
+            tierLabel,
+            entitlements: await getEntitlements(tierLevelId),
+        };
+    } catch {
+        return {
+            tierLevelId,
+            tierKey: tierKeyForLevelId(tierLevelId),
+            tierLabel,
+            entitlements: {},
+        };
+    }
+}
 
 const API_KEY_FIELDS = ["claude_api_key", "gemini_api_key", "openai_api_key", "mistral_api_key"] as const;
 
@@ -30,13 +105,56 @@ function serverKeyAvailability() {
 }
 
 // GET /user/profile
-userRouter.get("/profile", requireAuth, async (_req, res) => {
+// attachRateLimitHeaders (headers-only, no gating): the profile is fetched
+// on every app load, so the usage ring/banner get a fresh snapshot without
+// waiting for the first LLM call.
+userRouter.get("/profile", requireAuth, attachRateLimitHeaders(), async (_req, res) => {
   const userId = res.locals.userId as string;
   const userEmail = res.locals.userEmail as string | undefined;
+  // Tier + entitlements drive client-side feature gating; the backend
+  // still enforces every gate server-side via requireEntitlement.
+  const { tierLevelId, tierKey, tierLabel, entitlements } =
+    await resolveProfileEntitlements(res);
   const { data, error } = await from("user_profiles")
     .select("*")
     .eq("user_id", userId)
     .single();
+
+  // country + vat_number live on user_tier_state (not user_profiles)
+  // because public.user_profiles is owned by the postgres role and the
+  // IAM DB user can't ALTER it. Single query for both fields.
+  let country: string | null = null;
+  let vatNumber: string | null = null;
+  let addressLine1: string | null = null;
+  let addressCity: string | null = null;
+  let addressPostalCode: string | null = null;
+  let phone: string | null = null;
+  try {
+    const pool = await getPool();
+    const r = await pool.query<{
+      country: string | null;
+      vat_number: string | null;
+      address_line1: string | null;
+      address_city: string | null;
+      address_postal_code: string | null;
+      phone: string | null;
+    }>(
+      `SELECT country, vat_number, address_line1, address_city, address_postal_code, phone
+         FROM public.user_tier_state WHERE user_id = $1`,
+      [userId],
+    );
+    country = r.rows[0]?.country ?? null;
+    vatNumber = r.rows[0]?.vat_number ?? null;
+    addressLine1 = r.rows[0]?.address_line1 ?? null;
+    addressCity = r.rows[0]?.address_city ?? null;
+    addressPostalCode = r.rows[0]?.address_postal_code ?? null;
+    phone = r.rows[0]?.phone ?? null;
+  } catch (err) {
+    console.warn(
+      "[user/profile] country/VAT lookup failed (non-fatal):",
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   if (error || !data) {
     // Return default profile if none exists
@@ -54,8 +172,11 @@ userRouter.get("/profile", requireAuth, async (_req, res) => {
       organisation: null,
       message_credits_used: 0,
       credits_reset_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-      tier: "Free",
-      tabular_model: "claude-sonnet-4-6",
+      tier: tierLabel,
+      tier_key: tierKey,
+      tier_level_id: tierLevelId,
+      entitlements,
+      tabular_model: "claude-sonnet-5",
       // Mirrors migration 113's column default. Highest-effort thinking
       // is the safest default for a legal AI tool — better to overspend
       // on a quick question than to under-think a hard one.
@@ -63,11 +184,18 @@ userRouter.get("/profile", requireAuth, async (_req, res) => {
       // Match frontend/src/i18n/request.ts default so a freshly-paired
       // Word add-in opens in the same language as a freshly-loaded web app.
       preferred_language: "hr",
+      // country + vat_number from user_tier_state (see comment above).
+      country,
+      vat_number: vatNumber,
       claude_api_key: null,
       gemini_api_key: null,
       openai_api_key: null,
       mistral_api_key: null,
       server_keys: serverKeyAvailability(),
+      // PII Shield default — the single Anonymization mode (#14 /
+      // migration 207). The retired review/disclosure fields are no
+      // longer part of the profile contract.
+      pii_default_mode: "off",
     });
   }
 
@@ -76,17 +204,42 @@ userRouter.get("/profile", requireAuth, async (_req, res) => {
   for (const field of API_KEY_FIELDS) {
     safe[field] = maskApiKey(data[field]);
   }
+  // Normalise retired model IDs (MODEL_ALIASES) before they reach any
+  // client. A stale row like tabular_model='claude-sonnet-4-6' would
+  // otherwise leak to the web app, where getModelProvider() can't
+  // resolve it and the Analiza run button silently no-ops.
+  safe.tabular_model = resolveModel(data.tabular_model, DEFAULT_TABULAR_MODEL);
   // Always overlay the authenticated user's internal id + email so
   // the client never has to guess the format. user_profiles.user_id
   // already stores the same value, but keeping this explicit makes
   // the contract obvious to callers.
   safe.id = userId;
   if (userEmail && safe.email == null) safe.email = userEmail;
+  // Country comes from user_tier_state, not user_profiles (see top
+  // comment of this handler). Overlay last so it always reflects the
+  // separate-table value even if some legacy code path tried to
+  // persist it on user_profiles.
+  safe.country = country;
+  safe.vat_number = vatNumber;
+  safe.address_line1 = addressLine1;
+  safe.address_city = addressCity;
+  safe.address_postal_code = addressPostalCode;
+  safe.phone = phone;
   // Boolean flags only — never the env-var values themselves. This is
   // what the Settings UI keys off to skip "please paste your key" for
   // providers the operator has wired up centrally (e.g. via Secret
   // Manager → BREVO_API_KEY style mounts).
   safe.server_keys = serverKeyAvailability();
+  // Tier + resolved entitlements (authoritative tier_level_id from the
+  // auth middleware, not the legacy user_profiles.tier string). We also
+  // overlay the display `tier` string from the resolved tier label so
+  // an out-of-band upgrade (UMP override) shows immediately — the
+  // legacy user_profiles.tier column is never updated on those and so
+  // would otherwise keep showing "Free".
+  safe.tier = tierLabel;
+  safe.tier_key = tierKey;
+  safe.tier_level_id = tierLevelId;
+  safe.entitlements = entitlements;
   res.json(safe);
 });
 
@@ -95,7 +248,6 @@ userRouter.patch("/profile", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
   const allowed = [
     "display_name", "organisation", "tabular_model",
-    "claude_api_key", "gemini_api_key", "openai_api_key", "mistral_api_key",
     "message_credits_used", "credits_reset_date",
     // Locale code (e.g. "en", "hr"). Validated below before persisting.
     "preferred_language",
@@ -104,19 +256,33 @@ userRouter.patch("/profile", requireAuth, async (req, res) => {
     // would reject anything else but we'd rather drop early with a
     // clean log line than have pg raise a 23514.
     "reasoning_effort",
+    // ISO-3166-1 alpha-2 country code (e.g. "HR", "DE"). Required to
+    // pre-fill Stripe customer.address.country so automatic_tax can
+    // resolve a tax location at checkout time. Lower-cased input is
+    // accepted but normalised to upper-case before persistence.
+    "country",
+    // EU VAT registration number (e.g. "HR12345678901"). Passed to
+    // Stripe customer.tax_id so invoices can show it and zero-rate
+    // reverse-charge B2B sales. Empty string clears it.
+    "vat_number",
+    // PII Shield user default — single Anonymization mode since #14 /
+    // migration 207. The legacy pii_review_required /
+    // pii_disclosure_policy body keys are silently ignored (stale
+    // clients may still send them; the columns are no longer read).
+    "pii_default_mode",
   ];
   const SUPPORTED_LOCALES = new Set(["en", "hr"]);
   const SUPPORTED_EFFORTS = new Set(["low", "medium", "high"]);
+  const SUPPORTED_PII_MODES = new Set(["off", "standard", "strict"]);
   const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+  // BYOK was removed 2026-05 — Eulex Desk only ever uses server-level keys
+  // (Secret Manager) so the rate limiter and cost forensics stay
+  // authoritative. Any inbound api_key field is silently dropped by
+  // the allowed-list above; we don't even surface a 403 because the
+  // field name shouldn't exist in client code anymore.
   for (const key of allowed) {
     if (key in req.body) {
       let val = req.body[key];
-      // Encrypt API keys before storing
-      if (API_KEY_FIELDS.includes(key as any) && typeof val === "string" && val.trim()) {
-        // Don't re-encrypt if the value is masked (user didn't change it)
-        if (val.includes("•")) continue;
-        val = encryptApiKey(val.trim());
-      }
       // Drop unknown locales silently — clients should never send them
       // but a typo shouldn't poison the column with a value we can't
       // load messages for.
@@ -126,7 +292,77 @@ userRouter.patch("/profile", requireAuth, async (req, res) => {
       if (key === "reasoning_effort") {
         if (typeof val !== "string" || !SUPPORTED_EFFORTS.has(val)) continue;
       }
+      if (key === "country") {
+        // Empty string clears the field. Otherwise enforce ISO-3166-1
+        // alpha-2: exactly two letters. Anything else is dropped (we
+        // never want garbage in the column the Stripe checkout reads).
+        if (val == null || val === "") {
+          val = null;
+        } else if (typeof val !== "string" || !/^[A-Za-z]{2}$/.test(val)) {
+          continue;
+        } else {
+          val = val.toUpperCase();
+        }
+      }
+      if (key === "pii_default_mode") {
+        // Legacy alias from stale clients — persist the collapsed value.
+        if (val === "strict_legal") val = "strict";
+        if (typeof val !== "string" || !SUPPORTED_PII_MODES.has(val)) continue;
+      }
       updates[key] = val;
+    }
+  }
+
+  // Country lives on user_tier_state — see the matching note in the
+  // GET handler. We split it out before the user_profiles update so
+  // a single PATCH cleanly fans out to both tables (display name +
+  // country in one round-trip from the UI). A failed country upsert
+  // does *not* abort the user_profiles update — the rest of the patch
+  // still gets persisted and the client sees the country attempt as a
+  // 500 only if the country was the only field in the body.
+  // country + vat_number live on user_tier_state, not user_profiles.
+  const tierStateUpdates: {
+    country?: string | null;
+    vat_number?: string | null;
+    address_line1?: string | null;
+    address_city?: string | null;
+    address_postal_code?: string | null;
+    phone?: string | null;
+  } = {};
+  if (Object.prototype.hasOwnProperty.call(updates, "country")) {
+    tierStateUpdates.country = updates.country as string | null;
+    delete updates.country;
+  }
+  // Empty string clears the field — same rule for VAT and the billing
+  // address (tracker #35; address lives on user_tier_state too).
+  const clearable = ["vat_number", "address_line1", "address_city", "address_postal_code", "phone"] as const;
+  for (const key of clearable) {
+    if (Object.prototype.hasOwnProperty.call(updates, key)) {
+      const raw = (updates[key] as string | null | undefined) ?? null;
+      tierStateUpdates[key] = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+      delete updates[key];
+    }
+  }
+  if (Object.keys(tierStateUpdates).length > 0) {
+    try {
+      const pool = await getPool();
+      // One idempotent upsert per changed field — keeps the logic simple
+      // and ensures "send null" always clears (not COALESCE-guarded).
+      for (const [col, val] of Object.entries(tierStateUpdates)) {
+        await pool.query(
+          `INSERT INTO public.user_tier_state (user_id, ${col}, active_tier_synced_at)
+                VALUES ($1, $2, now())
+           ON CONFLICT (user_id) DO UPDATE SET ${col} = EXCLUDED.${col}`,
+          [userId, val ?? null],
+        );
+      }
+    } catch (err: any) {
+      console.error("[user/profile] country/VAT upsert failed:", err.message);
+      const onlyTierStateFields =
+        Object.keys(updates).filter((k) => k !== "updated_at").length === 0;
+      if (onlyTierStateFields) {
+        return void res.status(500).json({ detail: err.message });
+      }
     }
   }
 
@@ -151,6 +387,78 @@ userRouter.patch("/profile", requireAuth, async (req, res) => {
     .update(updates)
     .eq("user_id", userId);
   if (error) return void res.status(500).json({ detail: error.message });
+
+  // Language switch → move the contact between the hr/en Brevo lists.
+  // Awaited (not fire-and-forget) for the same Cloud Run freeze reason
+  // as the Stripe mirror below; never throws, never fails the save.
+  if ("preferred_language" in updates) {
+    const email = res.locals.userEmail as string | undefined;
+    if (email) {
+      await syncSignupContact({
+        email,
+        displayName: typeof updates.display_name === "string" ? updates.display_name : undefined,
+        language: updates.preferred_language as string,
+      });
+    }
+  }
+
+  // Mirror invoice-facing fields (company name + VAT) onto the Stripe
+  // customer, if one exists, so the *next* invoice shows them — the
+  // checkout path handles the first one. Awaited (not fire-and-forget)
+  // because Cloud Run may freeze the instance right after the response;
+  // best-effort inside, so a Stripe hiccup never fails the profile save.
+  const touchedInvoiceFields =
+    "vat_number" in tierStateUpdates ||
+    "country" in tierStateUpdates ||
+    "address_line1" in tierStateUpdates ||
+    "address_city" in tierStateUpdates ||
+    "address_postal_code" in tierStateUpdates ||
+    "phone" in tierStateUpdates ||
+    "organisation" in updates;
+  if (touchedInvoiceFields && isStripeConfigured()) {
+    try {
+      const pool = await getPool();
+      const r = await pool.query<{
+        stripe_customer_id: string | null;
+        vat_number: string | null;
+        country: string | null;
+        address_line1: string | null;
+        address_city: string | null;
+        address_postal_code: string | null;
+        phone: string | null;
+        organisation: string | null;
+      }>(
+        `SELECT s.stripe_customer_id, s.vat_number, s.country,
+                s.address_line1, s.address_city, s.address_postal_code, s.phone,
+                p.organisation
+           FROM public.user_tier_state s
+           LEFT JOIN public.user_profiles p ON p.user_id = s.user_id
+          WHERE s.user_id = $1`,
+        [userId],
+      );
+      const row = r.rows[0];
+      if (row?.stripe_customer_id) {
+        await syncCustomerInvoiceDetails(row.stripe_customer_id, {
+          name: row.organisation,
+          vatNumber: row.vat_number,
+          address: row.country
+            ? {
+                country: row.country,
+                line1: row.address_line1,
+                city: row.address_city,
+                postal_code: row.address_postal_code,
+              }
+            : null,
+          phone: row.phone,
+        });
+      }
+    } catch (err: any) {
+      console.warn(
+        "[user/profile] Stripe invoice-details sync failed (non-fatal):",
+        err.message,
+      );
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -166,15 +474,217 @@ userRouter.post("/profile", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /user/account
+// GET /user/rate-limit-status — frontend banner fallback when no
+// in-flight request has populated the cached snapshot. Returns the
+// rolling-24h numbers plus the user's tier and active credit balance.
+// Always sets `RateLimit-*` headers so the same hook that listens to
+// API replies picks this up too.
+userRouter.get("/rate-limit-status", requireAuth, async (_req, res) => {
+    const userId = res.locals.userId as string;
+    const tierLevelId =
+        typeof res.locals.tierLevelId === "number" ? res.locals.tierLevelId : 3;
+    const tierSlug = (res.locals.tier as string | undefined) ?? null;
+    try {
+        const snap = await getRateLimitSnapshot(userId, tierLevelId, tierSlug);
+        setRateLimitHeaders(res, snap);
+        const percentUsed =
+            snap.effectiveLimit > 0
+                ? Math.min(1, snap.usedTokensWindow / snap.effectiveLimit)
+                : 0;
+        const state =
+            snap.over
+                ? "hard"
+                : percentUsed >= SOFT_WARNING_THRESHOLD
+                  ? "soft"
+                  : "hidden";
+        res.json({
+            tier: { slug: snap.tier.slug, label: snap.tier.label },
+            limit_tokens: snap.effectiveLimit,
+            daily_tokens: snap.dailyTokens,
+            bonus_tokens: snap.bonusRemaining,
+            used_tokens: snap.usedTokensWindow,
+            remaining_tokens: snap.remainingTokens,
+            questions_in_window: snap.questionsInWindow,
+            next_relief_at: snap.nextReliefAt?.toISOString() ?? null,
+            percent_used: percentUsed,
+            state,
+            // Entitlement-driven (buyTokenPacks, Plus and up) — a slug
+            // check here showed Pro/Team the "upgrade to Plus" CTA.
+            topup_available: snap.topupAvailable,
+        });
+    } catch (err: any) {
+        console.error("[user/rate-limit-status]", err);
+        res.status(500).json({ detail: err?.message ?? "lookup failed" });
+    }
+});
+
+// DELETE /user/account — GDPR Art. 17 erasure.
+//
+// Relational rows are removed by FK CASCADE on `users`, but three things the
+// cascade can't do are handled first: (1) delete the user's files from GCS,
+// (2) delete the Supabase auth user (identity lives in Supabase, data in Cloud
+// SQL), and (3) strip the user's email from OTHER users' share lists.
 userRouter.delete("/account", requireAuth, async (_req, res) => {
   const userId = res.locals.userId as string;
+  const userEmail = (res.locals.userEmail as string | undefined)
+    ?.trim()
+    .toLowerCase();
   try {
     const pool = await getPool();
-    // Delete user and all associated data (cascade handles FKs)
-    await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+
+    // 1) Collect and delete storage objects (originals + converted PDFs, across
+    // all document versions). Storage paths live on `document_versions` — they
+    // were moved off `documents` (see lib/documentVersions.ts), so query only
+    // there. Best-effort — deleteFile swallows not-found.
+    const storageKeys = new Set<string>();
+    const versionPaths = await pool.query<{
+      storage_path: string | null;
+      pdf_storage_path: string | null;
+    }>(
+      `SELECT v.storage_path, v.pdf_storage_path
+         FROM public.document_versions v
+         JOIN public.documents d ON d.id = v.document_id
+        WHERE d.user_id = $1`,
+      [userId],
+    );
+    for (const row of versionPaths.rows) {
+      if (row.storage_path) storageKeys.add(row.storage_path);
+      if (row.pdf_storage_path) storageKeys.add(row.pdf_storage_path);
+    }
+    await Promise.all([...storageKeys].map((key) => deleteFile(key)));
+
+    // 2) Delete the Supabase auth user (read identity before the cascade
+    // removes it). Best-effort: never block the erasure on an auth hiccup.
+    if (isSupabaseAdminConfigured()) {
+      const idRes = await pool.query<{ supabase_user_id: string }>(
+        `SELECT supabase_user_id FROM public.user_supabase_identity WHERE user_id = $1`,
+        [userId],
+      );
+      const supabaseUserId = idRes.rows[0]?.supabase_user_id;
+      if (supabaseUserId) {
+        try {
+          await deleteSupabaseUser(supabaseUserId);
+        } catch (authErr) {
+          console.error("[user/account] supabase delete failed", safeErrorLog(authErr));
+        }
+      }
+    }
+
+    // 3) Remove this user's email from other users' share lists (the cascade
+    // only touches rows the user OWNS).
+    if (userEmail) {
+      await Promise.all([
+        pool.query(
+          `UPDATE public.projects SET shared_with = shared_with - $1
+            WHERE shared_with @> $2::jsonb`,
+          [userEmail, JSON.stringify([userEmail])],
+        ),
+        pool.query(
+          `UPDATE public.tabular_reviews SET shared_with = shared_with - $1
+            WHERE shared_with @> $2::jsonb`,
+          [userEmail, JSON.stringify([userEmail])],
+        ),
+        pool.query(
+          `DELETE FROM public.workflow_shares WHERE shared_with_email = $1`,
+          [userEmail],
+        ),
+        pool.query(
+          `DELETE FROM public.chat_shares WHERE shared_with_email = $1`,
+          [userEmail],
+        ),
+      ]);
+    }
+
+    // 4) Delete the user row — FK CASCADE clears everything they own.
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]);
     res.status(204).send();
-  } catch (err: any) {
-    res.status(500).json({ detail: err.message });
+  } catch (err) {
+    console.error("[user/account] delete failed", safeErrorLog(err));
+    res.status(500).json({ detail: safeErrorMessage(err, "Account deletion failed") });
+  }
+});
+
+// GET /user/export — GDPR Art. 20 portability. Returns a JSON snapshot of the
+// user's own data (metadata only — no binary file contents, no PII secrets or
+// encrypted mappings).
+userRouter.get("/export", requireAuth, async (_req, res) => {
+  const userId = res.locals.userId as string;
+  try {
+    const ids = (rows: Array<{ id?: string }> | null | undefined): string[] =>
+      (rows ?? []).map((r) => r.id).filter((v): v is string => typeof v === "string");
+
+    const sel = (table: string) => from(table).select("*");
+
+    // Top-level, owned by user_id.
+    const [profile, tierState, projects, documents, chats, workflows, hiddenWorkflows, reviews, reviewChats] =
+      await Promise.all([
+        sel("user_profiles").eq("user_id", userId).maybeSingle(),
+        sel("user_tier_state").eq("user_id", userId).maybeSingle(),
+        sel("projects").eq("user_id", userId),
+        sel("documents").eq("user_id", userId),
+        sel("chats").eq("user_id", userId),
+        sel("workflows").eq("user_id", userId),
+        sel("hidden_workflows").eq("user_id", userId),
+        sel("tabular_reviews").eq("user_id", userId),
+        sel("tabular_review_chats").eq("user_id", userId),
+      ]);
+
+    const projectIds = ids(projects.data as any);
+    const documentIds = ids(documents.data as any);
+    const chatIds = ids(chats.data as any);
+    const workflowIds = ids(workflows.data as any);
+    const reviewIds = ids(reviews.data as any);
+    const reviewChatIds = ids(reviewChats.data as any);
+
+    // Children, fetched by parent ids (skip empty .in() lookups).
+    const inOrEmpty = async (table: string, col: string, vals: string[]) =>
+      vals.length ? (await sel(table).in(col, vals)).data ?? [] : [];
+
+    const [
+      subfolders,
+      versions,
+      edits,
+      messages,
+      workflowShares,
+      cells,
+      reviewChatMessages,
+    ] = await Promise.all([
+      inOrEmpty("project_subfolders", "project_id", projectIds),
+      inOrEmpty("document_versions", "document_id", documentIds),
+      inOrEmpty("document_edits", "document_id", documentIds),
+      inOrEmpty("chat_messages", "chat_id", chatIds),
+      inOrEmpty("workflow_shares", "workflow_id", workflowIds),
+      inOrEmpty("tabular_cells", "review_id", reviewIds),
+      inOrEmpty("tabular_review_chat_messages", "chat_id", reviewChatIds),
+    ]);
+
+    const exportedAt = new Date().toISOString();
+    const payload = {
+      meta: { user_id: userId, exported_at: exportedAt, format: "max-gdpr-export-v1" },
+      profile: profile.data ?? null,
+      tier_state: tierState.data ?? null,
+      projects: projects.data ?? [],
+      project_subfolders: subfolders,
+      documents: documents.data ?? [],
+      document_versions: versions,
+      document_edits: edits,
+      chats: chats.data ?? [],
+      chat_messages: messages,
+      workflows: workflows.data ?? [],
+      hidden_workflows: hiddenWorkflows.data ?? [],
+      workflow_shares: workflowShares,
+      tabular_reviews: reviews.data ?? [],
+      tabular_cells: cells,
+      tabular_review_chats: reviewChats.data ?? [],
+      tabular_review_chat_messages: reviewChatMessages,
+    };
+
+    const filename = `max-export-${userId}-${exportedAt.replace(/[:.]/g, "-")}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error("[user/export] failed", safeErrorLog(err));
+    res.status(500).json({ detail: safeErrorMessage(err, "Export failed") });
   }
 });

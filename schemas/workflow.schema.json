@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/willchen96/mike/schemas/workflow.schema.json",
-  "title": "Max Workflow",
-  "description": "Declarative workflow/prompt-pack definition for Max.",
+  "title": "Eulex Desk Workflow",
+  "description": "Declarative workflow/prompt-pack definition for Eulex Desk.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "title", "type", "prompt_md"],

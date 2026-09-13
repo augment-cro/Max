@@ -5,9 +5,9 @@ import React from "react";
 const CARDINAL_ANGLES = [0, 90, 180, 270];
 const INTERCARDINAL_ANGLES = [30, 60, 120, 150, 210, 240, 300, 330];
 
-const DEFAULT_COLOR = "#0a0a0f";
-const DONE_COLOR = "#16a34a";
-const ERROR_COLOR = "#dc2626";
+const DEFAULT_COLOR = "var(--foreground)";
+const DONE_COLOR = "var(--success)";
+const ERROR_COLOR = "var(--destructive)";
 
 export function MikeIcon({
     spin = false,

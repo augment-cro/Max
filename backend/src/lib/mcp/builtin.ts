@@ -25,7 +25,13 @@ import { query } from "../db";
 import { McpHttpClient } from "./client";
 import { prefixedToolName } from "./servers";
 import type { LoadedMcpServer, McpServerRow } from "./types";
-import { mintEulexPartnerToken, isEulexPartnerConfigured } from "./partnerJwt";
+import {
+    mintEulexPartnerToken,
+    isEulexPartnerConfigured,
+    type EulexPartnerTier,
+} from "./partnerJwt";
+import { resolveMcpDailyLimit, checkAndCountMcpCall } from "./quota";
+import { tierKeyForLevelId } from "../entitlements";
 
 const SLUG_RE = /^[a-z0-9_-]{1,20}$/;
 const BUILTIN_SLUG_PREFIX = "sys-";
@@ -37,7 +43,13 @@ type BuiltinMcpEntry = {
     name?: string;
     url: string;
     headers?: Record<string, string>;
+    // `enabled: false` is the operator hard off-switch — the server is skipped
+    // entirely (not loaded, not listed, invisible to users).
     enabled?: boolean;
+    // `defaultEnabled: false` keeps the connector VISIBLE and toggleable but
+    // OFF until a user opts in (a `user_mcp_builtin_prefs` row with
+    // enabled = true). Omitted/true → default-on with opt-out (legacy behaviour).
+    defaultEnabled?: boolean;
 };
 
 type BuiltinMcpFile = {
@@ -49,6 +61,9 @@ type ParsedEntry = {
     name: string;
     url: string;
     headers: Record<string, string>;
+    // Effective default when the user has no explicit pref row. true =
+    // default-on (opt-out), false = default-off (opt-in but still listed).
+    defaultEnabled: boolean;
 };
 
 type Cache = {
@@ -68,17 +83,21 @@ let missLogged = false;
 // function returns a ParsedEntry with a freshly minted Bearer token.
 
 const EULEX_SLUG = `${BUILTIN_SLUG_PREFIX}eulex`;
-const EULEX_NAME = "Eulex.ai";
+const EULEX_NAME = "EU";
 const EULEX_URL = "https://mcp.eulex.ai/mcp";
 
-function buildEulexPartnerEntry(userId: string): ParsedEntry | null {
-    const token = mintEulexPartnerToken(userId);
+function buildEulexPartnerEntry(
+    userId: string,
+    tier: EulexPartnerTier,
+): ParsedEntry | null {
+    const token = mintEulexPartnerToken(userId, tier);
     if (!token) return null;
     return {
         slug: EULEX_SLUG,
         name: EULEX_NAME,
         url: EULEX_URL,
         headers: { Authorization: `Bearer ${token}` },
+        defaultEnabled: true,
     };
 }
 
@@ -182,12 +201,14 @@ function parseFile(raw: string, sourcePath: string): ParsedEntry[] {
         }
 
         const name = (typeof entry.name === "string" && entry.name.trim()) || key;
+        const defaultEnabled = entry.defaultEnabled !== false;
 
         out.push({
             slug: `${BUILTIN_SLUG_PREFIX}${key}`,
             name,
             url,
             headers,
+            defaultEnabled,
         });
     }
     return out;
@@ -248,12 +269,14 @@ function stubRow(e: ParsedEntry): McpServerRow {
 }
 
 /**
- * Read the user's per-builtin opt-out map. Absent rows mean the connector
- * is enabled (default). Returns a Map<slug, enabled> containing only the
- * explicit overrides — callers should treat any missing slug as `true`.
+ * Read the user's per-builtin pref map. Returns a Map<slug, enabled>
+ * containing only the EXPLICIT toggles the user has saved; a missing slug
+ * means "no preference" and the caller falls back to the connector's
+ * configured default (`defaultEnabled` — default-on for legacy entries,
+ * default-off for opt-in ones).
  *
  * Resilient on purpose: a DB hiccup must not block chat. Returns an empty
- * map (= everything default-enabled) if the lookup fails.
+ * map (= every connector falls back to its configured default) on failure.
  */
 async function readUserBuiltinPrefs(
     userId: string,
@@ -279,7 +302,7 @@ async function readUserBuiltinPrefs(
 
 /**
  * Open Streamable-HTTP clients for every built-in server the user has
- * enabled, list their tools, and return them in Max's standard
+ * enabled, list their tools, and return them in Eulex Desk's standard
  * `LoadedMcpServer` shape so the chat handler can concatenate them with
  * the per-user connectors.
  *
@@ -294,6 +317,7 @@ async function readUserBuiltinPrefs(
 export async function loadBuiltinMcpServers(
     userId?: string,
     db?: Db,
+    tierLevelId?: number,
 ): Promise<LoadedMcpServer[]> {
     let entries: ParsedEntry[];
     try {
@@ -306,16 +330,32 @@ export async function loadBuiltinMcpServers(
 
     // Inject the EULEX partner connector (hardcoded, not from mcp.json).
     // Requires MAX_EULEX_PARTNER_SECRET and a userId for JWT minting.
+    // The partner token asserts the user's real tier (free stays free);
+    // unknown tier keeps the historical "plus" default.
     if (userId && isEulexPartnerConfigured()) {
-        const eulexEntry = buildEulexPartnerEntry(userId);
+        const eulexTier: EulexPartnerTier =
+            typeof tierLevelId === "number" &&
+            tierKeyForLevelId(tierLevelId) === "free"
+                ? "free"
+                : "plus";
+        const eulexEntry = buildEulexPartnerEntry(userId, eulexTier);
         if (eulexEntry) entries = [...entries, eulexEntry];
     }
+
+    // Per-tier daily cap on built-in MCP tool calls (0 = unlimited).
+    // Resolved once per request; enforced in the callTool closures below.
+    const mcpDailyLimit = userId ? await resolveMcpDailyLimit(tierLevelId) : 0;
 
     if (entries.length === 0) return [];
 
     if (userId && db) {
         const prefs = await readUserBuiltinPrefs(userId, db);
-        entries = entries.filter((e) => prefs.get(e.slug) !== false);
+        // No pref row → fall back to the connector's configured default
+        // (default-on for legacy entries, default-off for opt-in ones).
+        entries = entries.filter((e) => {
+            const pref = prefs.get(e.slug);
+            return pref === undefined ? e.defaultEnabled : pref;
+        });
         if (entries.length === 0) return [];
     }
 
@@ -348,8 +388,32 @@ export async function loadBuiltinMcpServers(
                 row,
                 tools,
                 toolNameMap,
+                instructions: client.getInstructions(),
                 client: {
-                    callTool: (name, args) => client.callTool(name, args),
+                    callTool: async (name, args) => {
+                        if (userId && mcpDailyLimit > 0) {
+                            const over = await checkAndCountMcpCall(
+                                userId,
+                                mcpDailyLimit,
+                                name,
+                            );
+                            if (over) return over;
+                        }
+                        return client.callTool(name, args);
+                    },
+                    // Built-in tools don't emit legal-source structuredContent;
+                    // expose the rich shape as text-only for type parity.
+                    callToolRich: async (name, args) => {
+                        if (userId && mcpDailyLimit > 0) {
+                            const over = await checkAndCountMcpCall(
+                                userId,
+                                mcpDailyLimit,
+                                name,
+                            );
+                            if (over) return { text: over };
+                        }
+                        return { text: await client.callTool(name, args) };
+                    },
                     close: () => client.close(),
                 },
             };
@@ -411,6 +475,7 @@ export async function listBuiltinMcpEntriesForUser(
                 name: EULEX_NAME,
                 url: EULEX_URL,
                 headers: {},
+                defaultEnabled: true,
             },
         ];
     }
@@ -421,7 +486,9 @@ export async function listBuiltinMcpEntriesForUser(
         slug: e.slug, // already includes the 'sys-' prefix from parseFile
         name: e.name,
         url: e.url,
-        enabled: prefs.get(e.slug) !== false,
+        // Effective per-user state: explicit pref row wins; otherwise the
+        // connector's configured default (default-on, or default-off opt-in).
+        enabled: prefs.has(e.slug) ? prefs.get(e.slug) === true : e.defaultEnabled,
     }));
 }
 

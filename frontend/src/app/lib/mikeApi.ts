@@ -1,5 +1,5 @@
 /**
- * Max API client — all requests to the Node.js backend.
+ * Eulex Desk API client — all requests to the Node.js backend.
  * Attaches the OAuth JWT token for user authentication.
  */
 
@@ -9,11 +9,20 @@ import {
     refreshAccessToken,
     clearTokens,
 } from "@/lib/oauth";
+import { API_BASE } from "@/app/lib/apiBase";
+import {
+    pushFromResponseHeaders,
+    pushFromRateLimitedError,
+} from "./rateLimitStore";
 import type {
     AssistantEvent,
+    LegalDocument,
+    LegalDocumentVersion,
+    LegalSource,
+    MikeAnnotation,
     MikeChat,
     MikeChatDetailOut,
-    MikeCitationAnnotation,
+    MikeChatGroup,
     MikeDocument,
     MikeFolder,
     MikeMessage,
@@ -31,7 +40,7 @@ interface ServerMessage {
     content: string | AssistantEvent[] | null;
     files?: { filename: string; document_id?: string }[] | null;
     workflow?: { id: string; title: string } | null;
-    annotations?: MikeCitationAnnotation[] | null;
+    annotations?: MikeAnnotation[] | null;
     is_flagged?: boolean | null;
     created_at: string;
 }
@@ -40,27 +49,34 @@ interface ServerChatDetailOut {
     messages: ServerMessage[];
 }
 
-// `??` only coalesces on null/undefined — a blank env var (which happened
-// once when the Dockerfile exported `ENV NEXT_PUBLIC_API_BASE_URL=` even
-// without a build-arg) would slip through and make API_BASE = "", which
-// silently routed every backend call to the frontend origin and surfaced
-// as 404 page-not-found HTML for /chat, /user/profile, /auth/pair/start.
-// Treat whitespace-only values as unset too.
-const API_BASE =
-    process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:3001";
-
 function getAuthHeader(): Record<string, string> {
     const tokens = getStoredTokens();
     if (!tokens?.access_token) return {};
     return { Authorization: `Bearer ${tokens.access_token}` };
 }
 
-/** Sent to the API so LLM prompts match the active Next.js UI locale (en | hr). */
+/** Sent to the API so LLM prompts match the active Next.js UI locale (en | hr).
+ *
+ * Reads `<html lang>` first (set by `next-intl` on every server render from
+ * the resolved locale, including the default when no NEXT_LOCALE cookie is
+ * present). Falls back to the cookie. The cookie alone is NOT enough: if
+ * the user is on the default locale (`hr`) and has never clicked the
+ * LanguageSwitcher, the cookie is unset → backend silently defaults to
+ * `en` → every LLM-facing endpoint (column suggester, chat, …) gets a
+ * mismatched locale and replies in English. */
 function getUiLocaleHeader(): Record<string, string> {
     if (typeof document === "undefined") return {};
+    // Normalize to the base language subtag, so region variants next-intl may
+    // emit (`hr-HR`, `en-US`) still resolve to "hr"/"en" instead of silently
+    // falling through to the backend's English default.
+    const base = (v?: string | null) =>
+        (v ?? "").trim().toLowerCase().split("-")[0];
+    const fromHtml = base(document.documentElement.lang);
+    if (fromHtml === "hr" || fromHtml === "en") {
+        return { "X-UI-Locale": fromHtml };
+    }
     const m = document.cookie.match(/(?:^|; )NEXT_LOCALE=([^;]*)/);
-    const raw = m?.[1] ? decodeURIComponent(m[1]) : "";
-    const code = raw.trim();
+    const code = base(m?.[1] ? decodeURIComponent(m[1]) : "");
     if (code === "hr" || code === "en") return { "X-UI-Locale": code };
     return {};
 }
@@ -80,39 +96,63 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
             ...(initHeaders as Record<string, string> | undefined),
         },
     });
+    pushFromResponseHeaders(response);
 
-    // Auto-refresh on 401 TOKEN_EXPIRED, retry once
+    // Auto-refresh on 401, retry once. Previously gated on
+    // body.code === "TOKEN_EXPIRED" — but Cloud Run revision swaps and
+    // proxy blips produce 401s WITHOUT that code (sometimes without a
+    // JSON body at all), and those failed with no retry: a burst of
+    // dead /user/profile and /chat calls right after every deploy. Any
+    // 401 now gets one token refresh + retry; the forced re-login stays
+    // reserved for genuinely expired sessions, so a transient blip can
+    // no longer log the user out.
     if (response.status === 401) {
+        let tokenExpired = !authHeaders.Authorization;
         try {
             const body = await response.clone().json();
-            if (body?.code === "TOKEN_EXPIRED" || !authHeaders.Authorization) {
-                const refreshed = await refreshAccessToken();
-                if (refreshed) {
-                    response = await fetch(`${API_BASE}${path}`, {
-                        cache: "no-store",
-                        ...restInit,
-                        headers: {
-                            Accept: "application/json",
-                            ...localeHeaders,
-                            Authorization: `Bearer ${refreshed.access_token}`,
-                            ...(initHeaders as Record<string, string> | undefined),
-                        },
-                    });
-                } else {
-                    // Refresh failed — force re-login
-                    clearTokens();
-                    if (typeof window !== "undefined") {
-                        window.location.href = "/login";
-                    }
-                    throw new Error("Session expired. Please sign in again.");
-                }
+            if (body?.code === "TOKEN_EXPIRED") tokenExpired = true;
+        } catch {
+            /* non-JSON 401 body — still refresh + retry below */
+        }
+        const refreshed = await refreshAccessToken().catch(() => null);
+        if (refreshed) {
+            response = await fetch(`${API_BASE}${path}`, {
+                cache: "no-store",
+                ...restInit,
+                headers: {
+                    Accept: "application/json",
+                    ...localeHeaders,
+                    Authorization: `Bearer ${refreshed.access_token}`,
+                    ...(initHeaders as Record<string, string> | undefined),
+                },
+            });
+            pushFromResponseHeaders(response);
+        } else if (tokenExpired) {
+            // Refresh failed AND the session is genuinely gone — force
+            // re-login. Unknown transient 401s fall through to the
+            // regular error path instead of nuking the session.
+            clearTokens();
+            if (typeof window !== "undefined") {
+                window.location.href = "/login";
             }
-        } catch (parseErr) {
-            // If we can't parse the 401 body, just throw
+            throw new Error("Session expired. Please sign in again.");
         }
     }
 
     if (!response.ok) {
+        // Surface 429 body to the rate-limit banner (headers may be
+        // partial when the limiter returned without enriching them).
+        if (response.status === 429) {
+            try {
+                const cloned = response.clone();
+                const body = await cloned.json();
+                if (body?.code === "RATE_LIMITED") {
+                    pushFromRateLimitedError(body);
+                }
+            } catch {
+                /* non-JSON body — banner stays as-is */
+            }
+        }
         const detail = await response.text();
         throw new Error(detail || `API error: ${response.status}`);
     }
@@ -146,11 +186,79 @@ export async function startPairingCode(): Promise<PairingCode> {
 }
 
 // ---------------------------------------------------------------------------
+// Teams (Team tier)
+// ---------------------------------------------------------------------------
+
+export type TeamRole = "owner" | "admin" | "member";
+export type TeamMemberStatus = "invited" | "active" | "removed";
+
+export interface TeamMember {
+    id: string;
+    email: string;
+    role: TeamRole;
+    status: TeamMemberStatus;
+    userId: string | null;
+    displayName: string | null;
+    invitedAt: string;
+    joinedAt: string | null;
+}
+
+export interface Team {
+    id: string;
+    name: string;
+    ownerUserId: string;
+    seats: number;
+    seatsUsed: number;
+    role: TeamRole;
+    isOwner: boolean;
+    members: TeamMember[];
+}
+
+/** The caller's team (owner or member), or `{ team: null }` if none. */
+export async function getMyTeam(): Promise<{ team: Team | null }> {
+    return apiRequest<{ team: Team | null }>("/teams/mine");
+}
+
+/** Add/invite a colleague by email. Owner/admin only. */
+export async function addTeamMember(
+    teamId: string,
+    email: string,
+): Promise<{ member: TeamMember }> {
+    return apiRequest<{ member: TeamMember }>(
+        `/teams/${teamId}/members`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+        },
+    );
+}
+
+/** Remove a member (frees a seat). Owner/admin only; owner can't be removed. */
+export async function removeTeamMember(
+    teamId: string,
+    memberId: string,
+): Promise<void> {
+    await apiRequest<void>(`/teams/${teamId}/members/${memberId}`, {
+        method: "DELETE",
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 
-export async function listProjects(): Promise<MikeProject[]> {
-    return apiRequest<MikeProject[]>("/projects");
+export async function listProjects(options?: {
+    /**
+     * Ask the backend to attach each project's `documents` array (one
+     * batched query server-side). Replaces the old listProjects() +
+     * getProject()-per-project fan-out in the directory modal (#26).
+     */
+    includeDocuments?: boolean;
+}): Promise<MikeProject[]> {
+    return apiRequest<MikeProject[]>(
+        options?.includeDocuments ? "/projects?include=documents" : "/projects",
+    );
 }
 
 export async function createProject(
@@ -169,6 +277,51 @@ export async function deleteAccount(): Promise<void> {
     return apiRequest<void>("/user/account", { method: "DELETE" });
 }
 
+/**
+ * Open a Stripe Customer Portal session (invoices, payment method, plan
+ * changes — Stripe-hosted). 404 with code NO_STRIPE_CUSTOMER when the
+ * user never started a checkout; callers hide the button in that case.
+ */
+export async function createBillingPortalSession(): Promise<{ url: string }> {
+    return apiRequest<{ url: string }>("/billing/portal", { method: "POST" });
+}
+
+/** Stripe subscription snapshot from GET /billing/plus/status. */
+export interface BillingSubscriptionView {
+    id: string;
+    status: string;
+    cancel_at_period_end: boolean;
+    /** Unix seconds; null when Stripe omitted it. */
+    current_period_end: number | null;
+}
+
+export interface BillingStatus {
+    plan: string;
+    subscription: BillingSubscriptionView | null;
+}
+
+/**
+ * Current plan + live Stripe subscription snapshot (renewal date,
+ * cancel-at-period-end flag). `subscription` is null for users without
+ * an active Stripe subscription (free tier, bank transfer, comped).
+ */
+export async function getBillingStatus(): Promise<BillingStatus> {
+    return apiRequest<BillingStatus>("/billing/plus/status");
+}
+
+/**
+ * Cancel the renewal of the active subscription (any paid plan). The
+ * plan stays active until the already-paid period ends — no proration,
+ * no refund. Idempotent: repeating the call returns the current state.
+ */
+export async function cancelSubscriptionRenewal(): Promise<{
+    ok: boolean;
+    cancel_at_period_end: boolean;
+    current_period_end: number | null;
+}> {
+    return apiRequest("/billing/cancel", { method: "POST" });
+}
+
 export async function getProject(projectId: string): Promise<MikeProject> {
     return apiRequest<MikeProject>(`/projects/${projectId}`);
 }
@@ -177,7 +330,8 @@ export async function updateProject(
     projectId: string,
     payload: {
         name?: string;
-        cm_number?: string;
+        /** `null` clears the CM number; omit the key to leave it unchanged. */
+        cm_number?: string | null;
         shared_with?: string[];
     },
 ): Promise<MikeProject> {
@@ -332,6 +486,51 @@ export async function uploadDocumentVersion(
     return response.json() as Promise<MikeDocumentVersion>;
 }
 
+/**
+ * Minimalni shape `document_edits` retka koji backend vraća iz GET
+ * /single-documents/:id/edits — držimo ga uskim namjerno, jer ga
+ * SuperDoc bubble panel koristi samo za mapping ↔ tracked changes.
+ */
+export interface MikeDocumentEditRow {
+    id: string;
+    version_id: string;
+    change_id: string;
+    del_w_id: string | null;
+    ins_w_id: string | null;
+    deleted_text: string | null;
+    inserted_text: string | null;
+    status: "pending" | "accepted" | "rejected";
+    created_at: string;
+}
+
+export async function listDocumentEdits(
+    documentId: string,
+    status: "pending" | "all" = "pending",
+): Promise<MikeDocumentEditRow[]> {
+    const data = await apiRequest<{ edits: MikeDocumentEditRow[] }>(
+        `/single-documents/${documentId}/edits?status=${status}`,
+    );
+    return data.edits ?? [];
+}
+
+export async function resolveDocumentEdit(
+    documentId: string,
+    editId: string,
+    decision: "accept" | "reject",
+): Promise<{
+    ok: boolean;
+    already_resolved?: boolean;
+    status?: "accepted" | "rejected";
+    version_id: string | null;
+    download_url: string | null;
+    remaining_pending?: number;
+}> {
+    return apiRequest(
+        `/single-documents/${documentId}/edits/${editId}/${decision}`,
+        { method: "POST" },
+    );
+}
+
 export async function renameDocumentVersion(
     documentId: string,
     versionId: string,
@@ -468,12 +667,59 @@ export async function createChat(payload?: {
     });
 }
 
-export async function listChats(): Promise<MikeChat[]> {
-    return apiRequest<MikeChat[]>("/chat");
+export async function listChats(
+    status: "active" | "archived" = "active",
+): Promise<MikeChat[]> {
+    // Request the backend max (500) instead of the default 100 so users with
+    // long histories — including chats backfilled from the old WordPress
+    // assistant — see all their conversations. The sidebar caps rendering
+    // client-side ("Show more"); 500 covers every current user (max ~294).
+    return apiRequest<MikeChat[]>(`/chat?limit=500&status=${status}`);
 }
 
 export async function listProjectChats(projectId: string): Promise<MikeChat[]> {
     return apiRequest<MikeChat[]>(`/projects/${projectId}/chats`);
+}
+
+/**
+ * Fetch the full text of a legal source (EU/HR/FR) via the backend proxy,
+ * normalized to `{ title, articles[] }`. Returns null when the source has no
+ * fetch path. Throws on network/proxy errors (caller falls back to snippet).
+ */
+export async function getLegalDocument(
+    source: LegalSource,
+    temporal?: { versionId?: string; asOf?: string },
+): Promise<LegalDocument | null> {
+    if (!source.fetchPath) return null;
+    let qs = `?scope=${encodeURIComponent(source.scope)}&path=${encodeURIComponent(source.fetchPath)}`;
+    // Point-in-time view (HR): a specific version beats a date.
+    if (temporal?.versionId) {
+        qs += `&version_id=${encodeURIComponent(temporal.versionId)}`;
+    } else if (temporal?.asOf) {
+        qs += `&as_of=${encodeURIComponent(temporal.asOf)}`;
+    }
+    return apiRequest<LegalDocument>(`/legal-docs${qs}`);
+}
+
+/**
+ * Version timeline (NN history) for a cited regulation — one entry per
+ * version, oldest first. HR regulations only for now; other scopes 404 →
+ * treated as "no timeline" (returns []). Never throws for the 404 case so the
+ * panel renders normally without a timeline.
+ */
+export async function getLegalDocumentVersions(
+    scope: LegalSource["scope"],
+    regulationPath: string,
+): Promise<LegalDocumentVersion[]> {
+    const qs = `?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(regulationPath)}`;
+    try {
+        const resp = await apiRequest<{ versions: LegalDocumentVersion[] }>(
+            `/legal-docs/versions${qs}`,
+        );
+        return Array.isArray(resp?.versions) ? resp.versions : [];
+    } catch {
+        return [];
+    }
 }
 
 export async function getChat(chatId: string): Promise<MikeChatDetailOut> {
@@ -528,16 +774,63 @@ export async function setMessageFlag(
     });
 }
 
-export async function renameChat(chatId: string, title: string): Promise<void> {
+export interface ChatUpdatePatch {
+    title?: string;
+    group_id?: string | null;
+    pinned?: boolean;
+    status?: "active" | "archived";
+}
+
+export async function updateChat(
+    chatId: string,
+    patch: ChatUpdatePatch,
+): Promise<void> {
     await apiRequest(`/chat/${chatId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify(patch),
     });
 }
 
+export async function renameChat(chatId: string, title: string): Promise<void> {
+    await updateChat(chatId, { title });
+}
+
+// Soft delete — the backend flips status to 'deleted' (invisible, kept).
 export async function deleteChat(chatId: string): Promise<void> {
     await apiRequest(`/chat/${chatId}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Chat groups (sidebar history management — backend/routes/chatGroups.ts)
+// ---------------------------------------------------------------------------
+
+export async function listChatGroups(): Promise<MikeChatGroup[]> {
+    return apiRequest<MikeChatGroup[]>("/chat/groups");
+}
+
+export async function createChatGroup(name: string): Promise<MikeChatGroup> {
+    return apiRequest<MikeChatGroup>("/chat/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+    });
+}
+
+export async function updateChatGroup(
+    groupId: string,
+    patch: { name?: string; status?: "active" | "archived" },
+): Promise<MikeChatGroup> {
+    return apiRequest<MikeChatGroup>(`/chat/groups/${groupId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+    });
+}
+
+// Soft delete; cascades to every conversation in the group.
+export async function deleteChatGroup(groupId: string): Promise<void> {
+    await apiRequest(`/chat/groups/${groupId}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------
@@ -647,6 +940,30 @@ export async function getSharedChat(token: string): Promise<SharedChatView> {
     };
 }
 
+/**
+ * PUBLIC teaser for a share link — shown before sign-in. Mirrors the
+ * backend `GET /share/:token/preview`: first question + a truncated start
+ * of the first answer only. No auth required (works logged-out).
+ */
+export interface SharedChatPreview {
+    mode: "preview";
+    title: string | null;
+    owner_name: string | null;
+    question: string | null;
+    answer_excerpt: string | null;
+    answer_truncated: boolean;
+    total_messages: number;
+    expires_at: string;
+}
+
+export async function getSharedChatPreview(
+    token: string,
+): Promise<SharedChatPreview> {
+    return apiRequest<SharedChatPreview>(
+        `/share/${encodeURIComponent(token)}/preview`,
+    );
+}
+
 export async function acceptSharedChat(
     token: string,
 ): Promise<{ chat_id: string; project_id: string | null; redirect_to: string }> {
@@ -668,6 +985,143 @@ export async function generateChatTitle(
     });
 }
 
+// ---------------------------------------------------------------------------
+// Query Enrichment ("Poboljšaj pitanje")
+// ---------------------------------------------------------------------------
+
+export interface EnrichedQuery {
+    query: string;
+    /** One-sentence explanation of what makes this variant better (UI label). */
+    why: string;
+}
+
+export interface QueryEnrichmentResult {
+    /** Plain string array — backward compat. */
+    improved_queries: string[];
+    /** Richer variant array with per-query `why` explanation. */
+    improved_queries_rich: EnrichedQuery[];
+}
+
+export async function enrichQuery(
+    query: string,
+    options?: { locale?: string; documentNames?: string[] },
+): Promise<QueryEnrichmentResult> {
+    return apiRequest<QueryEnrichmentResult>("/chat/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            query,
+            locale: options?.locale,
+            document_names: options?.documentNames ?? [],
+        }),
+    });
+}
+
+/**
+ * Streaming version of enrichQuery.
+ * Yields two event types from the SSE stream:
+ *   { type: "delta",   index: number, text: string }  — query text chunk
+ *   { type: "variant", index: number, variant: EnrichedQuery } — full card
+ */
+export type EnrichStreamEvent =
+    | { type: "delta"; index: number; text: string }
+    | { type: "variant"; index: number; variant: EnrichedQuery };
+
+export async function* streamEnrichQuery(
+    query: string,
+    options?: { locale?: string; documentNames?: string[] },
+    signal?: AbortSignal,
+): AsyncGenerator<EnrichStreamEvent> {
+    const response = await fetch(`${API_BASE}/chat/enrich`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            ...getUiLocaleHeader(),
+            ...getAuthHeader(),
+        },
+        body: JSON.stringify({
+            query,
+            locale: options?.locale,
+            document_names: options?.documentNames ?? [],
+        }),
+        signal,
+        cache: "no-store",
+    });
+
+    if (!response.ok || !response.body) {
+        throw new Error(`Enrich stream failed: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? ""; // keep incomplete last line
+
+        for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (!payload) continue;
+            try {
+                const event = JSON.parse(payload) as {
+                    type: string;
+                    index?: number;
+                    text?: string;
+                    variant?: EnrichedQuery;
+                };
+                if (event.type === "done") return;
+                if (event.type === "delta" && typeof event.text === "string") {
+                    yield { type: "delta", index: event.index ?? 0, text: event.text };
+                } else if (event.type === "variant" && event.variant?.query) {
+                    yield { type: "variant", index: event.index ?? 0, variant: event.variant };
+                }
+            } catch { /* malformed event — skip */ }
+        }
+    }
+}
+
+async function streamFetch(
+    url: string,
+    init: RequestInit,
+): Promise<Response> {
+    let response = await fetch(url, init);
+    pushFromResponseHeaders(response);
+    // Streaming endpoints previously had no 401 refresh-retry (unlike
+    // apiRequest), so a send right after laptop sleep/resume surfaced the
+    // "session expired" banner even though the session was refreshable (#91).
+    if (response.status === 401) {
+        const refreshed = await refreshAccessToken().catch(() => null);
+        if (refreshed) {
+            response = await fetch(url, {
+                ...init,
+                headers: {
+                    ...(init.headers as Record<string, string> | undefined),
+                    Authorization: `Bearer ${refreshed.access_token}`,
+                },
+            });
+            pushFromResponseHeaders(response);
+        }
+    }
+    if (response.status === 429) {
+        try {
+            const body = await response.clone().json();
+            if (body?.code === "RATE_LIMITED") {
+                pushFromRateLimitedError(body);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    return response;
+}
+
 export async function streamChat(payload: {
     messages: {
         role: string;
@@ -680,11 +1134,13 @@ export async function streamChat(payload: {
     model?: string;
     /** "low" | "medium" | "high" — reasoning intensity for this turn. */
     effort?: string;
+    /** Composer web-search toggle (globe icon). Omit/true = on. */
+    web_search?: boolean;
     signal?: AbortSignal;
 }): Promise<Response> {
     const { signal, ...body } = payload;
     const authHeaders = getAuthHeader();
-    return fetch(`${API_BASE}/chat`, {
+    return streamFetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -711,13 +1167,15 @@ export async function streamProjectChat(payload: {
     model?: string;
     /** "low" | "medium" | "high" — reasoning intensity for this turn. */
     effort?: string;
+    /** Composer web-search toggle (globe icon). Omit/true = on. */
+    web_search?: boolean;
     displayed_doc?: { filename: string; document_id: string };
     attached_documents?: { filename: string; document_id: string }[];
     signal?: AbortSignal;
 }): Promise<Response> {
     const { projectId, signal, ...body } = payload;
     const authHeaders = getAuthHeader();
-    return fetch(`${API_BASE}/projects/${projectId}/chat`, {
+    return streamFetch(`${API_BASE}/projects/${projectId}/chat`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -789,10 +1247,10 @@ export async function getTabularReviewPeople(
 export async function generateTabularColumnPrompt(
     title: string,
     options?: { format?: string; documentName?: string; tags?: string[] },
-): Promise<{ prompt: string; source: "preset" | "llm" | "fallback" }> {
+): Promise<{ prompt: string; source: "llm" }> {
     return apiRequest<{
         prompt: string;
-        source: "preset" | "llm" | "fallback";
+        source: "llm";
     }>("/tabular-review/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -963,7 +1421,7 @@ export async function streamTabularChat(
     context?: { reviewTitle?: string | null; projectName?: string | null },
 ): Promise<Response> {
     const authHeaders = getAuthHeader();
-    return fetch(`${API_BASE}/tabular-review/${reviewId}/chat`, {
+    return streamFetch(`${API_BASE}/tabular-review/${reviewId}/chat`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -1102,6 +1560,15 @@ export async function listWorkflows(
     return apiRequest<MikeWorkflow[]>(`/workflows?type=${type}`);
 }
 
+/**
+ * Built-in workflow packs, re-served by the backend from the governance
+ * prompt-pack cache. Returns [] when no pack is configured (standalone
+ * core) — callers render an empty built-ins section, never an error.
+ */
+export async function listBuiltinWorkflows(): Promise<MikeWorkflow[]> {
+    return apiRequest<MikeWorkflow[]>("/workflows/builtin");
+}
+
 export async function getWorkflow(workflowId: string): Promise<MikeWorkflow> {
     return apiRequest<MikeWorkflow>(`/workflows/${workflowId}`);
 }
@@ -1202,6 +1669,397 @@ export async function deleteWorkflowShare(
 ): Promise<void> {
     await apiRequest(`/workflows/${workflowId}/shares/${shareId}`, {
         method: "DELETE",
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Custom Contexts
+//
+// Split client: context CONTENT (CRUD, sources, shares, alerts history,
+// create-from-chat) lives in an external contexts service the browser calls
+// DIRECTLY — base URL from NEXT_PUBLIC_CONTEXTS_URL, auth via a short-TTL
+// service token minted by the core (GET /service-token/contexts). The core
+// keeps only the generic runtime (toggles, attach links, badge counts),
+// which stays on apiRequest. With NEXT_PUBLIC_CONTEXTS_URL unset the whole
+// feature is dormant: list calls resolve empty and the UI hides itself.
+// ---------------------------------------------------------------------------
+
+function contextsServiceUrl(): string {
+    return (process.env.NEXT_PUBLIC_CONTEXTS_URL ?? "")
+        .trim()
+        .replace(/\/+$/, "");
+}
+
+/** Whether a contexts service is configured (drives all contexts UI). */
+export function contextsServiceEnabled(): boolean {
+    return contextsServiceUrl().length > 0;
+}
+
+// Keyed by the core access token that minted it. A sign-out or in-place
+// account switch (AuthContext swaps the user with no page reload) changes
+// the core token but NOT this module cache — so without the key check the
+// previous user's still-valid service token would be reused and the
+// contexts service would return THEIR contexts to the new user (issue #124).
+let contextsServiceToken: {
+    token: string;
+    expiresAt: number;
+    ownerToken: string;
+} | null = null;
+
+/** Clear the cached service token (call on sign-out / user change). */
+export function clearContextsServiceToken(): void {
+    contextsServiceToken = null;
+}
+
+async function getContextsServiceToken(force = false): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    const ownerToken = getStoredTokens()?.access_token ?? "";
+    if (
+        !force &&
+        contextsServiceToken &&
+        contextsServiceToken.ownerToken === ownerToken &&
+        contextsServiceToken.expiresAt - now > 60
+    ) {
+        return contextsServiceToken.token;
+    }
+    const res = await apiRequest<{ token: string; expires_in: number | null }>(
+        "/service-token/contexts",
+    );
+    contextsServiceToken = {
+        token: res.token,
+        expiresAt: now + (res.expires_in ?? 3600),
+        ownerToken,
+    };
+    return res.token;
+}
+
+/**
+ * Request against the contexts service's management API. Mirrors
+ * apiRequest's error shaping (throw with the response body text) so shared
+ * error helpers keep working; retries once with a fresh service token on a
+ * 401 (token expiry).
+ */
+async function contextsRequest<T>(
+    path: string,
+    init?: RequestInit,
+): Promise<T> {
+    if (!contextsServiceEnabled()) {
+        throw new Error("Contexts service is not configured");
+    }
+    const { headers: initHeaders, ...restInit } = init ?? {};
+    const doFetch = (token: string) =>
+        fetch(`${contextsServiceUrl()}/manage/contexts${path}`, {
+            cache: "no-store",
+            ...restInit,
+            headers: {
+                Accept: "application/json",
+                ...getUiLocaleHeader(),
+                Authorization: `Bearer ${token}`,
+                ...(initHeaders as Record<string, string> | undefined),
+            },
+        });
+
+    let response = await doFetch(await getContextsServiceToken());
+    if (response.status === 401) {
+        response = await doFetch(await getContextsServiceToken(true));
+    }
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `API error: ${response.status}`);
+    }
+    if (
+        response.status === 204 ||
+        response.headers.get("content-length") === "0"
+    ) {
+        return undefined as T;
+    }
+    return (await response.json()) as T;
+}
+
+export type ContextVisibility = "private" | "shared" | "team";
+export type ContextSourceKind =
+    | "legal_instrument"
+    | "legal_article"
+    | "caselaw"
+    | "web";
+export type ContextSourceMode = "pinned" | "retrieved";
+
+export interface MikeContext {
+    id: string;
+    owner_user_id: string;
+    team_id: string | null;
+    name: string;
+    description: string | null;
+    instructions_md: string | null;
+    alerts_enabled: boolean;
+    visibility: ContextVisibility;
+    version: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface MikeContextListItem {
+    context: MikeContext;
+    isOwner: boolean;
+    allowEdit: boolean;
+}
+
+export interface MikeContextSource {
+    id: string;
+    context_id: string;
+    kind: ContextSourceKind;
+    ref: string;
+    mode: ContextSourceMode;
+    retrieval_note: string | null;
+    sync_state: string | null;
+    label: string | null;
+    citation: string | null;
+    added_from: string;
+    position: number;
+    tracked_for_alerts: boolean;
+}
+
+export interface MikeContextShare {
+    context_id: string;
+    shared_with_email: string;
+    allow_edit: boolean;
+}
+
+export interface MikeContextToggle {
+    contextId: string;
+    enabled: boolean;
+}
+
+export function listContexts(): Promise<MikeContextListItem[]> {
+    // Dormant feature → empty list without a network call.
+    if (!contextsServiceEnabled()) return Promise.resolve([]);
+    return contextsRequest<MikeContextListItem[]>("");
+}
+
+export function createContext(input: {
+    name: string;
+    description?: string;
+    instructions_md?: string;
+    visibility?: ContextVisibility;
+}): Promise<MikeContext> {
+    return contextsRequest<MikeContext>("", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+    });
+}
+
+export function getContext(
+    id: string,
+): Promise<MikeContext & { isOwner: boolean; allowEdit: boolean }> {
+    return contextsRequest(`/${id}`);
+}
+
+export function updateContext(
+    id: string,
+    patch: Partial<
+        Pick<
+            MikeContext,
+            | "name"
+            | "description"
+            | "instructions_md"
+            | "visibility"
+            | "alerts_enabled"
+        >
+    >,
+): Promise<MikeContext> {
+    return contextsRequest<MikeContext>(`/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+    });
+}
+
+export function deleteContext(id: string): Promise<void> {
+    return contextsRequest(`/${id}`, { method: "DELETE" });
+}
+
+export function listContextSources(id: string): Promise<MikeContextSource[]> {
+    return contextsRequest(`/${id}/sources`);
+}
+
+export function addContextSource(
+    id: string,
+    input: {
+        kind: ContextSourceKind;
+        ref: string;
+        mode: ContextSourceMode;
+        retrieval_note?: string;
+        label?: string;
+        citation?: string;
+    },
+): Promise<MikeContextSource> {
+    return contextsRequest(`/${id}/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+    });
+}
+
+export function updateContextSource(
+    id: string,
+    sourceId: string,
+    patch: {
+        mode?: ContextSourceMode;
+        retrieval_note?: string;
+        tracked_for_alerts?: boolean;
+    },
+): Promise<MikeContextSource> {
+    return contextsRequest(`/${id}/sources/${sourceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+    });
+}
+
+export function removeContextSource(
+    id: string,
+    sourceId: string,
+): Promise<void> {
+    return contextsRequest(`/${id}/sources/${sourceId}`, {
+        method: "DELETE",
+    });
+}
+
+export function listContextShares(id: string): Promise<MikeContextShare[]> {
+    return contextsRequest(`/${id}/shares`);
+}
+
+export function shareContext(
+    id: string,
+    email: string,
+    allowEdit: boolean,
+): Promise<{ ok: boolean }> {
+    return contextsRequest(`/${id}/shares`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, allow_edit: allowEdit }),
+    });
+}
+
+export function unshareContext(id: string, email: string): Promise<void> {
+    return contextsRequest(`/${id}/shares`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+    });
+}
+
+export function listContextToggles(): Promise<MikeContextToggle[]> {
+    return apiRequest(`/contexts/toggles`);
+}
+
+export function setContextToggle(
+    id: string,
+    enabled: boolean,
+): Promise<{ ok: boolean }> {
+    return apiRequest(`/contexts/toggles/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+    });
+}
+
+export interface MikeContextAlertEvent {
+    id: string;
+    context_id: string;
+    context_name: string;
+    source_id: string;
+    change_type: string;
+    summary: string;
+    detected_at: string;
+}
+
+export function listContextAlerts(
+    id: string,
+): Promise<MikeContextAlertEvent[]> {
+    return contextsRequest(`/${id}/alerts`);
+}
+
+export function listContextAlertCounts(): Promise<
+    { contextId: string; count: number }[]
+> {
+    return apiRequest(`/contexts/alert-counts`);
+}
+
+// --- Attach links (Plan 5) -------------------------------------------------
+// A context attached to a workflow/project joins that run's active set; the
+// backend re-checks access per requester, so attaching never widens access.
+
+export interface MikeContextLinks {
+    workflows: string[];
+    projects: string[];
+}
+
+export function listContextLinks(id: string): Promise<MikeContextLinks> {
+    return apiRequest(`/contexts/${id}/links`);
+}
+
+export function attachContextToWorkflow(
+    id: string,
+    workflowId: string,
+): Promise<{ ok: boolean }> {
+    return apiRequest(`/contexts/${id}/workflows/${workflowId}`, {
+        method: "POST",
+    });
+}
+
+export function detachContextFromWorkflow(
+    id: string,
+    workflowId: string,
+): Promise<void> {
+    return apiRequest(`/contexts/${id}/workflows/${workflowId}`, {
+        method: "DELETE",
+    });
+}
+
+export function attachContextToProject(
+    id: string,
+    projectId: string,
+): Promise<{ ok: boolean }> {
+    return apiRequest(`/contexts/${id}/projects/${projectId}`, {
+        method: "POST",
+    });
+}
+
+export function detachContextFromProject(
+    id: string,
+    projectId: string,
+): Promise<void> {
+    return apiRequest(`/contexts/${id}/projects/${projectId}`, {
+        method: "DELETE",
+    });
+}
+
+export interface NewContextSourceInput {
+    kind: ContextSourceKind;
+    ref: string;
+    mode: ContextSourceMode;
+    retrieval_note?: string;
+    label?: string;
+    citation?: string;
+}
+
+/**
+ * Create a context from a chat: the backend validates everything up front,
+ * auto-drafts instructions_md from the transcript with a low-tier model, then
+ * creates the context + sources in one shot. The caller should let the user
+ * review/edit the drafted instructions afterwards.
+ */
+export function createContextFromChat(input: {
+    name: string;
+    transcript: string;
+    sources: NewContextSourceInput[];
+}): Promise<{ context: MikeContext; sources: MikeContextSource[] }> {
+    return contextsRequest(`/from-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
     });
 }
 
@@ -1327,7 +2185,13 @@ export async function testMcpServer(id: string): Promise<McpServerTestResult> {
 // Backend: backend/src/routes/integrations.ts
 // ─────────────────────────────────────────────────────────────────────
 
-export type IntegrationProviderId = "google_drive" | "onedrive" | "box";
+export const INTEGRATION_PROVIDER_IDS = [
+    "google_drive",
+    "onedrive",
+    "box",
+] as const;
+
+export type IntegrationProviderId = (typeof INTEGRATION_PROVIDER_IDS)[number];
 
 export interface IntegrationProviderStatus {
     id: IntegrationProviderId;
@@ -1404,4 +2268,323 @@ export async function importIntegrationFile(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ file_id, project_id }),
     });
+}
+
+export interface GoogleDrivePickerToken {
+    access_token: string;
+    app_id: string;
+    developer_key: string | null;
+}
+
+/**
+ * Fetch a short-lived OAuth token (+ the app/project number) for the
+ * Google Drive Picker iframe. The token is auto-refreshed server-side
+ * if it's within 60s of expiry.
+ */
+export async function getGoogleDrivePickerToken(): Promise<GoogleDrivePickerToken> {
+    return apiRequest<GoogleDrivePickerToken>(
+        "/integrations/google_drive/picker_token",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// PII Shield (frontend ↔ /pii proxy in the backend)
+// ---------------------------------------------------------------------------
+
+export type PiiMode = "off" | "standard" | "strict_legal" | "strict";
+
+export interface PiiEntity {
+    placeholder: string;
+    entity_type: string;
+    start: number;
+    end: number;
+    score: number;
+    original_text: string;
+}
+
+export interface PiiPreviewResult {
+    session_id: string;
+    entities: PiiEntity[];
+    entity_summary: Record<string, number>;
+    preview_text: string;
+}
+
+export interface PiiSessionMeta {
+    id: string;
+    chat_id: string | null;
+    user_id: string;
+    mode: PiiMode;
+    engine_version: string;
+    engine_compat_class: "safe" | "breaking";
+    status: "active" | "expired" | "deleted";
+    expires_at: string | null;
+    entity_summary: Record<string, number>;
+    total_entities: number;
+}
+
+export interface PiiRenderResult {
+    rendered_text: string;
+    hallucinated_placeholders: string[];
+}
+
+export interface PiiApplyOverridesResult {
+    pii_processed_text: string | null;
+    entity_summary: Record<string, number>;
+}
+
+/**
+ * Run a document through the shield for the review modal. Returns the
+ * preview text + an entity list the modal renders as a diff. Idempotent
+ * per (chat_id, document_version_id): re-calling refines the existing
+ * pii_sessions row in place.
+ */
+export async function piiPreviewDocument(args: {
+    chat_id?: string | null;
+    document_version_id: string;
+    text: string;
+    mode?: Exclude<PiiMode, "off">;
+    language?: "hr" | "en";
+}): Promise<PiiPreviewResult> {
+    return apiRequest<PiiPreviewResult>("/pii/sessions/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args),
+    });
+}
+
+/**
+ * Run a typed composer message through the shield for the review modal
+ * (#16 — strict mode reviews every input, not just documents). Same
+ * endpoint as `piiPreviewDocument` but with no `document_version_id`;
+ * the backend then records the analysis with `source: "user_input"`.
+ * Ties to the chat's session when `chat_id` is present, so the
+ * placeholders match what the actual send will produce.
+ */
+export async function piiPreviewText(args: {
+    chat_id?: string | null;
+    /** Reuse an existing standalone session (fresh assistant page) so
+     *  every pre-chat preview accumulates into ONE session that the
+     *  chat later adopts via `piiAttachChat`. */
+    session_id?: string | null;
+    text: string;
+    mode?: Exclude<PiiMode, "off">;
+    language?: "hr" | "en";
+}): Promise<PiiPreviewResult> {
+    return apiRequest<PiiPreviewResult>("/pii/sessions/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args),
+    });
+}
+
+/**
+ * Adopt a standalone preview session as THE session of a freshly
+ * created chat (#16 follow-up). Call right after `/chat/create` when
+ * the first turn went through the review modal on a fresh assistant
+ * page — without it the turn's anonymization spawns a second session
+ * and the user's disclosure approvals are silently dropped (entities
+ * stay masked). 409 = too late; treat as non-fatal.
+ */
+export async function piiAttachChat(
+    sessionId: string,
+    chatId: string,
+): Promise<{ session_id: string; chat_id: string }> {
+    return apiRequest(`/pii/sessions/${sessionId}/attach-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId }),
+    });
+}
+
+/**
+ * Run a stored document through the shield by id. Backend resolves
+ * the current version, downloads + extracts text server-side, then
+ * calls the sidecar. The browser never sees the raw text — only the
+ * masked preview + entity list for the review modal.
+ *
+ * Use this from the chat composer after a successful upload. The
+ * sister-route `piiPreviewDocument` takes raw text and is reserved
+ * for callers that already have the cleaned string in memory.
+ */
+export interface PiiDocumentPreviewResult extends PiiPreviewResult {
+    document_version_id: string;
+    filename: string;
+}
+
+export async function piiPreviewDocumentById(
+    documentId: string,
+    args: {
+        chat_id?: string | null;
+        /** See `piiPreviewText.session_id` — same fresh-page threading. */
+        session_id?: string | null;
+        mode?: Exclude<PiiMode, "off">;
+        language?: "hr" | "en";
+    } = {},
+): Promise<PiiDocumentPreviewResult> {
+    return apiRequest<PiiDocumentPreviewResult>(
+        `/pii/documents/${documentId}/preview`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args),
+        },
+    );
+}
+
+/**
+ * Persist the user's modal choices. `masked_placeholders` is the list
+ * of placeholders the user wants to KEEP masked, `approved_for_disclosure`
+ * is the list they explicitly want to reveal. Both lists are audited;
+ * `disclosure_reasons` carries the per-placeholder justification the
+ * modal collects, so the bulk path is audited like the single
+ * disclose-placeholder path (#55).
+ */
+export async function piiApplyOverrides(args: {
+    session_id: string;
+    masked_placeholders: string[];
+    approved_for_disclosure: string[];
+    disclosure_reasons?: Record<string, string>;
+    text?: string;
+}): Promise<PiiApplyOverridesResult> {
+    const { session_id, ...body } = args;
+    return apiRequest<PiiApplyOverridesResult>(
+        `/pii/sessions/${session_id}/apply-overrides`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        },
+    );
+}
+
+/**
+ * Render an assistant message that contains placeholders. Used by the
+ * lazy renderer in `AssistantMessage` so the browser only learns the
+ * originals when the user looks at the message.
+ */
+export async function piiRender(
+    session_id: string,
+    text: string,
+): Promise<PiiRenderResult> {
+    return apiRequest<PiiRenderResult>(`/pii/sessions/${session_id}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+    });
+}
+
+/** Reveal one specific placeholder (audited). Used by the message-level
+ * disclosure menu. */
+export async function piiDisclose(
+    session_id: string,
+    placeholder: string,
+    reason?: string,
+): Promise<{ placeholder: string; original: string }> {
+    return apiRequest(`/pii/sessions/${session_id}/disclose-placeholder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placeholder, reason }),
+    });
+}
+
+/** Session meta (entity summary, expiry, engine version). The badge in
+ * the composer polls this to show "12 PII hidden". */
+export async function piiSessionMeta(
+    session_id: string,
+): Promise<PiiSessionMeta> {
+    return apiRequest<PiiSessionMeta>(`/pii/sessions/${session_id}`);
+}
+
+/** Resolve `chat.id → pii_sessions.id` without forcing anonymisation.
+ *  Returns `{ session_id: null }` if no session exists yet (e.g. chat
+ *  without any PII-triggering documents). The frontend uses this to
+ *  drive `usePiiRenderedText` so assistant messages with placeholders
+ *  get de-anonymised in the browser. */
+export async function piiSessionByChatId(
+    chat_id: string,
+): Promise<{ session_id: string | null }> {
+    return apiRequest<{ session_id: string | null }>(
+        `/pii/chats/${chat_id}/session-id`,
+    );
+}
+
+/** Sidecar engine version. Used at app boot to detect a stale
+ * `engine_compat_class` and trigger a "refresh required" banner. */
+export async function piiVersion(): Promise<{
+    configured: boolean;
+    ok?: boolean;
+    engine_version?: string;
+    engine_compat_class?: "safe" | "breaking";
+}> {
+    return apiRequest("/pii/version");
+}
+
+// ---------------------------------------------------------------------------
+// Draft Mode — selection-based inline editing
+// ---------------------------------------------------------------------------
+
+export interface DraftEditAnnotation {
+    kind: "edit";
+    edit_id: string;
+    document_id: string;
+    version_id: string;
+    version_number: number | null;
+    change_id: string;
+    del_w_id: string | null;
+    ins_w_id: string | null;
+    deleted_text: string;
+    inserted_text: string;
+    context_before: string;
+    context_after: string;
+    reason?: string;
+    status: "pending";
+}
+
+export interface DraftSelectionEditResult {
+    ok: true;
+    document_id: string;
+    filename: string;
+    version_id: string;
+    version_number: number;
+    download_url: string;
+    annotations: DraftEditAnnotation[];
+    errors: { index: number; reason: string }[];
+}
+
+/**
+ * Submit a Draft Mode inline edit. The backend asks the LLM for a precise
+ * {find, replace, reason} JSON from the given selected_text + instruction,
+ * then applies it as a tracked change (w:ins / w:del) via applyTrackedEdits.
+ *
+ * @param signal Optional AbortSignal so the caller can cancel in-flight requests.
+ */
+export async function draftSelectionEdit(
+    params: {
+        document_id: string;
+        selected_text: string;
+        context_before?: string;
+        context_after?: string;
+        instruction: string;
+    },
+    signal?: AbortSignal,
+): Promise<DraftSelectionEditResult> {
+    const authHeaders = getAuthHeader();
+    const localeHeaders = getUiLocaleHeader();
+    const response = await fetch(`${API_BASE}/draft/selection-edit`, {
+        method: "POST",
+        cache: "no-store",
+        signal,
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...localeHeaders,
+            ...authHeaders,
+        },
+        body: JSON.stringify(params),
+    });
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `API error: ${response.status}`);
+    }
+    return response.json() as Promise<DraftSelectionEditResult>;
 }

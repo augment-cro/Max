@@ -6,13 +6,14 @@ import dynamic from "next/dynamic";
 import { ChevronDown, Plus, Users, X } from "lucide-react";
 import { getWorkflow, updateWorkflow } from "@/app/lib/mikeApi";
 import { ShareWorkflowModal } from "@/app/components/workflows/ShareWorkflowModal";
+import { AttachContextsButton } from "@/app/components/contexts/AttachContextsButton";
 import { WFEditColumnModal } from "@/app/components/workflows/WFEditColumnModal";
 import { WFColumnViewModal } from "@/app/components/workflows/WFColumnViewModal";
 import { AddColumnModal } from "@/app/components/tabular/AddColumnModal";
 import type { ColumnConfig, MikeWorkflow } from "@/app/components/shared/types";
 import {
-    BUILT_IN_IDS,
-    BUILT_IN_WORKFLOWS,
+    fetchBuiltinWorkflows,
+    isBuiltinWorkflowId,
 } from "@/app/components/workflows/builtinWorkflows";
 import { formatIcon, formatLabelT } from "@/app/components/tabular/columnFormat";
 import { RenameableTitle } from "@/app/components/shared/RenameableTitle";
@@ -50,7 +51,7 @@ export default function WorkflowDetailPage({ params }: Props) {
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
 
-    const isBuiltin = BUILT_IN_IDS.has(id);
+    const isBuiltin = isBuiltinWorkflowId(id);
     const readOnly =
         isBuiltin ||
         (workflow?.is_system ?? false) ||
@@ -95,15 +96,20 @@ export default function WorkflowDetailPage({ params }: Props) {
     // ---------------------------------------------------------------------------
     useEffect(() => {
         if (isBuiltin) {
-            const wf = BUILT_IN_WORKFLOWS.find((w) => w.id === id) ?? null;
-            if (!wf) {
-                setNotFound(true);
-            } else {
-                setWorkflow(wf);
-                setPromptMd(wf.prompt_md ?? "");
-                setColumns(wf.columns_config ?? []);
-            }
-            setLoading(false);
+            // Built-ins come from the backend (governance pack) — [] when
+            // no pack is configured, which lands in the not-found state.
+            fetchBuiltinWorkflows()
+                .then((builtIns) => {
+                    const wf = builtIns.find((w) => w.id === id) ?? null;
+                    if (!wf) {
+                        setNotFound(true);
+                    } else {
+                        setWorkflow(wf);
+                        setPromptMd(wf.prompt_md ?? "");
+                        setColumns(wf.columns_config ?? []);
+                    }
+                })
+                .finally(() => setLoading(false));
             return;
         }
 
@@ -198,28 +204,28 @@ export default function WorkflowDetailPage({ params }: Props) {
                 {/* Header skeleton */}
                 <div className="flex items-center justify-between px-8 py-4 shrink-0">
                     <div className="flex items-center gap-1.5">
-                        <div className="h-6 w-24 rounded bg-gray-100 animate-pulse" />
-                        <span className="text-gray-300">›</span>
-                        <div className="h-6 w-40 rounded bg-gray-100 animate-pulse" />
+                        <div className="h-6 w-24 rounded bg-muted animate-pulse" />
+                        <span className="text-muted-foreground/70">›</span>
+                        <div className="h-6 w-40 rounded bg-muted animate-pulse" />
                     </div>
                 </div>
 
                 {/* Toolbar skeleton */}
-                <div className="flex items-center px-8 h-10 border-b border-gray-200 shrink-0">
-                    <div className="h-3 w-20 rounded bg-gray-100 animate-pulse" />
+                <div className="flex items-center px-8 h-10 border-b border-border shrink-0">
+                    <div className="h-3 w-20 rounded bg-muted animate-pulse" />
                 </div>
 
                 {/* Table header skeleton */}
-                <div className="flex items-center h-8 pr-8 border-b border-gray-200 shrink-0">
-                    <div className="w-8 shrink-0 border-r border-gray-100 self-stretch" />
+                <div className="flex items-center h-8 pr-8 border-b border-border shrink-0">
+                    <div className="w-8 shrink-0 border-r border-border self-stretch" />
                     <div className="flex-1 pl-3">
-                        <div className="h-2.5 w-20 rounded bg-gray-100 animate-pulse" />
+                        <div className="h-2.5 w-20 rounded bg-muted animate-pulse" />
                     </div>
                     <div className="w-36 shrink-0">
-                        <div className="h-2.5 w-14 rounded bg-gray-100 animate-pulse" />
+                        <div className="h-2.5 w-14 rounded bg-muted animate-pulse" />
                     </div>
                     <div className="flex-1">
-                        <div className="h-2.5 w-12 rounded bg-gray-100 animate-pulse" />
+                        <div className="h-2.5 w-12 rounded bg-muted animate-pulse" />
                     </div>
                     <div className="w-8 shrink-0" />
                 </div>
@@ -227,16 +233,16 @@ export default function WorkflowDetailPage({ params }: Props) {
                 {/* Row skeletons */}
                 <div className="flex-1 overflow-hidden">
                     {[1, 2, 3, 4, 5].map((i) => (
-                        <div key={i} className="flex items-center h-10 pr-8 border-b border-gray-50">
-                            <div className="w-8 shrink-0 border-r border-gray-100 self-stretch" />
+                        <div key={i} className="flex items-center h-10 pr-8 border-b border-border">
+                            <div className="w-8 shrink-0 border-r border-border self-stretch" />
                             <div className="flex-1 pl-3 pr-4">
-                                <div className="h-3 rounded bg-gray-100 animate-pulse" style={{ width: `${40 + (i * 13) % 35}%` }} />
+                                <div className="h-3 rounded bg-muted animate-pulse" style={{ width: `${40 + (i * 13) % 35}%` }} />
                             </div>
                             <div className="w-36 shrink-0">
-                                <div className="h-3 w-16 rounded bg-gray-100 animate-pulse" />
+                                <div className="h-3 w-16 rounded bg-muted animate-pulse" />
                             </div>
                             <div className="flex-1 pr-4">
-                                <div className="h-3 rounded bg-gray-100 animate-pulse" style={{ width: `${50 + (i * 17) % 35}%` }} />
+                                <div className="h-3 rounded bg-muted animate-pulse" style={{ width: `${50 + (i * 17) % 35}%` }} />
                             </div>
                             <div className="w-8 shrink-0" />
                         </div>
@@ -249,7 +255,7 @@ export default function WorkflowDetailPage({ params }: Props) {
     if (notFound || !workflow) {
         return (
             <div className="flex-1 flex items-center justify-center">
-                <p className="text-gray-400 font-serif">{t("notFound")}</p>
+                <p className="text-muted-foreground/70 font-serif">{t("notFound")}</p>
             </div>
         );
     }
@@ -261,13 +267,13 @@ export default function WorkflowDetailPage({ params }: Props) {
                 <div className="flex items-center gap-1.5 text-2xl font-medium font-serif">
                     <button
                         onClick={() => router.push("/workflows")}
-                        className="text-gray-500 hover:text-gray-700 transition-colors"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
                     >
                         {tList("title")}
                     </button>
-                    <span className="text-gray-300">›</span>
+                    <span className="text-muted-foreground/70">›</span>
                     {readOnly ? (
-                        <span className="text-gray-900 truncate max-w-xs">{workflow.title}</span>
+                        <span className="text-foreground truncate max-w-xs">{workflow.title}</span>
                     ) : (
                         <RenameableTitle value={workflow.title} onCommit={handleTitleCommit} />
                     )}
@@ -275,7 +281,7 @@ export default function WorkflowDetailPage({ params }: Props) {
 
                 <div className="flex items-center gap-3">
                     {/* Save status */}
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-muted-foreground/70">
                         {saveStatus === "saving"
                             ? t("saving")
                             : saveStatus === "saved"
@@ -283,13 +289,19 @@ export default function WorkflowDetailPage({ params }: Props) {
                               : ""}
                     </span>
 
+                    {/* Attach contexts (custom workflows only — built-ins
+                        have non-uuid ids the link table can't store) */}
+                    {!isBuiltin && (
+                        <AttachContextsButton target="workflow" targetId={id} />
+                    )}
+
                     {/* Share button (custom workflows only) */}
                     {canShare && (
                         <button
                             onClick={() => setShareOpen(true)}
                             aria-label={t("peopleAria")}
                             title={t("peopleAria")}
-                            className="flex items-center text-gray-500 hover:text-gray-900 transition-colors"
+                            className="flex items-center text-muted-foreground hover:text-foreground transition-colors"
                         >
                             <Users className="h-4 w-4" />
                         </button>
@@ -306,8 +318,8 @@ export default function WorkflowDetailPage({ params }: Props) {
 
             {/* Read-only badge for built-in workflows */}
             {readOnly && (
-                <div className="flex items-center h-10 px-8 border-b border-gray-200">
-                    <span className="text-xs text-gray-400">{t("readOnly")}</span>
+                <div className="flex items-center h-10 px-8 border-b border-border">
+                    <span className="text-xs text-muted-foreground/70">{t("readOnly")}</span>
                 </div>
             )}
 
@@ -327,10 +339,10 @@ export default function WorkflowDetailPage({ params }: Props) {
                     <div className="flex flex-col flex-1 min-h-0">
                         {/* Toolbar */}
                         {!readOnly && (
-                            <div className="flex items-center justify-between px-8 h-10 border-b border-gray-200 shrink-0">
+                            <div className="flex items-center justify-between px-8 h-10 border-b border-border shrink-0">
                                 <button
                                     onClick={() => setAddColumnOpen(true)}
-                                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                 >
                                     <Plus className="h-3.5 w-3.5" />
                                     {t("addColumn")}
@@ -339,13 +351,13 @@ export default function WorkflowDetailPage({ params }: Props) {
                                     <div ref={colActionsRef} className="relative">
                                         <button
                                             onClick={() => setColActionsOpen((v) => !v)}
-                                            className="flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                                            className="flex items-center gap-1 text-xs font-medium text-foreground hover:text-foreground transition-colors"
                                         >
                                             {t("actions")}
                                             <ChevronDown className="h-3.5 w-3.5" />
                                         </button>
                                         {colActionsOpen && (
-                                            <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-gray-100 bg-white shadow-lg z-50 overflow-hidden">
+                                            <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-border bg-surface-elevated z-50 overflow-hidden">
                                                 <button
                                                     onClick={() => {
                                                         const next = columns
@@ -356,7 +368,7 @@ export default function WorkflowDetailPage({ params }: Props) {
                                                         setSelectedColIndices([]);
                                                         setColActionsOpen(false);
                                                     }}
-                                                    className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                                    className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 transition-colors"
                                                 >
                                                     {t("delete")}
                                                 </button>
@@ -370,19 +382,19 @@ export default function WorkflowDetailPage({ params }: Props) {
                         <div className="flex-1 min-h-0 overflow-auto">
                         <div className="min-w-max flex min-h-full flex-col">
                         {/* Table header */}
-                        <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium shrink-0 select-none">
-                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                        <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium shrink-0 select-none">
+                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                                 {columns.length > 0 && (
                                     <input
                                         type="checkbox"
                                         checked={columns.length > 0 && selectedColIndices.length === columns.length}
                                         ref={(el) => { if (el) el.indeterminate = selectedColIndices.length > 0 && selectedColIndices.length < columns.length; }}
                                         onChange={() => setSelectedColIndices(selectedColIndices.length === columns.length ? [] : columns.map((c) => c.index))}
-                                        className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                        className="h-2.5 w-2.5 rounded border-input cursor-pointer accent-primary"
                                     />
                                 )}
                             </div>
-                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                                 {t("columnTitle")}
                             </div>
                             <div className="ml-auto w-36 shrink-0">{t("format")}</div>
@@ -394,17 +406,17 @@ export default function WorkflowDetailPage({ params }: Props) {
                         <div className="flex-1">
                             {columns.length === 0 ? (
                                 <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
-                                    <Plus className="h-8 w-8 text-gray-300 mb-4" />
-                                    <p className="text-2xl font-medium font-serif text-gray-900">
+                                    <Plus className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                    <p className="text-2xl font-medium font-serif text-foreground">
                                         {t("columnsEmptyTitle")}
                                     </p>
-                                    <p className="mt-1 text-xs text-gray-400 text-left">
+                                    <p className="mt-1 text-xs text-muted-foreground/70 text-left">
                                         {t("columnsEmptyHint")}
                                     </p>
                                     {!readOnly && (
                                         <button
                                             onClick={() => setAddColumnOpen(true)}
-                                            className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md"
+                                            className="mt-4 inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
                                         >
                                             {t("addColumnCta")}
                                         </button>
@@ -418,32 +430,32 @@ export default function WorkflowDetailPage({ params }: Props) {
                                         <div
                                             key={col.index}
                                             onClick={() => readOnly ? setViewingColumn(col) : setEditingColumn(col)}
-                                            className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                            className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                                         >
                                             <div
-                                                className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${isChecked ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`}
+                                                className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${isChecked ? "bg-secondary" : "bg-background"} group-hover:bg-accent`}
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 <input
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={() => setSelectedColIndices((prev) => prev.includes(col.index) ? prev.filter((i) => i !== col.index) : [...prev, col.index])}
-                                                    className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                                    className="h-2.5 w-2.5 rounded border-input cursor-pointer accent-primary"
                                                 />
                                             </div>
-                                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${isChecked ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`}>
-                                                <span className="text-sm text-gray-800 truncate block">
+                                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${isChecked ? "bg-secondary" : "bg-background"} group-hover:bg-accent`}>
+                                                <span className="text-sm text-foreground truncate block">
                                                     {col.name}
                                                 </span>
                                             </div>
                                             <div className="ml-auto w-36 shrink-0">
-                                                <span className="inline-flex items-center gap-1.5 text-xs text-gray-600">
-                                                    <FormatIcon className="h-3.5 w-3.5 text-gray-400" />
+                                                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                    <FormatIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
                                                     {formatLabelT(col.format ?? "text", tFmt)}
                                                 </span>
                                             </div>
                                             <div className="flex-1 min-w-0 pr-4">
-                                                <span className="text-xs text-gray-500 truncate block">
+                                                <span className="text-xs text-muted-foreground truncate block">
                                                     {col.prompt}
                                                 </span>
                                             </div>
@@ -458,7 +470,7 @@ export default function WorkflowDetailPage({ params }: Props) {
                                                             setColumns(next);
                                                             saveColumns(next);
                                                         }}
-                                                        className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+                                                        className="p-1 text-muted-foreground/70 hover:text-destructive transition-colors"
                                                     >
                                                         <X className="h-3.5 w-3.5" />
                                                     </button>
@@ -509,6 +521,7 @@ export default function WorkflowDetailPage({ params }: Props) {
                 <FloatingAiPrompt
                     variant="workflow"
                     workflowId={id}
+                    columns={columns}
                     onApplied={({ title, prompt_md, columns: nextCols }) => {
                         setWorkflow((w) =>
                             w

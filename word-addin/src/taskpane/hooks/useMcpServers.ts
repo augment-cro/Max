@@ -1,5 +1,5 @@
 /**
- * Loads user MCP connectors + built-ins from Max backend — mirrors web agent
+ * Loads user MCP connectors + built-ins from Eulex Desk backend — mirrors web agent
  * `McpToggleButton` data needs. No silent mass-enable here (removed): toggles
  * in the prompt toolbar control what ships on each chat request.
  */

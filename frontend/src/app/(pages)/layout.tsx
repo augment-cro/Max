@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ChatHistoryProvider } from "@/app/contexts/ChatHistoryContext";
+import { McpServersProvider } from "@/app/contexts/McpServersContext";
+import { ContextsProvider } from "@/app/contexts/ContextsContext";
 import { SidebarContext } from "@/app/contexts/SidebarContext";
 import { AppSidebar } from "@/app/components/shared/AppSidebar";
 
@@ -37,17 +39,22 @@ export default function MikeLayout({
         }
     }, [isSidebarOpenDesktop]);
 
+    // Sync the sidebar only when the viewport crosses the md breakpoint.
+    // Mobile browsers (iOS Safari especially) fire `resize` on toolbar
+    // collapse and keyboard show/hide; reacting to every resize while
+    // narrow closed the sidebar right after the user opened it.
     useEffect(() => {
         if (typeof window === "undefined") return;
+        let wasSmall = window.innerWidth < 768;
         const handleResize = () => {
             const isSmall = window.innerWidth < 768;
-            if (isSmall && isSidebarOpen) setIsSidebarOpen(false);
-            else if (!isSmall && !isSidebarOpen)
-                setIsSidebarOpen(isSidebarOpenDesktop);
+            if (isSmall === wasSmall) return;
+            wasSmall = isSmall;
+            setIsSidebarOpen(isSmall ? false : isSidebarOpenDesktop);
         };
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
-    }, [isSidebarOpen, isSidebarOpenDesktop]);
+    }, [isSidebarOpenDesktop]);
 
     const handleSidebarToggle = () => {
         if (window.innerWidth >= 768) {
@@ -78,7 +85,7 @@ export default function MikeLayout({
     if (authLoading) {
         return (
             <div className="flex h-screen items-center justify-center">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-foreground" />
             </div>
         );
     }
@@ -87,10 +94,12 @@ export default function MikeLayout({
 
     return (
         <ChatHistoryProvider>
+            <McpServersProvider>
+            <ContextsProvider>
             <SidebarContext.Provider
                 value={{ setSidebarOpen: (open) => { setIsSidebarOpen(open); setIsSidebarOpenDesktop(open); } }}
             >
-                <div className="h-dvh bg-white flex flex-col">
+                <div className="h-dvh bg-background flex flex-col">
                     <div className="flex-1 flex overflow-hidden">
                         <AppSidebar
                             isOpen={isSidebarOpen}
@@ -98,10 +107,10 @@ export default function MikeLayout({
                         />
                         <div className="flex-1 flex flex-col h-dvh md:overflow-hidden relative w-full">
                             {/* Mobile header */}
-                            <div className="flex md:hidden items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+                            <div className="flex md:hidden items-center gap-3 px-4 py-3 border-b border-border shrink-0">
                                 <button
                                     onClick={handleSidebarToggle}
-                                    className="flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+                                    className="flex items-center justify-center w-8 h-8 rounded hover:bg-accent text-muted-foreground transition-colors"
                                 >
                                     <Menu className="h-5 w-5" />
                                 </button>
@@ -113,6 +122,8 @@ export default function MikeLayout({
                     </div>
                 </div>
             </SidebarContext.Provider>
+            </ContextsProvider>
+            </McpServersProvider>
         </ChatHistoryProvider>
     );
 }

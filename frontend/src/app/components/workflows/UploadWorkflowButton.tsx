@@ -66,13 +66,13 @@ export function UploadWorkflowButton({ onUploaded }: Props) {
                 disabled={busy}
                 aria-label={t("aria")}
                 title={t("aria")}
-                className="flex items-center justify-center p-1.5 text-gray-500 hover:text-gray-900 transition-colors disabled:opacity-40"
+                className="flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
             >
                 <Upload className="h-4 w-4" />
             </button>
             {error && (
                 <span
-                    className="ml-2 max-w-[280px] truncate text-xs text-red-500"
+                    className="ml-2 max-w-[280px] truncate text-xs text-destructive"
                     title={error}
                 >
                     {error}

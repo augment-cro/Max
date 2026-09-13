@@ -14,6 +14,9 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
+import { useUserProfile } from "@/contexts/UserProfileContext";
+import { hasProFeatures } from "@/lib/tiers";
+import { ProFeatureLock } from "@/app/components/account/ProFeatureLock";
 import {
     createMcpServer,
     deleteMcpServer,
@@ -28,6 +31,13 @@ import {
     type McpServerTestResult,
     type BuiltinMcpServer,
 } from "@/app/lib/mikeApi";
+import {
+    ConnectorEmblem,
+    CountryFlag,
+    connectorEmblem,
+    connectorFlagCode,
+} from "@/app/components/shared/CountryFlag";
+import { track } from "@/app/lib/analytics";
 
 type DraftHeader = { key: string; value: string };
 
@@ -62,6 +72,7 @@ export default function McpServersPage() {
     >({});
 
     const { confirm, alert, dialog } = useConfirmDialog();
+    const { profile } = useUserProfile();
     const t = useTranslations("connectors");
     const tc = useTranslations("common");
 
@@ -84,6 +95,13 @@ export default function McpServersPage() {
     useEffect(() => {
         reload();
     }, [reload]);
+
+    // Context (MCP) connectors are a Pro entitlement — free/plus see the
+    // upsell card instead of the management controls, matching the PII / Word
+    // add-in pattern. Pro and Legal Pro (and higher) get the full panel.
+    if (profile && !hasProFeatures(profile.tierKey)) {
+        return <ProFeatureLock kind="mcp" />;
+    }
 
     const handleAdd = async () => {
         setAddError(null);
@@ -193,6 +211,9 @@ export default function McpServersPage() {
         try {
             const result = await testMcpServer(id);
             setTestResults((r) => ({ ...r, [id]: result }));
+            if (result.ok) {
+                track("mcp_server_connected");
+            }
         } catch (err) {
             setTestResults((r) => ({
                 ...r,
@@ -271,6 +292,9 @@ export default function McpServersPage() {
         try {
             const result = await testMcpServer(server.id);
             setTestResults((r) => ({ ...r, [server.id]: result }));
+            if (result.ok) {
+                track("mcp_server_connected");
+            }
         } catch (err) {
             setTestResults((r) => ({
                 ...r,
@@ -336,7 +360,7 @@ export default function McpServersPage() {
                         )}
                     </Button>
                 </div>
-                <p className="text-sm text-gray-500 max-w-2xl">
+                <p className="text-sm text-muted-foreground max-w-2xl">
                     {t.rich("description", {
                         link: (chunks) => (
                             <a
@@ -349,7 +373,7 @@ export default function McpServersPage() {
                             </a>
                         ),
                         code: (chunks) => (
-                            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                            <code className="text-xs bg-muted px-1 py-0.5 rounded">
                                 {chunks}
                             </code>
                         ),
@@ -359,8 +383,8 @@ export default function McpServersPage() {
 
             {/* Trust trade-off warning. Surfaced once at the top so users
                 don't paste URLs and tokens for servers they haven't vetted. */}
-            <div className="border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-3 text-sm flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+            <div className="border border-warning/20 bg-warning/10 text-warning rounded-md p-3 text-sm flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-warning" />
                 <div>
                     <p className="font-medium">
                         {t("trustWarning.title")}
@@ -368,7 +392,7 @@ export default function McpServersPage() {
                     <p className="text-xs mt-1 leading-relaxed">
                         {t.rich("trustWarning.description", {
                             code: (chunks) => (
-                                <code className="bg-amber-100 px-1 py-0.5 rounded">
+                                <code className="bg-warning/10 px-1 py-0.5 rounded">
                                     {chunks}
                                 </code>
                             ),
@@ -388,11 +412,11 @@ export default function McpServersPage() {
             )}
 
             {loading ? (
-                <div className="flex items-center gap-2 text-gray-500 py-6">
+                <div className="flex items-center gap-2 text-muted-foreground py-6">
                     <Loader2 className="h-4 w-4 animate-spin" /> {t("loadingServers")}
                 </div>
             ) : loadError ? (
-                <div className="text-red-600 text-sm flex items-center gap-2">
+                <div className="text-destructive text-sm flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
                     {loadError}
                 </div>
@@ -426,7 +450,7 @@ export default function McpServersPage() {
                             ))}
                         </div>
                     ) : (
-                        <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-md py-6 text-center">
+                        <div className="text-sm text-muted-foreground border border-dashed border-border rounded-md py-6 text-center">
                             {t("noConnectors")}
                         </div>
                     )}
@@ -445,30 +469,38 @@ function BuiltinServerCard({
 }) {
     const t = useTranslations("connectors");
     const tc = useTranslations("common");
+    const flag = connectorFlagCode(server.slug);
+    const emblem = connectorEmblem(server.slug);
     return (
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="border border-border rounded-lg overflow-hidden">
             <div className="flex items-start justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-medium text-gray-900 truncate">
-                            {server.name}
+                        {flag && (
+                            <CountryFlag code={flag} label={server.name} className="text-base" />
+                        )}
+                        {!flag && emblem && (
+                            <ConnectorEmblem src={emblem.src} label={server.name} className="text-base" />
+                        )}
+                        <h3 className="font-medium text-foreground truncate">
+                            {flag ? flag.toUpperCase() : emblem ? emblem.short : server.name}
                         </h3>
-                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent text-foreground border border-border">
                             {t("card.defaultBadge")}
                         </span>
                         {server.enabled ? (
-                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-success" />
                                 {t("card.enabled")}
                             </span>
                         ) : (
-                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
                                 {t("card.disabled")}
                             </span>
                         )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5">
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
                         <Plug className="h-3 w-3 shrink-0" />
                         {t("card.builtinHint")}
                     </p>
@@ -516,9 +548,9 @@ function AddForm({
         });
 
     return (
-        <div className="border border-gray-200 rounded-md p-4 space-y-3 bg-gray-50">
+        <div className="border border-border rounded-md p-4 space-y-3 bg-muted">
             <div>
-                <label className="text-sm text-gray-600 block mb-1">{t("addForm.name")}</label>
+                <label className="text-sm text-muted-foreground block mb-1">{t("addForm.name")}</label>
                 <Input
                     placeholder={t("addForm.namePlaceholder")}
                     value={draft.name}
@@ -528,7 +560,7 @@ function AddForm({
                 />
             </div>
             <div>
-                <label className="text-sm text-gray-600 block mb-1">{t("addForm.url")}</label>
+                <label className="text-sm text-muted-foreground block mb-1">{t("addForm.url")}</label>
                 <Input
                     placeholder={t("addForm.urlPlaceholder")}
                     value={draft.url}
@@ -538,7 +570,7 @@ function AddForm({
                 />
             </div>
             <div>
-                <label className="text-sm text-gray-600 block mb-1">
+                <label className="text-sm text-muted-foreground block mb-1">
                     {t("addForm.authentication")}
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -549,12 +581,12 @@ function AddForm({
                         }
                         className={`text-left rounded-md border p-2 text-sm transition-colors ${
                             draft.auth_type === "headers"
-                                ? "border-blue-500 bg-white ring-1 ring-blue-500"
-                                : "border-gray-200 bg-white hover:bg-gray-50"
+                                ? "border-border bg-surface-elevated ring-1 ring-ring"
+                                : "border-border bg-surface-elevated hover:bg-accent"
                         }`}
                     >
                         <div className="font-medium">{t("addForm.apiKeyHeaders")}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">
+                        <div className="text-xs text-muted-foreground mt-0.5">
                             {t("addForm.apiKeyHeadersDesc")}
                         </div>
                     </button>
@@ -565,12 +597,12 @@ function AddForm({
                         }
                         className={`text-left rounded-md border p-2 text-sm transition-colors ${
                             draft.auth_type === "oauth"
-                                ? "border-blue-500 bg-white ring-1 ring-blue-500"
-                                : "border-gray-200 bg-white hover:bg-gray-50"
+                                ? "border-border bg-surface-elevated ring-1 ring-ring"
+                                : "border-border bg-surface-elevated hover:bg-accent"
                         }`}
                     >
                         <div className="font-medium">{t("addForm.oauthDiscover")}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">
+                        <div className="text-xs text-muted-foreground mt-0.5">
                             {t("addForm.oauthDiscoverDesc")}
                         </div>
                     </button>
@@ -578,13 +610,13 @@ function AddForm({
             </div>
             {draft.auth_type === "headers" && (
             <div>
-                <label className="text-sm text-gray-600 block mb-1">
+                <label className="text-sm text-muted-foreground block mb-1">
                     {t("addForm.customHeaders")}
                 </label>
-                <p className="text-xs text-gray-400 mb-2">
+                <p className="text-xs text-muted-foreground/70 mb-2">
                     {t.rich("addForm.customHeadersHint", {
                         code: (chunks) => (
-                            <code className="bg-gray-100 px-1 py-0.5 rounded">
+                            <code className="bg-muted px-1 py-0.5 rounded">
                                 {chunks}
                             </code>
                         ),
@@ -636,7 +668,7 @@ function AddForm({
             </div>
             )}
             {error && (
-                <div className="text-sm text-red-600 flex items-center gap-2">
+                <div className="text-sm text-destructive flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
                     {error}
                 </div>
@@ -645,7 +677,7 @@ function AddForm({
                 <Button
                     onClick={onSave}
                     disabled={saving}
-                    className="bg-black hover:bg-gray-900 text-white"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                     {saving ? (
                         <>
@@ -721,20 +753,20 @@ function ServerCard({
         server.auth_type === "oauth" && !server.oauth_authorized;
 
     return (
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="border border-border rounded-lg overflow-hidden">
             {/* Header */}
             <div className="flex items-start justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-medium text-gray-900 truncate">
+                        <h3 className="font-medium text-foreground truncate">
                             {displayName}
                         </h3>
                         {server.auth_type === "oauth" && (
                             <span
                                 className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
                                     server.oauth_authorized
-                                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                                        : "bg-amber-50 text-amber-700 border-amber-200"
+                                        ? "bg-accent text-foreground border-border"
+                                        : "bg-warning/10 text-warning border-warning/20"
                                 }`}
                             >
                                 {server.oauth_authorized
@@ -743,25 +775,25 @@ function ServerCard({
                             </span>
                         )}
                         {server.enabled ? (
-                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-success" />
                                 {t("card.enabled")}
                             </span>
                         ) : (
-                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
                                 {t("card.disabled")}
                             </span>
                         )}
                         {server.last_error && server.last_error !== "reauth_required" && (
-                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
                                 <AlertCircle className="h-3 w-3" />
                                 {tc("error")}
                             </span>
                         )}
                     </div>
                     {nameWasSanitized && (
-                        <p className="text-xs text-amber-700 mt-1">
+                        <p className="text-xs text-warning mt-1">
                             {t("card.nameContainedSecret")}
                         </p>
                     )}
@@ -769,17 +801,17 @@ function ServerCard({
                         href={server.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block text-xs text-gray-500 mt-1 truncate hover:text-gray-700 hover:underline"
+                        className="block text-xs text-muted-foreground mt-1 truncate hover:text-foreground hover:underline"
                     >
                         {server.url}
                     </a>
                     {server.header_keys.length > 0 && (
-                        <div className="text-xs text-gray-400 mt-1 flex flex-wrap gap-1">
+                        <div className="text-xs text-muted-foreground/70 mt-1 flex flex-wrap gap-1">
                             <span>{t("card.headers")}</span>
                             {server.header_keys.map((k) => (
                                 <span
                                     key={k}
-                                    className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600"
+                                    className="font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground"
                                 >
                                     {k}
                                 </span>
@@ -792,7 +824,7 @@ function ServerCard({
                         <Button
                             size="sm"
                             onClick={onSignIn}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground"
                         >
                             {t("card.signIn")}
                         </Button>
@@ -826,7 +858,7 @@ function ServerCard({
 
             {/* Errors / status footer */}
             {testResult && !testResult.ok && (
-                <div className="px-4 py-2 text-xs bg-red-50 text-red-700 border-t border-red-100 flex items-start gap-2">
+                <div className="px-4 py-2 text-xs bg-destructive/10 text-destructive border-t border-destructive/20 flex items-start gap-2">
                     <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                     <span className="break-words">
                         {testResult.error ?? t("card.unknownError")}
@@ -834,7 +866,7 @@ function ServerCard({
                 </div>
             )}
             {server.last_error && !testResult && (
-                <div className="px-4 py-2 text-xs bg-red-50 text-red-700 border-t border-red-100 flex items-start gap-2">
+                <div className="px-4 py-2 text-xs bg-destructive/10 text-destructive border-t border-destructive/20 flex items-start gap-2">
                     <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                     <span className="break-words flex-1">
                         {server.last_error}
@@ -843,7 +875,7 @@ function ServerCard({
                         <button
                             type="button"
                             onClick={onResetOauth}
-                            className="text-red-700 underline hover:text-red-900 shrink-0"
+                            className="text-destructive underline hover:text-destructive/80 shrink-0"
                         >
                             {t("confirm.resetOauth")}
                         </button>
@@ -858,11 +890,11 @@ function ServerCard({
                 server.auth_type === "oauth" &&
                 !server.oauth_authorized &&
                 testResult?.ok === false && (
-                    <div className="px-4 py-2 text-xs bg-amber-50 text-amber-800 border-t border-amber-100 flex items-center justify-end">
+                    <div className="px-4 py-2 text-xs bg-warning/10 text-warning border-t border-warning/20 flex items-center justify-end">
                         <button
                             type="button"
                             onClick={onResetOauth}
-                            className="underline hover:text-amber-900"
+                            className="underline hover:text-warning/80"
                         >
                             {t("confirm.resetOauthTryAgain")}
                         </button>
@@ -871,22 +903,22 @@ function ServerCard({
 
             {/* Tool list */}
             {testResult?.ok && testResult.tools && testResult.tools.length > 0 && (
-                <div className="border-t border-gray-100 bg-gray-50">
+                <div className="border-t border-border bg-muted">
                     <button
                         type="button"
                         onClick={() => setShowDetails((v) => !v)}
-                        className="w-full flex items-center justify-between px-4 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors"
+                        className="w-full flex items-center justify-between px-4 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                     >
                         <span className="flex items-center gap-2">
-                            <Check className="h-3.5 w-3.5 text-green-600" />
+                            <Check className="h-3.5 w-3.5 text-success" />
                             {t("card.discoveredTools", { count: testResult.tool_count ?? 0 })}
                         </span>
-                        <span className="text-gray-400">
+                        <span className="text-muted-foreground/70">
                             {showDetails ? t("card.hide") : t("card.show")}
                         </span>
                     </button>
                     {showDetails && (
-                        <ul className="divide-y divide-gray-100 bg-white">
+                        <ul className="divide-y divide-border bg-background">
                             {testResult.tools.map((t) => (
                                 <ToolListItem
                                     key={t.name}
@@ -917,21 +949,21 @@ function ToolListItem({
     return (
         <li className="px-4 py-2.5 text-xs">
             <div className="flex items-center justify-between gap-2">
-                <code className="font-mono text-[11px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-800">
+                <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded text-foreground">
                     {name}
                 </code>
                 {isLong && (
                     <button
                         type="button"
                         onClick={() => setExpanded((v) => !v)}
-                        className="text-gray-400 hover:text-gray-600 text-[11px] shrink-0"
+                        className="text-muted-foreground/70 hover:text-muted-foreground text-[11px] shrink-0"
                     >
                         {expanded ? t("card.toolLess") : t("card.toolMore")}
                     </button>
                 )}
             </div>
             {trimmed && (
-                <p className="text-gray-600 mt-1 leading-relaxed">{shown}</p>
+                <p className="text-muted-foreground mt-1 leading-relaxed">{shown}</p>
             )}
         </li>
     );

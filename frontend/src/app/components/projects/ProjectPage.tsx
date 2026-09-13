@@ -20,14 +20,15 @@ import {
     Table2,
     Users,
 } from "lucide-react";
+import { FullscreenLoader } from "@/app/components/shared/FullscreenLoader";
 import { HeaderSearchBtn } from "@/app/components/shared/HeaderSearchBtn";
+import { AttachContextsButton } from "@/app/components/contexts/AttachContextsButton";
 import {
     getProject,
     deleteDocument,
     createTabularReview,
     updateProject,
     listProjectChats,
-    deleteChat,
     renameChat,
     listTabularReviews,
     deleteTabularReview,
@@ -64,8 +65,10 @@ import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { UploadNewVersionModal } from "@/app/components/shared/UploadNewVersionModal";
 import { DocViewModal } from "@/app/components/shared/DocViewModal";
+import { invalidateDocxBytes } from "@/app/hooks/useFetchDocxBytes";
 import { AddNewTRModal } from "@/app/components/tabular/AddNewTRModal";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
+import { track } from "@/app/lib/analytics";
 import { useLocale, useTranslations } from "next-intl";
 
 interface Props {
@@ -101,10 +104,10 @@ function formatDate(iso: string, locale?: string) {
 
 function DocIcon({ fileType }: { fileType: string | null }) {
     if (fileType === "pdf")
-        return <FileText className="h-4 w-4 text-red-600 shrink-0" />;
+        return <FileText className="h-4 w-4 text-destructive shrink-0" />;
     if (fileType === "docx" || fileType === "doc")
-        return <File className="h-4 w-4 text-blue-600 shrink-0" />;
-    return <File className="h-4 w-4 text-gray-500 shrink-0" />;
+        return <File className="h-4 w-4 text-foreground shrink-0" />;
+    return <File className="h-4 w-4 text-muted-foreground shrink-0" />;
 }
 
 /**
@@ -139,6 +142,7 @@ function DocVersionHistory({
         displayName: string | null,
     ) => Promise<void> | void;
 }) {
+    const t = useTranslations("projectPage");
     const [editingVersionId, setEditingVersionId] = useState<string | null>(
         null,
     );
@@ -153,12 +157,12 @@ function DocVersionHistory({
     };
     if (loading && versions.length === 0) {
         return (
-            <div className="flex items-center h-9 border-b border-gray-50 text-xs text-gray-500 bg-gray-50/60">
-                <div className={`sticky left-0 z-[60] ${CHECK_W} bg-gray-50/60 self-stretch`} />
-                <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-gray-50/60 p-2`}>
+            <div className="flex items-center h-9 border-b border-border text-xs text-muted-foreground bg-muted/60">
+                <div className={`sticky left-0 z-[60] ${CHECK_W} bg-muted/60 self-stretch`} />
+                <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-muted/60 p-2`}>
                     <div className="flex items-center gap-2">
-                        <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
-                        <span>Loading versions…</span>
+                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/70" />
+                        <span>{t("loadingVersions")}</span>
                     </div>
                 </div>
             </div>
@@ -166,11 +170,11 @@ function DocVersionHistory({
     }
     if (versions.length === 0) {
         return (
-            <div className="flex items-center h-9 border-b border-gray-50 text-xs text-gray-400 bg-gray-50/60">
-                <div className={`sticky left-0 z-[60] ${CHECK_W} bg-gray-50/60 self-stretch`} />
-                <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-gray-50/60 p-2`}>
+            <div className="flex items-center h-9 border-b border-border text-xs text-muted-foreground/70 bg-muted/60">
+                <div className={`sticky left-0 z-[60] ${CHECK_W} bg-muted/60 self-stretch`} />
+                <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-muted/60 p-2`}>
                     <div>
-                        No version history.
+                        {t("noVersionHistory")}
                     </div>
                 </div>
             </div>
@@ -185,7 +189,7 @@ function DocVersionHistory({
                     typeof v.version_number === "number" && v.version_number >= 1
                         ? `${v.version_number}`
                         : v.source === "upload"
-                          ? "Original"
+                          ? t("versionOriginal")
                           : "—";
                 const displayLabel = v.display_name?.trim() || numberLabel;
                 const dt = new Date(v.created_at);
@@ -206,12 +210,12 @@ function DocVersionHistory({
                             if (isEditing) return;
                             onOpenVersion?.(v.id, displayLabel);
                         }}
-                        className="group flex items-center h-9 pr-8 border-b border-gray-50 bg-gray-50/60 text-xs text-gray-600 cursor-pointer hover:bg-gray-100/80 transition-colors"
+                        className="group flex items-center h-9 pr-8 border-b border-border bg-muted/60 text-xs text-muted-foreground cursor-pointer hover:bg-accent transition-colors"
                     >
-                        <div className={`sticky left-0 z-[60] ${CHECK_W} bg-gray-50/60 group-hover:bg-gray-100/80 self-stretch`} />
-                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-gray-50/60 group-hover:bg-gray-100/80 p-2`}>
+                        <div className={`sticky left-0 z-[60] ${CHECK_W} bg-muted/60 group-hover:bg-accent self-stretch`} />
+                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-muted/60 group-hover:bg-accent p-2`}>
                         <div className="flex items-center gap-2">
-                            <span className="shrink-0 text-gray-400">↳</span>
+                            <span className="shrink-0 text-muted-foreground/70">↳</span>
                             {isEditing ? (
                                 <input
                                     autoFocus
@@ -229,10 +233,10 @@ function DocVersionHistory({
                                         }
                                     }}
                                     onBlur={() => void commit(v.id)}
-                                    className="min-w-0 flex-1 max-w-[240px] border-b border-gray-300 bg-transparent text-xs text-gray-800 outline-none focus:border-gray-500"
+                                    className="min-w-0 flex-1 max-w-[240px] border-b border-input bg-transparent text-xs text-foreground outline-none focus:border-ring"
                                 />
                             ) : (
-                                <span className="font-medium text-gray-700 truncate">
+                                <span className="font-medium text-foreground truncate">
                                     {displayLabel}
                                 </span>
                             )}
@@ -243,15 +247,15 @@ function DocVersionHistory({
                                         setEditingVersionId(v.id);
                                         setEditingValue(v.display_name ?? "");
                                     }}
-                                    title="Rename version"
-                                    className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-700 hover:bg-gray-200 transition"
+                                    title={t("renameVersion")}
+                                    className="shrink-0 rounded p-0.5 text-muted-foreground/70 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-accent transition"
                                 >
                                     <Pencil className="h-3 w-3" />
                                 </button>
                             )}
-                            <span className="text-gray-400 truncate">{dateLabel}</span>
-                            <span className="text-gray-300 shrink-0">·</span>
-                            <span className="text-gray-400 truncate">{v.source}</span>
+                            <span className="text-muted-foreground/70 truncate">{dateLabel}</span>
+                            <span className="text-muted-foreground/70 shrink-0">·</span>
+                            <span className="text-muted-foreground/70 truncate">{v.source}</span>
                         </div>
                         </div>
                         <div className="ml-auto w-20 shrink-0" />
@@ -263,8 +267,8 @@ function DocVersionHistory({
                                     e.stopPropagation();
                                     onDownloadVersion(docId, v.id, filename);
                                 }}
-                                title="Download this version"
-                                className="flex items-center justify-center w-6 h-6 rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+                                title={t("downloadVersion")}
+                                className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                             >
                                 <Download className="h-3.5 w-3.5" />
                             </button>
@@ -279,6 +283,10 @@ function DocVersionHistory({
 export function ProjectPage({ projectId }: Props) {
     const tProject = useTranslations("projectPage");
     const tDelete = useTranslations("confirmDelete");
+    const tCommon = useTranslations("common");
+    const tRowActions = useTranslations("rowActions");
+    const tDocs = useTranslations("documents");
+    const tTRPage = useTranslations("tabularReviewsPage");
     const locale = useLocale();
     const { confirm: confirmDialog, alert: alertDialog, dialog: confirmDialogEl } =
         useConfirmDialog();
@@ -395,6 +403,10 @@ export function ProjectPage({ projectId }: Props) {
     ) {
         try {
             await uploadDocumentVersion(doc.id, file, displayName);
+            // Očisti in-memory bytesCache da otvaranje dokumenta nakon
+            // uploada nove verzije ne servira staru verziju iz cachea
+            // (isti uzrok kao kod ručnog Spremi u SuperDocView-u).
+            invalidateDocxBytes(doc.id);
             // Refresh project so doc.latest_version_number and filename advance.
             const updated = await getProject(projectId);
             setProject(updated);
@@ -471,7 +483,10 @@ export function ProjectPage({ projectId }: Props) {
     const [search, setSearch] = useState("");
 
     const router = useRouter();
-    const { saveChat } = useChatHistoryContext();
+    // Delete through the context, not mikeApi directly — the raw call left
+    // the deleted chat in the sidebar's cache, where clicking it 404s and
+    // bounces the user back here (issue #103).
+    const { saveChat, deleteChat } = useChatHistoryContext();
 
     function handleTabChange(newTab: Tab) {
         const base = `/projects/${projectId}`;
@@ -573,26 +588,65 @@ export function ProjectPage({ projectId }: Props) {
         setExpandedFolderIds((prev) => new Set([...prev, tempId]));
         if (parentId) setExpandedFolderIds((prev) => new Set([...prev, parentId]));
 
-        // Replace with real folder from API
-        const folder = await createProjectFolder(projectId, name, parentId ?? undefined);
-        setFolders((prev) => prev.map((f) => f.id === tempId ? folder : f));
-        setExpandedFolderIds((prev) => {
-            const next = new Set(prev);
-            next.delete(tempId);
-            next.add(folder.id);
-            return next;
-        });
+        // Replace with real folder from API. On failure, drop the optimistic
+        // temp row — otherwise it lingered forever and rename/delete on its
+        // `temp-…` id 404'd (issue #102).
+        try {
+            const folder = await createProjectFolder(projectId, name, parentId ?? undefined);
+            setFolders((prev) => prev.map((f) => f.id === tempId ? folder : f));
+            setExpandedFolderIds((prev) => {
+                const next = new Set(prev);
+                next.delete(tempId);
+                next.add(folder.id);
+                return next;
+            });
+        } catch (err) {
+            console.error("Failed to create folder", err);
+            setFolders((prev) => prev.filter((f) => f.id !== tempId));
+            setExpandedFolderIds((prev) => {
+                const next = new Set(prev);
+                next.delete(tempId);
+                return next;
+            });
+        }
     }
 
     async function handleRenameFolder(folderId: string) {
         const name = renameFolderValue.trim();
         setRenamingFolderId(null);
         if (!name) return;
+        const prevFolders = folders;
         setFolders((prev) => prev.map((f) => f.id === folderId ? { ...f, name } : f));
-        await renameProjectFolder(projectId, folderId, name);
+        try {
+            await renameProjectFolder(projectId, folderId, name);
+        } catch (err) {
+            // Roll back so the UI doesn't show a change the server rejected
+            // (which silently reverted on reload, issue #102).
+            console.error("Failed to rename folder", err);
+            setFolders(prevFolders);
+        }
+        return;
     }
 
     async function handleDeleteFolder(folderId: string) {
+        // Backend owner-gates folder deletion (#26) and would 404 silently;
+        // surface a clear permission warning instead (mirrors handleTitleCommit).
+        if (project && project.is_owner === false) {
+            setOwnerOnlyAction(tProject("deleteFolderAction"));
+            return;
+        }
+        // Folder delete cascades every subfolder — confirm first (issue #99).
+        const folder = folders.find((f) => f.id === folderId);
+        const ok = await confirmDialog({
+            title: tDelete("folderTitle"),
+            message: tDelete("folderBodyNamed", {
+                title: folder?.name ?? "",
+            }),
+            confirmLabel: tDelete("deleteAction"),
+            destructive: true,
+        });
+        if (!ok) return;
+
         // Collect all subfolder IDs that will cascade-delete
         const toDelete = new Set<string>();
         function collectIds(id: string) {
@@ -628,13 +682,20 @@ export function ProjectPage({ projectId }: Props) {
     }
 
     async function handleRemoveDocFromFolder(docId: string) {
+        const prevProject = project;
         setProject((prev) => prev ? {
             ...prev,
             documents: (prev.documents ?? []).map((d) =>
                 d.id === docId ? { ...d, folder_id: null } : d,
             ),
         } : prev);
-        await moveDocumentToFolder(projectId, docId, null);
+        try {
+            await moveDocumentToFolder(projectId, docId, null);
+        } catch (err) {
+            // Roll back the optimistic move on failure (issue #102).
+            console.error("Failed to move document out of folder", err);
+            setProject(prevProject);
+        }
     }
 
     async function handleRemoveDoc(docId: string) {
@@ -642,9 +703,19 @@ export function ProjectPage({ projectId }: Props) {
         // Backend only lets the doc creator delete. Warn the requester
         // instead of letting the request 404 silently.
         if (doc && user?.id && doc.user_id && doc.user_id !== user.id) {
-            setOwnerOnlyAction("delete this document");
+            setOwnerOnlyAction(tProject("deleteDocument"));
             return;
         }
+        // Permanent, all-versions delete — confirm first (issue #99).
+        const ok = await confirmDialog({
+            title: tDelete("documentTitle"),
+            message: tDelete("documentBodyNamed", {
+                title: doc?.filename ?? "",
+            }),
+            confirmLabel: tDelete("deleteAction"),
+            destructive: true,
+        });
+        if (!ok) return;
         await deleteDocument(docId);
         setProject((prev) =>
             prev ? { ...prev, documents: prev.documents?.filter((d) => d.id !== docId) || [] } : prev,
@@ -682,6 +753,7 @@ export function ProjectPage({ projectId }: Props) {
                 columns_config: columnsConfig ?? [],
                 project_id: projectId,
             });
+            track("tabular_review_created", { from_workflow: false });
             router.push(`/projects/${projectId}/tabular-reviews/${review.id}`);
         } finally {
             setCreatingReview(false);
@@ -693,7 +765,7 @@ export function ProjectPage({ projectId }: Props) {
         // Server-side this would 404 silently for non-owners; surface a
         // clear permission warning instead.
         if (project && project.is_owner === false) {
-            setOwnerOnlyAction("rename this project");
+            setOwnerOnlyAction(tProject("renameProject"));
             return;
         }
         setProject((prev) => (prev ? { ...prev, name: newName } : prev));
@@ -706,7 +778,7 @@ export function ProjectPage({ projectId }: Props) {
         if (!trimmed) return;
         const chat = chats.find((c) => c.id === chatId);
         if (chat && user?.id && chat.user_id !== user.id) {
-            setOwnerOnlyAction("rename this chat");
+            setOwnerOnlyAction(tProject("renameChat"));
             return;
         }
         setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title: trimmed } : c)));
@@ -797,6 +869,16 @@ export function ProjectPage({ projectId }: Props) {
             return !d || !d.user_id || !user?.id || d.user_id === user.id;
         });
         const blocked = ids.length - owned.length;
+        // Bulk permanent delete — confirm first, like chats/reviews (#99).
+        if (owned.length > 0) {
+            const ok = await confirmDialog({
+                title: tDelete("documentsTitle"),
+                message: tDelete("documentsBody", { count: owned.length }),
+                confirmLabel: tDelete("deleteAction"),
+                destructive: true,
+            });
+            if (!ok) return;
+        }
         setSelectedDocIds([]);
         await Promise.all(owned.map((id) => deleteDocument(id).catch(() => {})));
         setProject((prev) =>
@@ -804,7 +886,7 @@ export function ProjectPage({ projectId }: Props) {
         );
         if (blocked > 0) {
             setOwnerOnlyAction(
-                `delete ${blocked} of the selected documents — only the document creator can delete a document`,
+                tDocs("ownerOnlyDeletePartial", { count: blocked }),
             );
         }
     }
@@ -831,7 +913,7 @@ export function ProjectPage({ projectId }: Props) {
         setChats((prev) => prev.filter((c) => !owned.includes(c.id)));
         if (blocked > 0) {
             setOwnerOnlyAction(
-                `delete ${blocked} of the selected chats — only the chat creator can delete a chat`,
+                tProject("ownerOnlyDeleteChatsPartial", { count: blocked }),
             );
         }
     }
@@ -858,7 +940,7 @@ export function ProjectPage({ projectId }: Props) {
         setProjectReviews((prev) => prev.filter((r) => !owned.includes(r.id)));
         if (blocked > 0) {
             setOwnerOnlyAction(
-                `delete ${blocked} of the selected reviews — only the review creator can delete a review`,
+                tTRPage("ownerOnlyDeletePartial", { count: blocked }),
             );
         }
     }
@@ -882,21 +964,33 @@ export function ProjectPage({ projectId }: Props) {
         if (docId) {
             const doc = (project?.documents ?? []).find((d) => d.id === docId);
             if (!doc || (doc.folder_id ?? null) === targetFolderId) return;
+            const prevProject = project;
             setProject((prev) => prev ? {
                 ...prev,
                 documents: (prev.documents ?? []).map((d) =>
                     d.id === docId ? { ...d, folder_id: targetFolderId } : d,
                 ),
             } : prev);
-            await moveDocumentToFolder(projectId, docId, targetFolderId);
+            try {
+                await moveDocumentToFolder(projectId, docId, targetFolderId);
+            } catch (err) {
+                console.error("Failed to move document", err);
+                setProject(prevProject); // roll back (issue #102)
+            }
         } else if (subFolderId && subFolderId !== targetFolderId) {
             if (targetFolderId !== null && wouldCreateCycle(subFolderId, targetFolderId)) return;
             const folder = folders.find((f) => f.id === subFolderId);
             if (!folder || (folder.parent_folder_id ?? null) === targetFolderId) return;
+            const prevFolders = folders;
             setFolders((prev) => prev.map((f) =>
                 f.id === subFolderId ? { ...f, parent_folder_id: targetFolderId } : f,
             ));
-            await moveSubfolderToFolder(projectId, subFolderId, targetFolderId);
+            try {
+                await moveSubfolderToFolder(projectId, subFolderId, targetFolderId);
+            } catch (err) {
+                console.error("Failed to move folder", err);
+                setFolders(prevFolders); // roll back (issue #102)
+            }
         }
     }
 
@@ -907,17 +1001,17 @@ export function ProjectPage({ projectId }: Props) {
         return (
             <div
                 ref={newFolderInputRef}
-                className="group flex items-center h-10 pr-8 border-b border-gray-50"
+                className="group flex items-center h-10 pr-8 border-b border-border"
                 key={`new-folder-${parentId ?? "root"}`}
             >
-                <div className={`sticky left-0 z-[60] ${CHECK_W} bg-white self-stretch`} />
-                <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white p-2`}>
+                <div className={`sticky left-0 z-[60] ${CHECK_W} bg-background self-stretch`} />
+                <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background p-2`}>
                     <div className="flex items-center gap-1.5">
-                        <ChevronRight className="h-3.5 w-3.5 text-gray-300 shrink-0" />
-                        <FolderPlus className="h-4 w-4 text-amber-400 shrink-0" />
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+                        <FolderPlus className="h-4 w-4 text-warning shrink-0" />
                         <input
                             autoFocus
-                            className="flex-1 min-w-0 text-sm text-gray-800 bg-transparent outline-none border-b border-gray-300"
+                            className="flex-1 min-w-0 text-sm text-foreground bg-transparent outline-none border-b border-input"
                             placeholder={tProject("folderName")}
                             value={newFolderName}
                             onChange={(e) => setNewFolderName(e.target.value)}
@@ -963,21 +1057,27 @@ export function ProjectPage({ projectId }: Props) {
                                     e.dataTransfer.setData("application/mike-doc", doc.id);
                                     e.dataTransfer.effectAllowed = "move";
                                 }}
+                                // Swallow drag-over/drop on a doc row so a drop
+                                // ONTO another document doesn't bubble to the
+                                // root container and yank the dragged doc out to
+                                // the project root (issue #105).
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                 onClick={() => {
                                     setViewingDocVersion(null);
                                     setViewingDoc(doc);
                                 }}
                                 onContextMenu={(e) => e.stopPropagation()}
-                            className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                            className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                             >
                                 {(() => {
                                     const rowBg = selectedDocIds.includes(doc.id)
-                                        ? "bg-gray-50"
-                                        : "bg-white";
+                                        ? "bg-secondary"
+                                        : "bg-background";
                                     return (
                                         <>
                                 <div
-                                    className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-gray-50`}
+                                    className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-accent`}
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     <input
@@ -990,52 +1090,52 @@ export function ProjectPage({ projectId }: Props) {
                                                     : [...prev, doc.id],
                                             )
                                         }
-                                        className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                        className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                                     />
                                 </div>
-                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-gray-50`}>
+                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-accent`}>
                                 <div className="flex items-center gap-2">
                                     {isProcessing ? (
-                                        <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
+                                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70 shrink-0" />
                                     ) : isError ? (
-                                        <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                                        <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
                                     ) : (
                                         <DocIcon fileType={doc.file_type} />
                                     )}
-                                    <span className="text-sm text-gray-800 truncate">{doc.filename}</span>
+                                    <span className="text-sm text-foreground truncate">{doc.filename}</span>
                                 </div>
                                 </div>
-                                <div className="ml-auto w-20 shrink-0 text-xs text-gray-500 uppercase truncate">
-                                    {doc.file_type ?? <span className="text-gray-300">—</span>}
+                                <div className="ml-auto w-20 shrink-0 text-xs text-muted-foreground uppercase truncate">
+                                    {doc.file_type ?? <span className="text-muted-foreground/70">—</span>}
                                 </div>
-                                <div className="w-24 shrink-0 text-sm text-gray-500 truncate">
-                                    {doc.size_bytes != null ? formatBytes(doc.size_bytes) : <span className="text-gray-300">—</span>}
+                                <div className="w-24 shrink-0 text-sm text-muted-foreground truncate">
+                                    {doc.size_bytes != null ? formatBytes(doc.size_bytes) : <span className="text-muted-foreground/70">—</span>}
                                 </div>
                                 <div
-                                    className="w-20 shrink-0 text-sm text-gray-500 flex items-center gap-1"
+                                    className="w-20 shrink-0 text-sm text-muted-foreground flex items-center gap-1"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {hasVersions ? (
                                         <button
                                             onClick={() => void toggleVersions(doc.id)}
-                                            className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-gray-100 transition-colors"
+                                            className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent transition-colors"
                                         >
                                             <span>{doc.latest_version_number}</span>
                                             {isVersionsOpen ? (
-                                                <ChevronDown className="h-3 w-3 text-gray-400" />
+                                                <ChevronDown className="h-3 w-3 text-muted-foreground/70" />
                                             ) : (
-                                                <ChevronRight className="h-3 w-3 text-gray-400" />
+                                                <ChevronRight className="h-3 w-3 text-muted-foreground/70" />
                                             )}
                                         </button>
                                     ) : (
-                                        <span className="text-gray-300 pl-1">—</span>
+                                        <span className="text-muted-foreground/70 pl-1">—</span>
                                     )}
                                 </div>
-                                <div className="w-32 shrink-0 text-sm text-gray-500 truncate">
-                                    {doc.created_at ? formatDate(doc.created_at, locale) : <span className="text-gray-300">—</span>}
+                                <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">
+                                    {doc.created_at ? formatDate(doc.created_at, locale) : <span className="text-muted-foreground/70">—</span>}
                                 </div>
-                                <div className="w-32 shrink-0 text-sm text-gray-500 truncate">
-                                    {doc.updated_at ? formatDate(doc.updated_at, locale) : <span className="text-gray-300">—</span>}
+                                <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">
+                                    {doc.updated_at ? formatDate(doc.updated_at, locale) : <span className="text-muted-foreground/70">—</span>}
                                 </div>
                                 <div className="w-8 shrink-0 flex justify-end">
                                     {!isProcessing && (
@@ -1100,24 +1200,24 @@ export function ProjectPage({ projectId }: Props) {
                                     e.stopPropagation();
                                     setContextMenu({ x: e.clientX, y: e.clientY, folderId: folder.id, showFolderActions: true });
                                 }}
-                                className={`group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors select-none ${dragOverFolderId === folder.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}
+                                className={`group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors select-none ${dragOverFolderId === folder.id ? "bg-accent ring-1 ring-inset ring-ring" : ""}`}
                             >
-                                <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${dragOverFolderId === folder.id ? "bg-blue-50" : "bg-white"} group-hover:bg-gray-50 self-stretch`}>
+                                <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${dragOverFolderId === folder.id ? "bg-accent" : "bg-background"} group-hover:bg-accent self-stretch`}>
                                     {isExpanded
-                                        ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                                        : <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+                                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                                     }
                                 </div>
-                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${dragOverFolderId === folder.id ? "bg-blue-50" : "bg-white"} group-hover:bg-gray-50`}>
+                                <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${dragOverFolderId === folder.id ? "bg-accent" : "bg-background"} group-hover:bg-accent`}>
                                 <div className="flex items-center gap-1.5">
                                     {isExpanded
-                                        ? <FolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
-                                        : <Folder className="h-4 w-4 text-amber-500 shrink-0" />
+                                        ? <FolderOpen className="h-4 w-4 text-warning shrink-0" />
+                                        : <Folder className="h-4 w-4 text-warning shrink-0" />
                                     }
                                     {isRenaming ? (
                                         <input
                                             autoFocus
-                                            className="flex-1 min-w-0 text-sm text-gray-800 bg-transparent outline-none"
+                                            className="flex-1 min-w-0 text-sm text-foreground bg-transparent outline-none"
                                             value={renameFolderValue}
                                             onChange={(e) => setRenameFolderValue(e.target.value)}
                                             onKeyDown={(e) => {
@@ -1128,15 +1228,15 @@ export function ProjectPage({ projectId }: Props) {
                                             onClick={(e) => e.stopPropagation()}
                                         />
                                     ) : (
-                                        <span className="text-sm text-gray-800 truncate">{folder.name}</span>
+                                        <span className="text-sm text-foreground truncate">{folder.name}</span>
                                     )}
                                 </div>
                                 </div>
-                                <div className="ml-auto w-20 shrink-0 text-xs text-gray-300">—</div>
-                                <div className="w-24 shrink-0 text-sm text-gray-300">—</div>
-                                <div className="w-20 shrink-0 text-sm text-gray-300">—</div>
-                                <div className="w-32 shrink-0 text-sm text-gray-300">—</div>
-                                <div className="w-32 shrink-0 text-sm text-gray-300">—</div>
+                                <div className="ml-auto w-20 shrink-0 text-xs text-muted-foreground/70">—</div>
+                                <div className="w-24 shrink-0 text-sm text-muted-foreground/70">—</div>
+                                <div className="w-20 shrink-0 text-sm text-muted-foreground/70">—</div>
+                                <div className="w-32 shrink-0 text-sm text-muted-foreground/70">—</div>
+                                <div className="w-32 shrink-0 text-sm text-muted-foreground/70">—</div>
                                 <div
                                     className="w-8 shrink-0 flex justify-end"
                                     onClick={(e) => e.stopPropagation()}
@@ -1165,36 +1265,36 @@ export function ProjectPage({ projectId }: Props) {
 
     if (loading) {
         return (
-            <div className="flex-1 overflow-y-auto bg-white">
+            <div className="flex-1 h-full overflow-y-auto bg-background">
                 <div className="flex items-start justify-between px-8 py-4">
                     <div className="flex items-center gap-1.5 text-2xl font-medium font-serif">
-                        <span className="text-gray-400">{tProject("projects")}</span>
-                        <span className="text-gray-300">›</span>
-                        <div className="h-6 w-40 rounded bg-gray-100 animate-pulse" />
+                        <span className="text-muted-foreground/70">{tProject("projects")}</span>
+                        <span className="text-muted-foreground/70">›</span>
+                        <div className="h-6 w-40 rounded bg-muted animate-pulse" />
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="h-8 w-16 rounded bg-gray-100 animate-pulse" />
-                        <div className="h-8 w-28 rounded bg-gray-100 animate-pulse" />
+                        <div className="h-8 w-16 rounded bg-muted animate-pulse" />
+                        <div className="h-8 w-28 rounded bg-muted animate-pulse" />
                     </div>
                 </div>
-                <div className="flex items-center h-10 px-8 border-b border-gray-200 gap-5">
-                    <div className="h-3 w-20 rounded bg-gray-100 animate-pulse" />
-                    <div className="h-3 w-10 rounded bg-gray-100 animate-pulse" />
-                    <div className="h-3 w-24 rounded bg-gray-100 animate-pulse" />
+                <div className="flex items-center h-10 px-8 border-b border-border gap-5">
+                    <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+                    <div className="h-3 w-10 rounded bg-muted animate-pulse" />
+                    <div className="h-3 w-24 rounded bg-muted animate-pulse" />
                 </div>
-                <div className="flex items-center h-8 pr-8 border-b border-gray-200">
+                <div className="flex items-center h-8 pr-8 border-b border-border">
                     <div className="w-8 shrink-0" />
-                    <div className="flex-1 min-w-0 pl-3 pr-4"><div className="h-2.5 w-8 rounded bg-gray-100 animate-pulse" /></div>
-                    <div className="w-20 shrink-0"><div className="h-2.5 w-8 rounded bg-gray-100 animate-pulse" /></div>
-                    <div className="w-24 shrink-0"><div className="h-2.5 w-8 rounded bg-gray-100 animate-pulse" /></div>
+                    <div className="flex-1 min-w-0 pl-3 pr-4"><div className="h-2.5 w-8 rounded bg-muted animate-pulse" /></div>
+                    <div className="w-20 shrink-0"><div className="h-2.5 w-8 rounded bg-muted animate-pulse" /></div>
+                    <div className="w-24 shrink-0"><div className="h-2.5 w-8 rounded bg-muted animate-pulse" /></div>
                     <div className="w-8 shrink-0" />
                 </div>
                 {[1, 2, 3, 4, 5].map((i) => (
-                    <div key={i} className="flex items-center h-10 pr-8 border-b border-gray-50">
+                    <div key={i} className="flex items-center h-10 pr-8 border-b border-border">
                         <div className="w-8 shrink-0" />
-                        <div className="flex-1 min-w-0 pl-3 pr-4"><div className="h-3.5 w-56 rounded bg-gray-100 animate-pulse" /></div>
-                        <div className="w-20 shrink-0"><div className="h-3 w-8 rounded bg-gray-100 animate-pulse" /></div>
-                        <div className="w-24 shrink-0"><div className="h-3 w-12 rounded bg-gray-100 animate-pulse" /></div>
+                        <div className="flex-1 min-w-0 pl-3 pr-4"><div className="h-3.5 w-56 rounded bg-muted animate-pulse" /></div>
+                        <div className="w-20 shrink-0"><div className="h-3 w-8 rounded bg-muted animate-pulse" /></div>
+                        <div className="w-24 shrink-0"><div className="h-3 w-12 rounded bg-muted animate-pulse" /></div>
                         <div className="w-8 shrink-0" />
                     </div>
                 ))}
@@ -1205,7 +1305,7 @@ export function ProjectPage({ projectId }: Props) {
     if (!project) {
         return (
             <div className="flex h-full items-center justify-center">
-                <p className="text-gray-400">{tProject("projectNotFound")}</p>
+                <p className="text-muted-foreground/70">{tProject("projectNotFound")}</p>
             </div>
         );
     }
@@ -1237,34 +1337,34 @@ export function ProjectPage({ projectId }: Props) {
         <div ref={actionsRef} className="relative">
             <button
                 onClick={() => setActionsOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                className="flex items-center gap-1 text-xs font-medium text-foreground transition-colors"
             >
-                Actions
+                {tCommon("actions")}
                 <ChevronDown className="h-3.5 w-3.5" />
             </button>
             {actionsOpen && (
-                <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-gray-100 bg-white shadow-lg z-50 overflow-hidden">
+                <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-border bg-surface-elevated z-50 overflow-hidden">
                     {tab === "documents" && (
                         <button
                             onClick={handleDownloadSelectedDocs}
-                            className="w-full px-3 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
-                            Download
+                            {tRowActions("download")}
                         </button>
                     )}
                     {tab === "documents" && selectedDocIds.some((id) => docs.find((d) => d.id === id)?.folder_id != null) && (
                         <button
                             onClick={handleRemoveSelectedFromFolder}
-                            className="w-full px-3 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
-                            Remove from subfolder
+                            {tRowActions("removeFromSubfolder")}
                         </button>
                     )}
                     <button
                         onClick={handleDeleteSelected}
-                        className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 transition-colors"
+                        className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 transition-colors"
                     >
-                        Delete
+                        {tCommon("delete")}
                     </button>
                 </div>
             )}
@@ -1278,14 +1378,14 @@ export function ProjectPage({ projectId }: Props) {
                 <>
                     <button
                         onClick={() => { setCreatingFolderIn(null); setNewFolderName(""); }}
-                        className="flex items-center gap-1 text-xs px-3 font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                        className="flex items-center gap-1 text-xs px-3 font-medium text-muted-foreground hover:text-foreground transition-colors"
                     >
                         <FolderPlus className="h-3.5 w-3.5" />
                         {tProject("addSubfolder")}
                     </button>
                     <button
                         onClick={() => setAddDocsOpen(true)}
-                        className="flex items-center gap-1 text-xs px-3 font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                        className="flex items-center gap-1 text-xs px-3 font-medium text-muted-foreground hover:text-foreground transition-colors"
                     >
                         <Upload className="h-3.5 w-3.5" />
                         {tProject("addDocuments")}
@@ -1296,46 +1396,50 @@ export function ProjectPage({ projectId }: Props) {
     );
 
     return (
-        <div className="flex-1 overflow-y-auto bg-white flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto bg-background flex flex-col h-full">
+            {creatingChat && (
+                <FullscreenLoader label={tProject("creatingChat")} />
+            )}
             {/* Page header */}
             <div className="flex items-start justify-between px-8 py-4">
                 <div>
                     <div className="flex items-center gap-1.5 text-2xl font-medium font-serif">
                         <button
                             onClick={() => router.push("/projects")}
-                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                            className="text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                         >
                             {tProject("projects")}
                         </button>
-                        <span className="text-gray-300">›</span>
+                        <span className="text-muted-foreground/70">›</span>
                         {tab !== "documents" ? (
                             <button
                                 onClick={() => router.push(`/projects/${projectId}`)}
-                                className="text-gray-500 hover:text-gray-700 transition-colors"
+                                className="text-muted-foreground hover:text-foreground transition-colors"
                             >
                                 {project.name}
-                                {project.cm_number ? <span className="ml-1 text-gray-400">(#{project.cm_number})</span> : null}
+                                {project.cm_number ? <span className="ml-1 text-muted-foreground/70">(#{project.cm_number})</span> : null}
                             </button>
                         ) : (
                             <RenameableTitle
                                 value={project.name}
                                 onCommit={handleTitleCommit}
-                                suffix={project.cm_number ? <span className="ml-1 text-gray-400">(#{project.cm_number})</span> : null}
+                                suffix={project.cm_number ? <span className="ml-1 text-muted-foreground/70">(#{project.cm_number})</span> : null}
                             />
                         )}
                         {tab !== "documents" && (
                             <>
-                                <span className="text-gray-300">›</span>
-                                <span className="text-gray-900">{tab === "assistant" ? tProject("assistant") : tProject("tabularReviews")}</span>
+                                <span className="text-muted-foreground/70">›</span>
+                                <span className="text-foreground">{tab === "assistant" ? tProject("assistant") : tProject("tabularReviews")}</span>
                             </>
                         )}
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <HeaderSearchBtn value={search} onChange={setSearch} placeholder={tProject("searchPlaceholder")} />
+                    <AttachContextsButton target="project" targetId={projectId} />
                     <button
                         onClick={() => setPeopleModalOpen(true)}
-                        className="flex h-8 w-8 items-center justify-center text-sm text-gray-500 transition-colors hover:text-gray-900 cursor-pointer"
+                        className="flex h-8 w-8 items-center justify-center text-sm text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
                         title={tProject("peopleWithAccess")}
                         aria-label={tProject("peopleWithAccess")}
                     >
@@ -1345,7 +1449,7 @@ export function ProjectPage({ projectId }: Props) {
                         <button
                             onClick={() => !creatingChat && handleNewChat()}
                             className={`flex h-8 items-center justify-center gap-1.5 px-3 text-sm transition-colors ${
-                                !creatingChat ? "text-gray-500 hover:text-gray-900 cursor-pointer" : "text-gray-300 cursor-default"
+                                !creatingChat ? "text-muted-foreground hover:text-foreground cursor-pointer" : "text-muted-foreground/70 cursor-default"
                             }`}
                         >
                             {creatingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -1356,14 +1460,14 @@ export function ProjectPage({ projectId }: Props) {
                         <button
                             onClick={() => docs.length > 0 && !creatingReview && handleNewReview()}
                             className={`flex h-8 items-center justify-center gap-1.5 px-3 text-sm transition-colors ${
-                                docs.length > 0 ? "text-gray-500 hover:text-gray-900 cursor-pointer" : "text-gray-300 cursor-default"
+                                docs.length > 0 ? "text-muted-foreground hover:text-foreground cursor-pointer" : "text-muted-foreground/70 cursor-default"
                             }`}
                         >
                             {creatingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                             {tProject("tabularReview")}
                         </button>
                         {docs.length === 0 && (
-                            <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-10 hidden group-hover:flex items-center whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg">
+                            <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-10 hidden group-hover:flex items-center whitespace-nowrap rounded-lg bg-primary px-2.5 py-1.5 text-xs text-primary-foreground">
                                 {tProject("uploadDocumentFirst")}
                             </div>
                         )}
@@ -1394,8 +1498,8 @@ export function ProjectPage({ projectId }: Props) {
                 {tab === "documents" && (
                     <div className="flex-1 flex flex-col min-h-0">
                         {/* Table header */}
-                        <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium select-none shrink-0">
-                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                        <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium select-none shrink-0">
+                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                                 <input
                                     type="checkbox"
                                     checked={allDocsSelected}
@@ -1404,10 +1508,10 @@ export function ProjectPage({ projectId }: Props) {
                                         if (allDocsSelected) setSelectedDocIds([]);
                                         else setSelectedDocIds(filteredDocs.map((d) => d.id));
                                     }}
-                                    className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                    className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                                 />
                             </div>
-                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                                 {tProject("name")}
                             </div>
                             <div className="ml-auto w-20 shrink-0 text-left">{tProject("type")}</div>
@@ -1421,7 +1525,7 @@ export function ProjectPage({ projectId }: Props) {
                         {/* Blue ring wraps everything below the header when root-dropping */}
                         <div className="flex-1 flex flex-col min-h-0 relative">
                             {dragOverRoot && dragOverFolderId === null && (
-                                <div className="absolute inset-0 border-2 border-blue-400 pointer-events-none z-20" />
+                                <div className="absolute inset-0 border-2 border-ring pointer-events-none z-20" />
                             )}
 
                         {/* Empty state */}
@@ -1430,8 +1534,8 @@ export function ProjectPage({ projectId }: Props) {
                                 onClick={() => setAddDocsOpen(true)}
                                 className="flex-1 flex cursor-pointer flex-col items-center justify-center py-24 text-center"
                             >
-                                <Upload className="h-8 w-8 text-gray-200 mb-3" />
-                                <p className="text-sm text-gray-400">{tProject("dropFilesHere")}</p>
+                                <Upload className="h-8 w-8 text-muted-foreground/70 mb-3" />
+                                <p className="text-sm text-muted-foreground/70">{tProject("dropFilesHere")}</p>
                             </div>
                         ) : (
                             <div
@@ -1470,49 +1574,49 @@ export function ProjectPage({ projectId }: Props) {
                                     setViewingDocVersion(null);
                                     setViewingDoc(doc);
                                 }}
-                                                    className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                                    className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                                                 >
-                                                    <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${selectedDocIds.includes(doc.id) ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`} onClick={(e) => e.stopPropagation()}>
+                                                    <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${selectedDocIds.includes(doc.id) ? "bg-secondary" : "bg-background"} group-hover:bg-accent`} onClick={(e) => e.stopPropagation()}>
                                                         <input
                                                             type="checkbox"
                                                             checked={selectedDocIds.includes(doc.id)}
                                                             onChange={() => setSelectedDocIds((prev) => prev.includes(doc.id) ? prev.filter((x) => x !== doc.id) : [...prev, doc.id])}
-                                                            className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                                            className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                                                         />
                                                     </div>
-                                                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${selectedDocIds.includes(doc.id) ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`}>
+                                                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${selectedDocIds.includes(doc.id) ? "bg-secondary" : "bg-background"} group-hover:bg-accent`}>
                                                     <div className="flex items-center gap-2">
-                                                        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" /> : isError ? <AlertCircle className="h-4 w-4 text-red-500 shrink-0" /> : <DocIcon fileType={doc.file_type} />}
-                                                        <span className="text-sm text-gray-800 truncate">{doc.filename}</span>
+                                                        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70 shrink-0" /> : isError ? <AlertCircle className="h-4 w-4 text-destructive shrink-0" /> : <DocIcon fileType={doc.file_type} />}
+                                                        <span className="text-sm text-foreground truncate">{doc.filename}</span>
                                                     </div>
                                                     </div>
-                                                    <div className="ml-auto w-20 shrink-0 text-xs text-gray-500 uppercase truncate">{doc.file_type ?? <span className="text-gray-300">—</span>}</div>
-                                                    <div className="w-24 shrink-0 text-sm text-gray-500 truncate">{doc.size_bytes != null ? formatBytes(doc.size_bytes) : <span className="text-gray-300">—</span>}</div>
+                                                    <div className="ml-auto w-20 shrink-0 text-xs text-muted-foreground uppercase truncate">{doc.file_type ?? <span className="text-muted-foreground/70">—</span>}</div>
+                                                    <div className="w-24 shrink-0 text-sm text-muted-foreground truncate">{doc.size_bytes != null ? formatBytes(doc.size_bytes) : <span className="text-muted-foreground/70">—</span>}</div>
                                                     <div
-                                                        className="w-20 shrink-0 text-sm text-gray-500 flex items-center gap-1"
+                                                        className="w-20 shrink-0 text-sm text-muted-foreground flex items-center gap-1"
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
                                                         {hasVersions ? (
                                                             <button
                                                                 onClick={() => void toggleVersions(doc.id)}
-                                                                className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-gray-100 transition-colors"
+                                                                className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent transition-colors"
                                                             >
                                                                 <span>{doc.latest_version_number}</span>
                                                                 {isVersionsOpen ? (
-                                                                    <ChevronDown className="h-3 w-3 text-gray-400" />
+                                                                    <ChevronDown className="h-3 w-3 text-muted-foreground/70" />
                                                                 ) : (
-                                                                    <ChevronRight className="h-3 w-3 text-gray-400" />
+                                                                    <ChevronRight className="h-3 w-3 text-muted-foreground/70" />
                                                                 )}
                                                             </button>
                                                         ) : (
-                                                            <span className="text-gray-300 pl-1">—</span>
+                                                            <span className="text-muted-foreground/70 pl-1">—</span>
                                                         )}
                                                     </div>
-                                                    <div className="w-32 shrink-0 text-sm text-gray-500 truncate">
-                                                        {doc.created_at ? formatDate(doc.created_at, locale) : <span className="text-gray-300">—</span>}
+                                                    <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">
+                                                        {doc.created_at ? formatDate(doc.created_at, locale) : <span className="text-muted-foreground/70">—</span>}
                                                     </div>
-                                                    <div className="w-32 shrink-0 text-sm text-gray-500 truncate">
-                                                        {doc.updated_at ? formatDate(doc.updated_at, locale) : <span className="text-gray-300">—</span>}
+                                                    <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">
+                                                        {doc.updated_at ? formatDate(doc.updated_at, locale) : <span className="text-muted-foreground/70">—</span>}
                                                     </div>
                                                     <div className="w-8 shrink-0 flex justify-end">
                                                         {!isProcessing && (
@@ -1562,12 +1666,16 @@ export function ProjectPage({ projectId }: Props) {
                         {contextMenu && (
                             <div
                                 ref={contextMenuRef}
-                                className="fixed z-50 w-44 rounded-lg border border-gray-100 bg-white shadow-lg overflow-hidden text-xs"
+                                // z-[70] so the menu paints ABOVE the sticky
+                                // checkbox/name columns (z-[60]) — otherwise
+                                // right-clicking a folder/doc name left its
+                                // left portion hidden behind the rows (#105).
+                                className="fixed z-[70] w-44 rounded-lg border border-border bg-surface-elevated overflow-hidden text-xs"
                                 style={{ top: contextMenu.y, left: contextMenu.x }}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <button
-                                    className="w-full px-3 py-1.5 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    className="w-full px-3 py-1.5 text-left text-foreground hover:bg-accent flex items-center gap-2"
                                     onClick={() => {
                                         setCreatingFolderIn(contextMenu.folderId);
                                         setNewFolderName("");
@@ -1575,13 +1683,13 @@ export function ProjectPage({ projectId }: Props) {
                                         setContextMenu(null);
                                     }}
                                 >
-                                    <FolderPlus className="h-3.5 w-3.5 text-gray-400" />
+                                    <FolderPlus className="h-3.5 w-3.5 text-muted-foreground/70" />
                                     {contextMenu.showFolderActions ? tProject("newSubfolderInside") : tProject("newSubfolder")}
                                 </button>
                                 {contextMenu.showFolderActions && contextMenu.folderId && (
                                     <>
                                         <button
-                                            className="w-full px-3 py-1.5 text-left text-gray-700 hover:bg-gray-50"
+                                            className="w-full px-3 py-1.5 text-left text-foreground hover:bg-accent"
                                             onClick={() => {
                                                 const f = folders.find((x) => x.id === contextMenu.folderId);
                                                 setRenameFolderValue(f?.name ?? "");
@@ -1592,7 +1700,7 @@ export function ProjectPage({ projectId }: Props) {
                                             {tProject("renameFolder")}
                                         </button>
                                         <button
-                                            className="w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50"
+                                            className="w-full px-3 py-1.5 text-left text-destructive hover:bg-destructive/10"
                                             onClick={() => {
                                                 handleDeleteFolder(contextMenu.folderId!);
                                                 setContextMenu(null);
@@ -1612,8 +1720,8 @@ export function ProjectPage({ projectId }: Props) {
                 {/* Tab: Assistant */}
                 {tab === "assistant" && (
                     <>
-                        <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium select-none">
-                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                        <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium select-none">
+                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                                 <input
                                     type="checkbox"
                                     checked={allChatsSelected}
@@ -1622,10 +1730,10 @@ export function ProjectPage({ projectId }: Props) {
                                         if (allChatsSelected) setSelectedChatIds([]);
                                         else setSelectedChatIds(filteredChats.map((c) => c.id));
                                     }}
-                                    className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                    className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                                 />
                             </div>
-                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                                 {tProject("chats")}
                             </div>
                             <div className="ml-auto w-32 shrink-0 text-left">{tProject("created")}</div>
@@ -1633,45 +1741,51 @@ export function ProjectPage({ projectId }: Props) {
                         </div>
                         {chats.length === 0 ? (
                             <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
-                                <MessageSquare className="h-8 w-8 text-gray-300 mb-4" />
-                                <p className="text-2xl font-medium font-serif text-gray-900">{tProject("assistant")}</p>
-                                <p className="mt-1 text-xs text-gray-400 max-w-xs">{tProject("assistantEmptyDescription")}</p>
-                                <button onClick={() => handleNewChat()} className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md">
+                                <MessageSquare className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                <p className="text-2xl font-medium font-serif text-foreground">{tProject("assistant")}</p>
+                                <p className="mt-1 text-xs text-muted-foreground/70 max-w-xs">{tProject("assistantEmptyDescription")}</p>
+                                <button onClick={() => handleNewChat()} className="mt-4 inline-flex items-center gap-1 rounded-full bg-action px-3 py-1 text-xs font-medium text-action-foreground hover:bg-action/90 transition-colors">
                                     {tProject("assistantEmptyCreateNew")}
                                 </button>
                             </div>
+                        ) : filteredChats.length === 0 ? (
+                            // A search with zero matches used to leave a bare
+                            // header row (issue #105).
+                            <p className="py-12 text-center text-sm text-muted-foreground/70">
+                                {tProject("noSearchResults")}
+                            </p>
                         ) : (
                             <div>
                                 {filteredChats.map((chat) => (
                                     <div
                                         key={chat.id}
                                         onClick={() => { if (renamingChatId === chat.id) return; router.push(`/projects/${projectId}/assistant/chat/${chat.id}`); }}
-                                        className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                        className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                                     >
-                                        <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${selectedChatIds.includes(chat.id) ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`} onClick={(e) => e.stopPropagation()}>
-                                            <input type="checkbox" checked={selectedChatIds.includes(chat.id)} onChange={() => setSelectedChatIds((prev) => prev.includes(chat.id) ? prev.filter((x) => x !== chat.id) : [...prev, chat.id])} className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black" />
+                                        <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${selectedChatIds.includes(chat.id) ? "bg-secondary" : "bg-background"} group-hover:bg-accent`} onClick={(e) => e.stopPropagation()}>
+                                            <input type="checkbox" checked={selectedChatIds.includes(chat.id)} onChange={() => setSelectedChatIds((prev) => prev.includes(chat.id) ? prev.filter((x) => x !== chat.id) : [...prev, chat.id])} className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary" />
                                         </div>
-                                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${selectedChatIds.includes(chat.id) ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`}>
+                                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${selectedChatIds.includes(chat.id) ? "bg-secondary" : "bg-background"} group-hover:bg-accent`}>
                                             {renamingChatId === chat.id ? (
-                                                <input autoFocus value={renameChatValue} onChange={(e) => setRenameChatValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitChatRename(chat.id); if (e.key === "Escape") setRenamingChatId(null); }} onBlur={() => submitChatRename(chat.id)} onClick={(e) => e.stopPropagation()} className="w-full text-sm text-gray-800 bg-transparent outline-none" />
+                                                <input autoFocus value={renameChatValue} onChange={(e) => setRenameChatValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitChatRename(chat.id); if (e.key === "Escape") setRenamingChatId(null); }} onBlur={() => submitChatRename(chat.id)} onClick={(e) => e.stopPropagation()} className="w-full text-sm text-foreground bg-transparent outline-none" />
                                             ) : (
-                                                <span className="text-sm text-gray-800 truncate block">{chat.title ?? tProject("untitledChat")}</span>
+                                                <span className="text-sm text-foreground truncate block">{chat.title && chat.title !== "New Chat" ? chat.title : tProject("untitledChat")}</span>
                                             )}
                                         </div>
-                                        <div className="ml-auto w-32 shrink-0 text-sm text-gray-500 truncate">{formatDate(chat.created_at, locale)}</div>
+                                        <div className="ml-auto w-32 shrink-0 text-sm text-muted-foreground truncate">{formatDate(chat.created_at, locale)}</div>
                                         <div className="w-8 shrink-0 flex justify-end" onClick={(e) => e.stopPropagation()}>
                                             <RowActions
                                                 onRename={() => {
                                                     if (user?.id && chat.user_id !== user.id) {
-                                                        setOwnerOnlyAction("rename this chat");
+                                                        setOwnerOnlyAction(tProject("renameChat"));
                                                         return;
                                                     }
-                                                    setRenameChatValue(chat.title ?? tProject("untitledChat"));
+                                                    setRenameChatValue(chat.title && chat.title !== "New Chat" ? chat.title : "");
                                                     setRenamingChatId(chat.id);
                                                 }}
                                                 onDelete={async () => {
                                                     if (user?.id && chat.user_id !== user.id) {
-                                                        setOwnerOnlyAction("delete this chat");
+                                                        setOwnerOnlyAction(tProject("deleteChat"));
                                                         return;
                                                     }
                                                     const trimmed = chat.title?.trim();
@@ -1699,8 +1813,8 @@ export function ProjectPage({ projectId }: Props) {
                 {/* Tab: Reviews */}
                 {tab === "reviews" && (
                     <>
-                        <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium select-none">
-                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                        <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium select-none">
+                            <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                                 <input
                                     type="checkbox"
                                     checked={allReviewsSelected}
@@ -1709,10 +1823,10 @@ export function ProjectPage({ projectId }: Props) {
                                         if (allReviewsSelected) setSelectedReviewIds([]);
                                         else setSelectedReviewIds(filteredReviews.map((r) => r.id));
                                     }}
-                                    className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                    className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary"
                                 />
                             </div>
-                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                            <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                                 {tProject("name")}
                             </div>
                             <div className="ml-auto w-24 shrink-0 text-left">{tProject("columns")}</div>
@@ -1722,34 +1836,38 @@ export function ProjectPage({ projectId }: Props) {
                         </div>
                         {projectReviews.length === 0 ? (
                             <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
-                                <Table2 className="h-8 w-8 text-gray-300 mb-4" />
-                                <p className="text-2xl font-medium font-serif text-gray-900">{tProject("tabularReviews")}</p>
-                                <p className="mt-1 text-xs text-gray-400 max-w-xs">{tProject("tabularEmptyDescription")}</p>
-                                <button onClick={handleNewReview} disabled={creatingReview || docs.length === 0} className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md disabled:opacity-40">
+                                <Table2 className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                <p className="text-2xl font-medium font-serif text-foreground">{tProject("tabularReviews")}</p>
+                                <p className="mt-1 text-xs text-muted-foreground/70 max-w-xs">{tProject("tabularEmptyDescription")}</p>
+                                <button onClick={handleNewReview} disabled={creatingReview || docs.length === 0} className="mt-4 inline-flex items-center gap-1 rounded-full bg-action px-3 py-1 text-xs font-medium text-action-foreground hover:bg-action/90 transition-colors disabled:opacity-40">
                                     {tProject("tabularEmptyCreateNew")}
                                 </button>
                             </div>
+                        ) : filteredReviews.length === 0 ? (
+                            <p className="py-12 text-center text-sm text-muted-foreground/70">
+                                {tProject("noSearchResults")}
+                            </p>
                         ) : (
                             <div>
                                 {filteredReviews.map((review) => (
                                     <div
                                         key={review.id}
                                         onClick={() => { if (renamingReviewId === review.id) return; router.push(`/projects/${projectId}/tabular-reviews/${review.id}`); }}
-                                        className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                        className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                                     >
-                                        <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${selectedReviewIds.includes(review.id) ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`} onClick={(e) => e.stopPropagation()}>
-                                            <input type="checkbox" checked={selectedReviewIds.includes(review.id)} onChange={() => setSelectedReviewIds((prev) => prev.includes(review.id) ? prev.filter((x) => x !== review.id) : [...prev, review.id])} className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black" />
+                                        <div className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${selectedReviewIds.includes(review.id) ? "bg-secondary" : "bg-background"} group-hover:bg-accent`} onClick={(e) => e.stopPropagation()}>
+                                            <input type="checkbox" checked={selectedReviewIds.includes(review.id)} onChange={() => setSelectedReviewIds((prev) => prev.includes(review.id) ? prev.filter((x) => x !== review.id) : [...prev, review.id])} className="h-2.5 w-2.5 rounded border-border cursor-pointer accent-primary" />
                                         </div>
-                                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${selectedReviewIds.includes(review.id) ? "bg-gray-50" : "bg-white"} group-hover:bg-gray-50`}>
+                                        <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${selectedReviewIds.includes(review.id) ? "bg-secondary" : "bg-background"} group-hover:bg-accent`}>
                                             {renamingReviewId === review.id ? (
-                                                <input autoFocus value={renameReviewValue} onChange={(e) => setRenameReviewValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitReviewRename(review.id); if (e.key === "Escape") setRenamingReviewId(null); }} onBlur={() => submitReviewRename(review.id)} onClick={(e) => e.stopPropagation()} className="w-full text-sm text-gray-800 bg-transparent outline-none" />
+                                                <input autoFocus value={renameReviewValue} onChange={(e) => setRenameReviewValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitReviewRename(review.id); if (e.key === "Escape") setRenamingReviewId(null); }} onBlur={() => submitReviewRename(review.id)} onClick={(e) => e.stopPropagation()} className="w-full text-sm text-foreground bg-transparent outline-none" />
                                             ) : (
-                                                <span className="text-sm text-gray-800 truncate block">{review.title ?? tProject("untitledReview")}</span>
+                                                <span className="text-sm text-foreground truncate block">{review.title ?? tProject("untitledReview")}</span>
                                             )}
                                         </div>
-                                        <div className="ml-auto w-24 shrink-0 text-sm text-gray-500 truncate">{review.columns_config?.length ?? 0}</div>
-                                        <div className="w-24 shrink-0 text-sm text-gray-500 truncate">{review.document_count ?? 0}</div>
-                                        <div className="w-32 shrink-0 text-sm text-gray-500 truncate">{review.created_at ? formatDate(review.created_at, locale) : <span className="text-gray-300">—</span>}</div>
+                                        <div className="ml-auto w-24 shrink-0 text-sm text-muted-foreground truncate">{review.columns_config?.length ?? 0}</div>
+                                        <div className="w-24 shrink-0 text-sm text-muted-foreground truncate">{review.document_count ?? 0}</div>
+                                        <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">{review.created_at ? formatDate(review.created_at, locale) : <span className="text-muted-foreground/70">—</span>}</div>
                                         <div className="w-8 shrink-0 flex justify-end" onClick={(e) => e.stopPropagation()}>
                                             <RowActions
                                                 onRename={() => {
@@ -1824,6 +1942,7 @@ export function ProjectPage({ projectId }: Props) {
                 projectDocs={project?.documents?.filter((d) => d.status === "ready")}
                 projectName={project?.name}
                 projectCmNumber={project?.cm_number}
+                projectId={project?.id}
             />
 
             <OwnerOnlyModal
@@ -1841,12 +1960,12 @@ export function ProjectPage({ projectId }: Props) {
                 fetchPeople={getProjectPeople}
                 currentUserEmail={user?.email ?? null}
                 breadcrumb={[
-                    "Projects",
+                    tProject("projects"),
                     project
                         ? project.name +
                           (project.cm_number ? ` (${project.cm_number})` : "")
                         : "",
-                    "People",
+                    tProject("people"),
                 ]}
                 // Only owners may modify the member list. Without this prop
                 // PeopleModal renders read-only — non-owners can still see

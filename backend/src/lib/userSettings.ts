@@ -6,8 +6,6 @@ import {
     DEFAULT_TABULAR_MODEL,
     type UserApiKeys,
 } from "./llm";
-import { decryptApiKey } from "./crypto";
-
 export type UserModelSettings = {
     title_model: string;
     tabular_model: string;
@@ -20,13 +18,22 @@ export type UserModelSettings = {
      * their first message was in English.
      */
     preferred_language: string;
+    /**
+     * PII Shield user default — the single Anonymization mode since #14
+     * (migration 207): applied when a new chat doesn't specify its own
+     * mode. "off" disables the sidecar for everything that user does.
+     * See `backend/src/lib/pii/gate.ts` for semantics. The retired
+     * `pii_review_required` / `pii_disclosure_policy` columns still
+     * exist in the DB but are no longer read anywhere.
+     */
+    pii_default_mode: "off" | "standard" | "strict";
 };
 
 /**
  * Pick a sensible main-chat model when the client didn't send one.
  *
  * The Word add-in deliberately ships without a model picker — the user
- * configures preferred providers in the Max web app once, and the
+ * configures preferred providers in the Eulex Desk web app once, and the
  * add-in should "just work". Order of preference:
  *
  *   1. Claude   — Sonnet 4.6 (primary; prod always has a server key wired
@@ -42,7 +49,7 @@ export type UserModelSettings = {
  * is at least obvious in logs.
  */
 export function resolveDefaultMainModel(apiKeys?: UserApiKeys): string {
-    if (apiKeys?.claude?.trim()) return "claude-sonnet-4-6";
+    if (apiKeys?.claude?.trim()) return "claude-sonnet-5";
     if (process.env.VLLM_BASE_URL?.trim()) return "localllm-main";
     if (apiKeys?.gemini?.trim()) return "gemini-3.1-pro-preview";
     if (apiKeys?.mistral?.trim()) return "mistral-large-latest";
@@ -73,7 +80,7 @@ export function resolveDefaultMainModel(apiKeys?: UserApiKeys): string {
  * whatever provider keys are wired up.
  */
 export function resolveColumnSuggesterModel(apiKeys?: UserApiKeys): string {
-    if (apiKeys?.claude?.trim()) return "claude-sonnet-4-6";
+    if (apiKeys?.claude?.trim()) return "claude-sonnet-5";
     if (apiKeys?.gemini?.trim()) return "gemini-3.1-pro-preview";
     if (apiKeys?.mistral?.trim()) return "mistral-large-latest";
     if (apiKeys?.openai?.trim()) return "gpt-5.5";
@@ -107,15 +114,46 @@ function resolveTitleModel(apiKeys: UserApiKeys): string {
     return DEFAULT_TITLE_MODEL;
 }
 
-/** Try to decrypt; if the value isn't encrypted just return as-is. */
-function safeDecrypt(val: string | null | undefined): string | null {
-    if (!val?.trim()) return null;
-    try {
-        return decryptApiKey(val);
-    } catch {
-        // Might be a plaintext key from before encryption was added
-        return val;
-    }
+/**
+ * Fast model for INLINE ghost text (autocomplete + inline question
+ * refinement). Unlike resolveTitleModel — which returns Sonnet for Claude —
+ * this picks each provider's low/fast tier so inline suggestions feel snappy.
+ * The task is easy (complete a sentence / rephrase one question), so latency
+ * matters more than raw capability. Output language is pinned by
+ * shortLocaleRule, which keeps even the small models on Croatian.
+ */
+export function resolveInlineModel(apiKeys: UserApiKeys): string {
+    if (apiKeys.claude?.trim()) return "claude-haiku-4-5";
+    if (process.env.VLLM_BASE_URL?.trim()) return "localllm-lite";
+    if (apiKeys.gemini?.trim()) return "gemini-3.1-flash-lite-preview";
+    if (apiKeys.openai?.trim()) return "gpt-5.4-nano";
+    if (apiKeys.mistral?.trim()) return "mistral-small-latest";
+    if (
+        process.env.ANTHROPIC_API_KEY?.trim() ||
+        process.env.CLAUDE_API_KEY?.trim()
+    )
+        return "claude-haiku-4-5";
+    if (process.env.GEMINI_API_KEY?.trim()) return "gemini-3.1-flash-lite-preview";
+    if (process.env.OPENAI_API_KEY?.trim()) return "gpt-5.4-nano";
+    if (process.env.MISTRAL_API_KEY?.trim()) return "mistral-small-latest";
+    return "claude-haiku-4-5";
+}
+
+/**
+ * Resolve the effective key for a single provider.
+ *
+ * Hosted Eulex Desk runs every user through shared server-level keys (Secret
+ * Manager) — that's the only source of truth for billing, audit, and
+ * the tier-based rate limiter. We deliberately ignore any user-stored
+ * `*_api_key` rows (legacy BYOK feature, removed 2026-05). The unused
+ * `_userKey` argument is kept so call-sites don't all have to change
+ * shape; rename it once we drop the columns from DB.
+ */
+function pickKey(
+    _userKey: string | null | undefined,
+    serverKey: string | null | undefined,
+): string | null {
+    return serverKey?.trim() ?? null;
 }
 
 export async function getUserModelSettings(
@@ -125,7 +163,10 @@ export async function getUserModelSettings(
     const client = db ?? createServerSupabase();
     const { data, error } = await client
         .from("user_profiles")
-        .select("tabular_model, preferred_language, claude_api_key, gemini_api_key, openai_api_key, mistral_api_key")
+        .select(
+            "tabular_model, preferred_language, claude_api_key, gemini_api_key, openai_api_key, mistral_api_key, " +
+            "pii_default_mode",
+        )
         .eq("user_id", userId)
         .single();
 
@@ -137,10 +178,13 @@ export async function getUserModelSettings(
     }
 
     const api_keys: UserApiKeys = {
-        claude: safeDecrypt(data?.claude_api_key) ?? serverClaudeKey(),
-        gemini: safeDecrypt(data?.gemini_api_key) ?? process.env.GEMINI_API_KEY ?? null,
-        openai: safeDecrypt(data?.openai_api_key) ?? process.env.OPENAI_API_KEY ?? process.env.VLLM_API_KEY ?? null,
-        mistral: safeDecrypt(data?.mistral_api_key) ?? process.env.MISTRAL_API_KEY ?? null,
+        claude: pickKey(data?.claude_api_key, serverClaudeKey()),
+        gemini: pickKey(data?.gemini_api_key, process.env.GEMINI_API_KEY ?? null),
+        openai: pickKey(
+            data?.openai_api_key,
+            process.env.OPENAI_API_KEY ?? process.env.VLLM_API_KEY ?? null,
+        ),
+        mistral: pickKey(data?.mistral_api_key, process.env.MISTRAL_API_KEY ?? null),
     };
 
     const SUPPORTED = new Set(["en", "hr"]);
@@ -150,11 +194,23 @@ export async function getUserModelSettings(
             ? data.preferred_language
             : "hr";
 
+    // "strict_legal" is a retired legacy value (collapsed into "strict"
+    // by migration 207) — normalize on read so a not-yet-migrated row
+    // still resolves to the stricter mode.
+    const rawMode =
+        data?.pii_default_mode === "strict_legal" ? "strict" : data?.pii_default_mode;
+    const PII_MODES = new Set(["off", "standard", "strict"] as const);
+    const piiMode =
+        typeof rawMode === "string" && PII_MODES.has(rawMode as never)
+            ? (rawMode as UserModelSettings["pii_default_mode"])
+            : "off";
+
     return {
         title_model: resolveTitleModel(api_keys),
-        tabular_model: resolveModel(data?.tabular_model, "localllm-main"),
+        tabular_model: resolveModel(data?.tabular_model, DEFAULT_TABULAR_MODEL),
         api_keys,
         preferred_language: lang,
+        pii_default_mode: piiMode,
     };
 }
 
@@ -163,7 +219,7 @@ export async function getUserModelSettings(
  * canonical name Anthropic's own SDK + `.env.example` use); accept the
  * legacy `CLAUDE_API_KEY` for backwards compatibility with older
  * deployments. Returning a non-empty server key here means the user
- * doesn't need to paste their own key in Settings — Max just works.
+ * doesn't need to paste their own key in Settings — Eulex Desk just works.
  */
 function serverClaudeKey(): string | null {
     const fromAnthropic = process.env.ANTHROPIC_API_KEY?.trim();
@@ -187,9 +243,12 @@ export async function getUserApiKeys(
         console.error("[userSettings] getUserApiKeys query failed:", error.message);
     }
     return {
-        claude: safeDecrypt(data?.claude_api_key) ?? serverClaudeKey(),
-        gemini: safeDecrypt(data?.gemini_api_key) ?? process.env.GEMINI_API_KEY ?? null,
-        openai: safeDecrypt(data?.openai_api_key) ?? process.env.OPENAI_API_KEY ?? process.env.VLLM_API_KEY ?? null,
-        mistral: safeDecrypt(data?.mistral_api_key) ?? process.env.MISTRAL_API_KEY ?? null,
+        claude: pickKey(data?.claude_api_key, serverClaudeKey()),
+        gemini: pickKey(data?.gemini_api_key, process.env.GEMINI_API_KEY ?? null),
+        openai: pickKey(
+            data?.openai_api_key,
+            process.env.OPENAI_API_KEY ?? process.env.VLLM_API_KEY ?? null,
+        ),
+        mistral: pickKey(data?.mistral_api_key, process.env.MISTRAL_API_KEY ?? null),
     };
 }

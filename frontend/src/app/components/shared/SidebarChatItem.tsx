@@ -2,16 +2,34 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react";
+import {
+    Archive,
+    ArchiveRestore,
+    Check,
+    FolderInput,
+    FolderMinus,
+    MoreHorizontal,
+    Pencil,
+    Pin,
+    PinOff,
+    Plus,
+    Trash2,
+    X,
+} from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { OwnerOnlyModal } from "@/app/components/shared/OwnerOnlyModal";
+import { NewChatGroupDialog } from "@/app/components/shared/NewChatGroupDialog";
 import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 import type { MikeChat } from "@/app/components/shared/types";
 
@@ -20,10 +38,26 @@ interface Props {
     isActive: boolean;
     onSelect: () => void;
     projectName?: string;
+    /** Which history list this row is rendered in (defaults to active). */
+    view?: "active" | "archived";
 }
 
-export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props) {
-    const { renameChat, deleteChat } = useChatHistoryContext();
+export function SidebarChatItem({
+    chat,
+    isActive,
+    onSelect,
+    projectName,
+    view = "active",
+}: Props) {
+    const {
+        renameChat,
+        deleteChat,
+        groups,
+        createGroup,
+        moveChatToGroup,
+        setChatPinned,
+        setChatStatus,
+    } = useChatHistoryContext();
     const { user } = useAuth();
     const t = useTranslations("chatItem");
     const tc = useTranslations("common");
@@ -31,12 +65,26 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
     const { confirm: confirmDialog, dialog: confirmDialogEl } =
         useConfirmDialog();
     const [isRenaming, setIsRenaming] = useState(false);
-    const [editTitle, setEditTitle] = useState(chat.title ?? "");
+    // Legacy chats created via the upstream `implement workflow`
+    // placeholder (and any other chats whose first message was too
+    // generic for the title model) ended up with the literal English
+    // title "New Chat". Treat that exact value as "no title" at the
+    // display layer so HR users see "Neimenovani razgovor" instead.
+    const displayTitle =
+        chat.title && chat.title.trim() !== "" && chat.title !== "New Chat"
+            ? chat.title
+            : null;
+    const [editTitle, setEditTitle] = useState(displayTitle ?? "");
     const [ownerOnlyAction, setOwnerOnlyAction] = useState<string | null>(null);
+    const [showNewGroupDialog, setShowNewGroupDialog] = useState(false);
     const editInputRef = useRef<HTMLInputElement>(null);
     // Sidebar can show collaborator chats from projects the user owns;
-    // rename/delete are still creator-only on the backend, so guard here.
+    // rename/delete/pin/move/archive are still creator-only on the
+    // backend, so guard here.
     const isChatOwner = !!user?.id && chat.user_id === user.id;
+
+    // Groups a chat can be moved into (never archived ones).
+    const activeGroups = (groups ?? []).filter((g) => g.status === "active");
 
     useEffect(() => {
         if (isRenaming) editInputRef.current?.focus();
@@ -50,13 +98,37 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
 
     const handleRenameCancel = () => {
         setIsRenaming(false);
-        setEditTitle(chat.title ?? "");
+        setEditTitle(displayTitle ?? "");
+    };
+
+    /** Runs `action` if the user owns the chat; otherwise shows the
+     *  owner-only modal with the given action phrase. */
+    const ownerGate = (actionPhrase: string, action: () => void) => {
+        if (!isChatOwner) {
+            setOwnerOnlyAction(actionPhrase);
+            return;
+        }
+        action();
+    };
+
+    const handleDelete = async () => {
+        const trimmed = chat.title?.trim();
+        const ok = await confirmDialog({
+            title: tDelete("chatTitle"),
+            message: trimmed
+                ? tDelete("chatBodyNamed", { title: trimmed })
+                : tDelete("chatBody"),
+            confirmLabel: tDelete("deleteAction"),
+            destructive: true,
+        });
+        if (!ok) return;
+        void deleteChat(chat.id);
     };
 
     return (
         <div
             className={`group relative flex items-center w-full h-9 rounded-md transition-colors ${
-                isActive ? "bg-gray-100" : "hover:bg-gray-100"
+                isActive ? "bg-secondary" : "hover:bg-accent"
             }`}
         >
             {isRenaming ? (
@@ -70,17 +142,19 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
                             if (e.key === "Enter") void handleRenameSave();
                             if (e.key === "Escape") handleRenameCancel();
                         }}
-                        className="flex-1 bg-white shadow-inner rounded px-1 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="flex-1 bg-surface-elevated rounded px-1 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     />
                     <button
                         onClick={() => void handleRenameSave()}
-                        className="ml-1.5 py-2 hover:bg-gray-200 rounded text-green-600"
+                        aria-label={tc("save")}
+                        className="ml-1.5 py-2 hover:bg-secondary rounded text-success"
                     >
                         <Check className="h-3 w-3" />
                     </button>
                     <button
                         onClick={handleRenameCancel}
-                        className="ml-1 py-2 hover:bg-gray-200 rounded text-red-600"
+                        aria-label={tc("cancel")}
+                        className="ml-1 py-2 hover:bg-secondary rounded text-destructive"
                     >
                         <X className="h-3 w-3" />
                     </button>
@@ -88,6 +162,7 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
             ) : (
                 <>
                     <button
+                        data-testid="sidebar-conversation"
                         onClick={onSelect}
                         onMouseEnter={(e) => {
                             const el = e.currentTarget;
@@ -97,21 +172,19 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
                         onMouseLeave={(e) => {
                             e.currentTarget.scrollTo({ left: 0, behavior: "smooth" });
                         }}
-                        className={`flex-1 min-w-0 text-left px-3 py-2 text-xs overflow-x-hidden whitespace-nowrap scrollbar-none ${
-                            isActive ? "text-gray-900" : "text-gray-700"
-                        }`}
-                        title={projectName ? `${projectName}: ${chat.title ?? t("untitledChat")}` : (chat.title ?? t("untitledChat"))}
+                        className="sidebar-chat-title flex-1 min-w-0 text-left px-3 py-2 overflow-x-hidden whitespace-nowrap scrollbar-none text-foreground"
+                        title={projectName ? `${projectName}: ${displayTitle ?? t("untitledChat")}` : (displayTitle ?? t("untitledChat"))}
                     >
                         {projectName && (
-                            <span className="text-gray-400 font-normal">{projectName}: </span>
+                            <span className="text-muted-foreground/70 font-normal">{projectName}: </span>
                         )}
-                        {chat.title ?? t("untitledChat")}
+                        {displayTitle ?? t("untitledChat")}
                     </button>
 
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button
-                                className={`p-1 mr-1 text-gray-500 transition-opacity hover:text-gray-900 ${
+                                className={`p-1 mr-1 text-muted-foreground transition-opacity hover:text-foreground ${
                                     isActive
                                         ? "opacity-100"
                                         : "opacity-0 group-hover:opacity-100"
@@ -121,43 +194,145 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="z-101">
-                            <DropdownMenuItem
-                                onClick={() => {
-                                    if (!isChatOwner) {
-                                        setOwnerOnlyAction(t("renameThisChat"));
-                                        return;
+                            {view === "archived" ? (
+                                <DropdownMenuItem
+                                    onClick={() =>
+                                        ownerGate(t("restoreThisChat"), () =>
+                                            void setChatStatus(
+                                                chat.id,
+                                                "active",
+                                            ),
+                                        )
                                     }
-                                    setEditTitle(chat.title ?? "");
-                                    setIsRenaming(true);
-                                }}
-                            >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                {tc("rename")}
-                            </DropdownMenuItem>
+                                >
+                                    <ArchiveRestore className="h-4 w-4" />
+                                    {t("restore")}
+                                </DropdownMenuItem>
+                            ) : (
+                                <>
+                                    <DropdownMenuItem
+                                        onClick={() =>
+                                            ownerGate(
+                                                t("renameThisChat"),
+                                                () => {
+                                                    setEditTitle(
+                                                        displayTitle ?? "",
+                                                    );
+                                                    setIsRenaming(true);
+                                                },
+                                            )
+                                        }
+                                    >
+                                        <Pencil className="h-4 w-4" />
+                                        {tc("rename")}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={() =>
+                                            ownerGate(t("pinThisChat"), () =>
+                                                void setChatPinned(
+                                                    chat.id,
+                                                    !chat.pinned,
+                                                ),
+                                            )
+                                        }
+                                    >
+                                        {chat.pinned ? (
+                                            <PinOff className="h-4 w-4" />
+                                        ) : (
+                                            <Pin className="h-4 w-4" />
+                                        )}
+                                        {chat.pinned ? t("unpin") : t("pin")}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                            <FolderInput className="h-4 w-4" />
+                                            {t("moveToGroup")}
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent className="z-101">
+                                            {activeGroups.map((g) => (
+                                                <DropdownMenuItem
+                                                    key={g.id}
+                                                    disabled={
+                                                        g.id === chat.group_id
+                                                    }
+                                                    onClick={() =>
+                                                        ownerGate(
+                                                            t("moveThisChat"),
+                                                            () =>
+                                                                void moveChatToGroup(
+                                                                    chat.id,
+                                                                    g.id,
+                                                                ),
+                                                        )
+                                                    }
+                                                >
+                                                    <span className="truncate">
+                                                        {g.name}
+                                                    </span>
+                                                </DropdownMenuItem>
+                                            ))}
+                                            {activeGroups.length > 0 && (
+                                                <DropdownMenuSeparator />
+                                            )}
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    ownerGate(
+                                                        t("moveThisChat"),
+                                                        () =>
+                                                            setShowNewGroupDialog(
+                                                                true,
+                                                            ),
+                                                    )
+                                                }
+                                            >
+                                                <Plus className="h-4 w-4" />
+                                                {t("newGroup")}
+                                            </DropdownMenuItem>
+                                            {chat.group_id && (
+                                                <DropdownMenuItem
+                                                    onClick={() =>
+                                                        ownerGate(
+                                                            t("moveThisChat"),
+                                                            () =>
+                                                                void moveChatToGroup(
+                                                                    chat.id,
+                                                                    null,
+                                                                ),
+                                                        )
+                                                    }
+                                                >
+                                                    <FolderMinus className="h-4 w-4" />
+                                                    {t("removeFromGroup")}
+                                                </DropdownMenuItem>
+                                            )}
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                    <DropdownMenuItem
+                                        onClick={() =>
+                                            ownerGate(
+                                                t("archiveThisChat"),
+                                                () =>
+                                                    void setChatStatus(
+                                                        chat.id,
+                                                        "archived",
+                                                    ),
+                                            )
+                                        }
+                                    >
+                                        <Archive className="h-4 w-4" />
+                                        {t("archive")}
+                                    </DropdownMenuItem>
+                                </>
+                            )}
                             <DropdownMenuItem
-                                onClick={async () => {
-                                    if (!isChatOwner) {
-                                        setOwnerOnlyAction(t("deleteThisChat"));
-                                        return;
-                                    }
-                                    const trimmed = chat.title?.trim();
-                                    const ok = await confirmDialog({
-                                        title: tDelete("chatTitle"),
-                                        message: trimmed
-                                            ? tDelete("chatBodyNamed", {
-                                                  title: trimmed,
-                                              })
-                                            : tDelete("chatBody"),
-                                        confirmLabel:
-                                            tDelete("deleteAction"),
-                                        destructive: true,
-                                    });
-                                    if (!ok) return;
-                                    void deleteChat(chat.id);
-                                }}
-                                className="text-red-600 focus:text-red-600"
+                                onClick={() =>
+                                    ownerGate(t("deleteThisChat"), () =>
+                                        void handleDelete(),
+                                    )
+                                }
+                                className="text-destructive focus:text-destructive"
                             >
-                                <Trash2 className="mr-2 h-4 w-4" />
+                                <Trash2 className="h-4 w-4" />
                                 {tc("delete")}
                             </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -168,6 +343,16 @@ export function SidebarChatItem({ chat, isActive, onSelect, projectName }: Props
                 open={!!ownerOnlyAction}
                 action={ownerOnlyAction ?? undefined}
                 onClose={() => setOwnerOnlyAction(null)}
+            />
+            <NewChatGroupDialog
+                open={showNewGroupDialog}
+                onClose={() => setShowNewGroupDialog(false)}
+                onCreate={async (name) => {
+                    const group = await createGroup(name);
+                    if (!group) return false; // keep dialog open to retry
+                    await moveChatToGroup(chat.id, group.id);
+                    return true;
+                }}
             />
             {confirmDialogEl}
         </div>

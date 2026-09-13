@@ -1,4 +1,6 @@
 {
+  "name": "mike",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@getbrevo/brevo": "^5.0.4"
   }

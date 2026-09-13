@@ -1,4 +1,4 @@
-// Shared TypeScript types for Max AI legal assistant
+// Shared TypeScript types for Eulex Desk AI legal assistant
 
 export interface MikeFolder {
   id: string;
@@ -59,6 +59,17 @@ export interface MikeChat {
   user_id: string;
   title: string | null;
   created_at: string;
+  // Sidebar history management (backend migration 132). 'deleted' chats
+  // are never sent to the client, so status is a two-value union here.
+  group_id: string | null;
+  pinned: boolean;
+  status: "active" | "archived";
+}
+
+export interface MikeChatGroup {
+  id: string;
+  name: string;
+  status: "active" | "archived";
 }
 
 export interface MikeEditAnnotation {
@@ -164,6 +175,8 @@ export type AssistantEvent =
         type: "web_search_started";
         query: string;
         provider: string;
+        /** Which role-based search ran: official sources / web / news. */
+        kind?: "official" | "web" | "news";
         isStreaming?: boolean;
     }
   | {
@@ -175,6 +188,8 @@ export type AssistantEvent =
         type: "web_search_result";
         query: string;
         provider: string;
+        /** Which role-based search ran: official sources / web / news. */
+        kind?: "official" | "web" | "news";
         results: {
             title: string;
             url: string;
@@ -184,7 +199,78 @@ export type AssistantEvent =
         error: string | null;
         isStreaming?: boolean;
     }
+  | {
+        /**
+         * Live `read_url` tool call — the model is fetching a web page or
+         * PDF. Emitted before the round-trip so the UI can show a
+         * "Reading link…" affordance; replaced by `web_extract_result`
+         * (matched by `url`) once the text lands.
+         */
+        type: "web_extract_started";
+        url: string;
+        isStreaming?: boolean;
+    }
+  | {
+        /**
+         * Final `read_url` result — a single page/PDF the model read.
+         * `snippet` is a short preview of the extracted text (the full
+         * body went to the model, not the wire). `error` is set when the
+         * fetch failed.
+         */
+        type: "web_extract_result";
+        url: string;
+        title: string | null;
+        snippet: string;
+        /** The URL looked like a PDF (UI badge only). */
+        is_pdf: boolean;
+        /** true → the whole document was read; false → a focused preview. */
+        full: boolean;
+        error: string | null;
+        isStreaming?: boolean;
+    }
+  | {
+        /**
+         * Per-turn registry of legal sources (EU / HR / FR) harvested from
+         * MCP tool results. Drives the clickable citation pills, the "Izvori"
+         * list under the answer, and the right-side document panel. Mirrors
+         * `web_search_result` — structured data, separate from the
+         * `mcp_tool_result` activity dot.
+         */
+        type: "legal_sources";
+        sources: LegalSource[];
+        isStreaming?: boolean;
+    }
   | { type: "content"; text: string; isStreaming?: boolean };
+
+/**
+ * Unified legal-source citation shape for the legal MCP servers
+ * (EU/EUR-Lex, Croatian, French, Slovenian, German). Built backend-side by
+ * `harvestLegalSources`.
+ */
+export interface LegalSource {
+  /** Stable id a citation references (national scopes: own id, EU "@eu/celex/…"). */
+  id: string;
+  scope: "@eu" | "@hr" | "@fr" | "@si" | "@de";
+  title: string;
+  citation?: string | null;
+  /** Cited passage text harvested from the tool output (best effort). */
+  snippet?: string | null;
+  /** Public canonical URL: eur-lex / narodne-novine / legifrance / pisrs /
+   *  gesetze-im-internet. */
+  externalUrl?: string | null;
+  articleLabel?: string | null;
+  /** In-app fetch path for the full document (Phase 2 proxy). */
+  fetchPath?: string | null;
+  /** EU only — drives the /legal-docs/eu/{celex} proxy. */
+  celex?: string | null;
+  inForce?: boolean | null;
+  /** Source class: statute/regulation (default) vs court decision. */
+  kind?: "regulation" | "caselaw";
+  /** Caselaw only — the court's case number ("Revr 123/2019"). */
+  caseNumber?: string | null;
+  /** Caselaw only — ECLI identifier parsed from the citation. */
+  ecli?: string | null;
+}
 
 export interface MikeMessage {
   /**
@@ -205,10 +291,31 @@ export interface MikeMessage {
    * 3.x); the backend silently ignores it for everything else.
    */
   effort?: "low" | "medium" | "high";
-  annotations?: MikeCitationAnnotation[];
+  /**
+   * Composer web-search toggle (globe icon) state at send time. `false`
+   * tells the backend to drop the web-search tools for this turn;
+   * omitted/true keeps them available (subject to provider config).
+   */
+  webSearch?: boolean;
+  /**
+   * PII preview session created BEFORE the chat existed (strict-mode
+   * review on the fresh assistant page, #16 follow-up). `handleNewChat`
+   * attaches it to the freshly created chat via `piiAttachChat` so the
+   * turn's anonymization reuses the reviewed session (and the user's
+   * disclosure approvals) instead of spawning a new one. Never sent to
+   * the chat message API itself.
+   */
+  piiSessionId?: string;
+  annotations?: MikeAnnotation[];
   events?: AssistantEvent[];
   /** Set when streaming failed; rendered as a red error block. */
   error?: string;
+  /**
+   * Set when the turn was blocked by the daily rate limit (429 or
+   * mid-stream `rate_limited`). Renders an in-chat notice telling the
+   * user the limit is reached and to pick a larger plan to continue.
+   */
+  rateLimited?: boolean;
   /**
    * "Not appropriate answer" flag — mirrors chat_messages.is_flagged.
    * Toggled via POST /chat/messages/:id/flag; we keep a denormalised
@@ -241,6 +348,95 @@ export interface MikeCitationAnnotation {
   page: number | string;
   quote: string;
 }
+
+/** One article/section of a fetched legal document (Phase 2 full-doc view). */
+export interface LegalDocumentArticle {
+  id: string;
+  label: string | null;
+  /** Bare article number for scroll-to-article (language-independent). */
+  number?: string | null;
+  text: string;
+  /** HR full-document only: source `segment_type` (article_heading, stavak,
+   *  section_heading, …) driving the panel's hierarchy + article grouping. */
+  segmentType?: string | null;
+}
+
+/** Normalized full legal document returned by the `/legal-docs` proxy. */
+export interface LegalDocument {
+  title: string;
+  articles: LegalDocumentArticle[];
+  /** Law-level citation for the header (HR full-document only). */
+  citation?: string | null;
+  /** All NN gazette references for the regulation's versions, newest first. */
+  gazetteRefs?: string[];
+}
+
+/**
+ * One stop on a regulation's version timeline (`/legal-docs/versions`).
+ * HR: one entry per NN objava across the regulation's whole lineage,
+ * chronological (oldest first).
+ */
+export interface LegalDocumentVersion {
+  /** regulation_versions.id — sent back as `version_id` to view this text. */
+  id: string;
+  /** Owning regulation id — may differ from the cited regulation when the
+   *  law is fragmented across legacy rows (lineage). */
+  regulationId: string;
+  versionNumber: number | null;
+  /** not_in_force | in_force | future */
+  status: string | null;
+  enterIntoForce: string | null;
+  applicationDate: string | null;
+  endDate: string | null;
+  /** "NN 64/2023" — the gazette issue that introduced this version. */
+  nnReference: string | null;
+  eliUrl: string | null;
+}
+
+/**
+ * One precise sub-article citation target — "stavak 2. točka a)" →
+ * { stavak: "2", tocka: "a" }. Both fields are lowercase; either may be
+ * absent (stavak-only or, in single-stavak articles, točka-only).
+ */
+export interface PinpointTarget {
+  /** Stavak (paragraph) number, e.g. "2" from "(2)". */
+  stavak?: string;
+  /** Točka (point) id, e.g. "a" from "a)" or "3" from "3.". */
+  tocka?: string;
+}
+
+/**
+ * Precise sub-article citation parsed from the answer prose around a legal
+ * reference. Holds ALL cited targets in prose order — "članak 38. stavak 2.
+ * točka a) i stavak 9." → { targets: [{ stavak: "2", tocka: "a" },
+ * { stavak: "9" }] }. Drives the magenta pinpoint highlight inside
+ * `LegalSourcePanel` (the cited article stays green; each exact stavak/točka
+ * gets magenta; scroll lands on the first one). Never empty — a citation
+ * with no stavak/točka has `pinpoint: null` instead.
+ */
+export interface CitationPinpoint {
+  targets: PinpointTarget[];
+}
+
+/**
+ * A citation that points at a legal source (EU/HR/FR), not an uploaded
+ * document. Carries a self-contained `LegalSource` snapshot so the message
+ * renders even if the `legal_sources` event is later trimmed.
+ */
+export interface MikeLegalSourceAnnotation {
+  type: "legal_source_data";
+  ref: number;
+  source: LegalSource;
+  /** Exact cited passage (used to highlight inside the source panel). */
+  quote: string;
+  /** Stavak/točka pinpoint parsed from the prose around this reference. */
+  pinpoint?: CitationPinpoint | null;
+}
+
+/** Either citation flavour — what `MikeMessage.annotations` actually holds. */
+export type MikeAnnotation =
+  | MikeCitationAnnotation
+  | MikeLegalSourceAnnotation;
 
 const PAGE_BREAK_SENTINEL = "[[PAGE_BREAK]]";
 
@@ -329,6 +525,14 @@ export interface TabularCell {
     summary: string;
     flag?: "green" | "grey" | "yellow" | "red";
     reasoning?: string;
+    /**
+     * Citation verification (tracker #22) — set at generation time when at
+     * least one [[page:N||quote:…]] marker could not be located in the
+     * document text. `unverified_citations` holds marker ordinals per field,
+     * in the order the badges render. Absent on older cells.
+     */
+    unverified?: boolean;
+    unverified_citations?: { summary?: number[]; reasoning?: number[] };
   } | null;
   status: "pending" | "generating" | "done" | "error";
   created_at: string;

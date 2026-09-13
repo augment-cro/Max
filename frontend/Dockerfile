@@ -1,5 +1,5 @@
 # ────────────────────────────────────────────────────────────────
-#  MikeOSS Frontend — Cloud Run Dockerfile
+#  Max Frontend — Cloud Run Dockerfile
 #
 #  Multi-stage build using Next.js standalone output:
 #    1. deps    — install node_modules
@@ -10,7 +10,12 @@
 # ── Stage 1: Dependencies ───────────────────────────────────────
 FROM node:22-slim AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+# .npmrc MORA biti prisutan PRIJE `npm ci` da legacy-peer-deps=true
+# uhvati pdfjs-dist konflikt: SuperDoc 1.34 traži peerOptional
+# pdfjs-dist@^5, naš projekt drži 4.10.38. Bez ovog COPY-a, npm ci
+# pada na ERESOLVE jer ignorira CLI flag i čita SAMO .npmrc.
+# Wildcard "*" sprječava ERROR kad .npmrc fizički nedostaje.
+COPY .npmrc* package.json package-lock.json ./
 RUN npm ci
 
 # ── Stage 2: Build ──────────────────────────────────────────────
@@ -42,6 +47,21 @@ COPY . .
 # An unset ARG leaves both files untouched and .env.production wins.
 ARG NEXT_PUBLIC_API_BASE_URL=""
 ARG NEXT_PUBLIC_BACKEND_URL=""
+# Faza 1: feature flag za SuperDoc viewer (vs. legacy docx-preview).
+# "1" / "true" / "yes" = enable; prazno ili "0" = legacy DocxView.
+ARG NEXT_PUBLIC_USE_SUPERDOC=""
+# Supabase Auth (identity only). URL + publishable key are public by
+# design; empty = Supabase login path disabled (legacy WP login only).
+ARG NEXT_PUBLIC_SUPABASE_URL=""
+ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=""
+# AGPL §13 source offer — public mirror URL. Empty = link hidden.
+ARG NEXT_PUBLIC_SOURCE_URL=""
+# Contexts service (open contract) — base URL the browser calls directly
+# for context management. Empty = contexts UI dormant.
+ARG NEXT_PUBLIC_CONTEXTS_URL=""
+# Version timeline in the legal-source panel (staging kill-switch).
+# "1" = show the slider; empty/anything else = feature fully hidden.
+ARG NEXT_PUBLIC_LEGAL_TIMELINE=""
 # NOTE: Do not use shell loop vars like `$f` / `$found` here — Docker
 # expands `$WORD` in RUN as build-time ARG/ENV before `/bin/sh` runs, so
 # unknown names become empty and the guard always fails even when
@@ -51,6 +71,24 @@ RUN if [ -n "$NEXT_PUBLIC_API_BASE_URL" ]; then \
     fi && \
     if [ -n "$NEXT_PUBLIC_BACKEND_URL" ]; then \
         printf 'NEXT_PUBLIC_BACKEND_URL=%s\n' "$NEXT_PUBLIC_BACKEND_URL" >> .env.production.local; \
+    fi && \
+    if [ -n "$NEXT_PUBLIC_USE_SUPERDOC" ]; then \
+        printf 'NEXT_PUBLIC_USE_SUPERDOC=%s\n' "$NEXT_PUBLIC_USE_SUPERDOC" >> .env.production.local; \
+    fi && \
+    if [ -n "$NEXT_PUBLIC_SUPABASE_URL" ]; then \
+        printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n' "$NEXT_PUBLIC_SUPABASE_URL" >> .env.production.local; \
+    fi && \
+    if [ -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY" ]; then \
+        printf 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=%s\n' "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY" >> .env.production.local; \
+    fi && \
+    if [ -n "$NEXT_PUBLIC_SOURCE_URL" ]; then \
+        printf 'NEXT_PUBLIC_SOURCE_URL=%s\n' "$NEXT_PUBLIC_SOURCE_URL" >> .env.production.local; \
+    fi && \
+    if [ -n "$NEXT_PUBLIC_CONTEXTS_URL" ]; then \
+        printf 'NEXT_PUBLIC_CONTEXTS_URL=%s\n' "$NEXT_PUBLIC_CONTEXTS_URL" >> .env.production.local; \
+    fi && \
+    if [ -n "$NEXT_PUBLIC_LEGAL_TIMELINE" ]; then \
+        printf 'NEXT_PUBLIC_LEGAL_TIMELINE=%s\n' "$NEXT_PUBLIC_LEGAL_TIMELINE" >> .env.production.local; \
     fi && \
     echo "--- .env.production.local (build-arg overrides) ---" && \
     ( cat .env.production.local 2>/dev/null || echo "(absent — .env.production wins)" ) && \
@@ -74,8 +112,15 @@ RUN if [ -n "$NEXT_PUBLIC_API_BASE_URL" ]; then \
 # even though .env.production had the Cloud Run URL and Next logged
 # `Environments: .env.production`. Exporting first guarantees the right
 # string is inlined into client chunks.
+#
+# ORDER MATTERS: source .env.production (base) FIRST, then
+# .env.production.local LAST so build-arg overrides (.local) win — matching
+# Next.js precedence (.local > base). The reverse order let the hardcoded
+# prod URL in .env.production clobber the staging build-arg, so the staging
+# frontend shipped pointing at the PROD backend and every call was
+# CORS-blocked (incident 2026-06-02).
 RUN set -eu; \
-    for f in .env.production.local .env.production; do \
+    for f in .env.production .env.production.local; do \
         if [ -f "$f" ]; then \
             echo "--- exporting from $f ---"; \
             set -a; \
@@ -85,6 +130,7 @@ RUN set -eu; \
     done; \
     echo "Build env: NEXT_PUBLIC_API_BASE_URL='${NEXT_PUBLIC_API_BASE_URL:-<unset>}'"; \
     echo "Build env: NEXT_PUBLIC_BACKEND_URL='${NEXT_PUBLIC_BACKEND_URL:-<unset>}'"; \
+    echo "Build env: NEXT_PUBLIC_USE_SUPERDOC='${NEXT_PUBLIC_USE_SUPERDOC:-<unset>}'"; \
     if [ -z "${NEXT_PUBLIC_API_BASE_URL:-}" ]; then \
         echo "ERROR: NEXT_PUBLIC_API_BASE_URL empty after sourcing .env files" >&2; \
         exit 1; \

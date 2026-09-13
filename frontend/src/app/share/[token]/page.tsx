@@ -25,15 +25,20 @@ import {
     MailWarning,
     ShieldAlert,
     Clock,
+    Lock,
+    LogIn,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
     getSharedChat,
+    getSharedChatPreview,
     acceptSharedChat,
     type SharedChatView,
+    type SharedChatPreview,
 } from "@/app/lib/mikeApi";
 import { UserMessage } from "@/app/components/assistant/UserMessage";
 import { AssistantMessage } from "@/app/components/assistant/AssistantMessage";
+import { harvestConversationLegalSources } from "@/app/components/shared/legalSourceUtils";
 import { SiteLogo } from "@/components/site-logo";
 
 type ErrorCode =
@@ -62,43 +67,83 @@ function parseApiError(err: unknown): ApiErrorBody {
 export default function SharedChatPage() {
     const params = useParams();
     const router = useRouter();
-    const { isAuthenticated, authLoading } = useAuth();
+    const { isAuthenticated, authLoading, signOut } = useAuth();
     const t = useTranslations("shareChat");
 
     const token = (params?.token as string | undefined) ?? "";
 
     const [view, setView] = useState<SharedChatView | null>(null);
+    const [preview, setPreview] = useState<SharedChatPreview | null>(null);
+    // Set when the caller is logged in but with a different email than the
+    // invite — we still show the teaser, but the CTA must switch accounts.
+    const [mismatchEmail, setMismatchEmail] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<ApiErrorBody | null>(null);
     const [accepting, setAccepting] = useState(false);
 
-    // If we land here without a session, send the user to /login with a
-    // same-origin `next` parameter so they return here after auth.
-    useEffect(() => {
-        if (authLoading) return;
-        if (!isAuthenticated) {
-            const next = `/share/${encodeURIComponent(token)}`;
-            router.replace(`/login?next=${encodeURIComponent(next)}`);
-        }
-    }, [authLoading, isAuthenticated, router, token]);
+    function goToLogin() {
+        const next = `/share/${encodeURIComponent(token)}`;
+        router.push(`/login?next=${encodeURIComponent(next)}`);
+    }
 
+    // Logged in as the wrong account: drop the session, then send them to
+    // /login (with this deep link as `next`) so they can sign in with the
+    // invited email and land back here.
+    async function switchAccount() {
+        try {
+            await signOut();
+        } catch {
+            /* ignore — we navigate to /login regardless */
+        }
+        goToLogin();
+    }
+
+    // Logged-in (matching email) recipients get the full, email-bound
+    // snapshot. Logged-out visitors get the PUBLIC truncated teaser plus a
+    // sign-in gate — no auto-redirect, so they can see what's shared first.
     useEffect(() => {
-        if (authLoading || !isAuthenticated || !token) return;
+        if (authLoading || !token) return;
         let cancelled = false;
         setLoading(true);
         setError(null);
-        getSharedChat(token)
-            .then((data) => {
-                if (cancelled) return;
-                setView(data);
-            })
-            .catch((err) => {
-                if (cancelled) return;
-                setError(parseApiError(err));
-            })
-            .finally(() => {
+        setView(null);
+        setPreview(null);
+        setMismatchEmail(null);
+
+        void (async () => {
+            try {
+                if (isAuthenticated) {
+                    try {
+                        const data = await getSharedChat(token);
+                        if (!cancelled) setView(data);
+                    } catch (err) {
+                        const parsed = parseApiError(err);
+                        // Signed in with the wrong account: instead of a
+                        // dead-end error, show the public teaser + a prompt
+                        // to switch to the invited email. The share is known
+                        // valid here (the backend checks revoked/expired
+                        // before email_mismatch), so the preview will load.
+                        if (parsed.code === "email_mismatch") {
+                            const pv = await getSharedChatPreview(token);
+                            if (!cancelled) {
+                                setPreview(pv);
+                                setMismatchEmail(parsed.expectedEmail ?? null);
+                            }
+                        } else {
+                            throw err;
+                        }
+                    }
+                } else {
+                    const pv = await getSharedChatPreview(token);
+                    if (!cancelled) setPreview(pv);
+                }
+            } catch (err) {
+                if (!cancelled) setError(parseApiError(err));
+            } finally {
                 if (!cancelled) setLoading(false);
-            });
+            }
+        })();
+
         return () => {
             cancelled = true;
         };
@@ -116,16 +161,24 @@ export default function SharedChatPage() {
         }
     }
 
-    if (authLoading || !isAuthenticated) {
-        return <CenteredSpinner />;
-    }
-
-    if (loading) {
+    if (authLoading || loading) {
         return <CenteredSpinner />;
     }
 
     if (error) {
         return <ShareErrorScreen error={error} />;
+    }
+
+    // Teaser path: logged-out visitors, OR logged-in with the wrong email
+    // (mismatchEmail set). Both render the public teaser + a sign-in gate.
+    if (preview) {
+        return (
+            <SharePreviewScreen
+                preview={preview}
+                mismatchEmail={mismatchEmail}
+                onPrimary={mismatchEmail ? switchAccount : goToLogin}
+            />
+        );
     }
 
     if (!view) {
@@ -141,13 +194,13 @@ export default function SharedChatPage() {
     const isLive = view.mode === "live";
 
     return (
-        <div className="min-h-dvh bg-white flex flex-col">
-            <header className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+        <div className="min-h-dvh bg-background flex flex-col">
+            <header className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                 <SiteLogo size="sm" asLink />
                 <button
                     onClick={handleContinue}
                     disabled={accepting}
-                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 hover:bg-gray-700 text-white text-sm font-medium px-4 py-2 disabled:opacity-40 transition-colors"
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium px-4 py-2 disabled:opacity-40 transition-colors"
                 >
                     {accepting ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -159,11 +212,11 @@ export default function SharedChatPage() {
             </header>
 
             <div className="px-6 pt-6 pb-2 max-w-3xl mx-auto w-full">
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                    <p className="font-medium text-gray-900">
+                <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm text-foreground">
+                    <p className="font-medium text-foreground">
                         {t("snapshotBannerTitle", { name: ownerLabel })}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                         {isLive
                             ? t("snapshotBannerLive")
                             : t("snapshotBannerHint", { date: sharedDate })}
@@ -176,12 +229,12 @@ export default function SharedChatPage() {
             <main className="flex-1 overflow-y-auto">
                 <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
                     {view.chat.title && (
-                        <h1 className="text-2xl font-serif text-gray-900">
+                        <h1 className="text-2xl font-serif text-foreground">
                             {view.chat.title}
                         </h1>
                     )}
                     {view.messages.length === 0 ? (
-                        <p className="text-sm text-gray-400">{t("emptyChat")}</p>
+                        <p className="text-sm text-muted-foreground/70">{t("emptyChat")}</p>
                     ) : (
                         view.messages.map((m, i) =>
                             m.role === "user" ? (
@@ -200,6 +253,10 @@ export default function SharedChatPage() {
                                     content={m.content ?? ""}
                                     events={m.events}
                                     annotations={m.annotations}
+                                    conversationLegalSources={harvestConversationLegalSources(
+                                        view.messages,
+                                        i,
+                                    )}
                                 />
                             ),
                         )
@@ -207,15 +264,15 @@ export default function SharedChatPage() {
                 </div>
             </main>
 
-            <footer className="border-t border-gray-100 px-6 py-4 shrink-0">
+            <footer className="border-t border-border px-6 py-4 shrink-0">
                 <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                         {t("continueExplainer")}
                     </p>
                     <button
                         onClick={handleContinue}
                         disabled={accepting}
-                        className="inline-flex items-center gap-2 rounded-lg bg-gray-900 hover:bg-gray-700 text-white text-sm font-medium px-4 py-2 disabled:opacity-40 transition-colors"
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium px-4 py-2 disabled:opacity-40 transition-colors"
                     >
                         {accepting ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -232,8 +289,8 @@ export default function SharedChatPage() {
 
 function CenteredSpinner() {
     return (
-        <div className="min-h-dvh flex items-center justify-center bg-white">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <div className="min-h-dvh flex items-center justify-center bg-background">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/70" />
         </div>
     );
 }
@@ -263,24 +320,121 @@ function ShareErrorScreen({ error }: { error: ApiErrorBody }) {
     }
 
     return (
-        <div className="min-h-dvh flex flex-col bg-white">
-            <header className="px-6 py-4 border-b border-gray-100">
+        <div className="min-h-dvh flex flex-col bg-background">
+            <header className="px-6 py-4 border-b border-border">
                 <SiteLogo size="sm" asLink />
             </header>
             <div className="flex-1 flex items-center justify-center px-6">
-                <div className="max-w-md w-full rounded-2xl border border-gray-200 bg-white p-8 text-center">
-                    <Icon className="h-8 w-8 text-gray-400 mx-auto mb-4" />
-                    <h1 className="text-xl font-serif text-gray-900 mb-2">
+                <div className="max-w-md w-full rounded-2xl border border-border bg-background p-8 text-center">
+                    <Icon className="h-8 w-8 text-muted-foreground/70 mx-auto mb-4" />
+                    <h1 className="text-xl font-serif text-foreground mb-2">
                         {title}
                     </h1>
-                    <p className="text-sm text-gray-500">{body}</p>
+                    <p className="text-sm text-muted-foreground">{body}</p>
                     {error.detail && code === "unknown" && (
-                        <p className="mt-3 text-xs text-gray-400">
+                        <p className="mt-3 text-xs text-muted-foreground/70">
                             {error.detail}
                         </p>
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function SharePreviewScreen({
+    preview,
+    mismatchEmail,
+    onPrimary,
+}: {
+    preview: SharedChatPreview;
+    mismatchEmail?: string | null;
+    onPrimary: () => void;
+}) {
+    const t = useTranslations("shareChat");
+    const ownerLabel = preview.owner_name?.trim() || t("ownerFallback");
+    const expiryDate = formatDate(preview.expires_at);
+    const isMismatch = !!mismatchEmail;
+    const bannerText = isMismatch
+        ? t("previewMismatchBanner", { email: mismatchEmail ?? "" })
+        : t("previewBanner", { name: ownerLabel });
+    const ctaLabel = isMismatch
+        ? t("previewSwitchCta", { email: mismatchEmail ?? "" })
+        : t("previewSignIn");
+
+    return (
+        <div className="min-h-dvh bg-background flex flex-col">
+            <header className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+                <SiteLogo size="sm" asLink />
+                <button
+                    onClick={onPrimary}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium px-4 py-2 transition-colors"
+                >
+                    <LogIn className="h-4 w-4" />
+                    {t("previewSignIn")}
+                </button>
+            </header>
+
+            <div className="px-6 pt-6 pb-2 max-w-3xl mx-auto w-full">
+                <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm text-foreground">
+                    <p className="text-foreground">{bannerText}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        {t("expiresOn", { date: expiryDate })}
+                    </p>
+                </div>
+            </div>
+
+            <main className="flex-1 overflow-y-auto">
+                <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+                    {preview.title && (
+                        <h1 className="text-2xl font-serif text-foreground">
+                            {preview.title}
+                        </h1>
+                    )}
+
+                    {preview.question && (
+                        <div className="space-y-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                                {t("previewQuestionLabel")}
+                            </p>
+                            <UserMessage content={preview.question} />
+                        </div>
+                    )}
+
+                    {preview.answer_excerpt && (
+                        <div className="space-y-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                                {t("previewAnswerLabel")}
+                            </p>
+                            <div className="relative">
+                                <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">
+                                    {preview.answer_excerpt}
+                                </p>
+                                {preview.answer_truncated && (
+                                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" />
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="rounded-2xl border border-border bg-muted p-6 text-center">
+                        <Lock className="h-7 w-7 text-muted-foreground/70 mx-auto mb-3" />
+                        <h2 className="text-lg font-serif text-foreground mb-1">
+                            {t("previewLockTitle")}
+                        </h2>
+                        <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+                            {t("previewLockBody")}
+                        </p>
+                        <button
+                            onClick={onPrimary}
+                            className="inline-flex items-center gap-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium px-5 py-2.5 transition-colors"
+                        >
+                            <ArrowRight className="h-4 w-4" />
+                            {ctaLabel}
+                        </button>
+                    </div>
+                </div>
+            </main>
         </div>
     );
 }

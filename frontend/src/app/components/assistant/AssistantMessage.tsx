@@ -19,16 +19,36 @@ import {
 } from "lucide-react";
 import { MikeIcon } from "@/components/chat/mike-icon";
 import { setMessageFlag } from "@/app/lib/mikeApi";
+import { API_BASE } from "@/app/lib/apiBase";
+import { mcpToolLabelKey } from "@/app/lib/mcpToolLabels";
 import { displayCitationQuote, formatCitationPage } from "../shared/types";
+import {
+    articleBaseOf,
+    articleNumberOf,
+    citedArticleNumbersFor,
+    hasArticleSuffix,
+    normalizeArticleNumber,
+    parsePinpoint,
+    upgradeSourceArticleSuffix,
+} from "../shared/legalSourceUtils";
 import type {
     AssistantEvent,
+    LegalSource,
+    MikeAnnotation,
     MikeCitationAnnotation,
+    MikeLegalSourceAnnotation,
     MikeEditAnnotation,
 } from "../shared/types";
+import { SourcesList } from "./SourcesList";
 import { EditCard, applyOptimisticResolution } from "./EditCard";
 import { PreResponseWrapper } from "../shared/PreResponseWrapper";
+import { RateLimitChatNotice } from "../shared/RateLimitChatNotice";
 import { supabase } from "@/lib/supabase";
 import { useTranslations } from "next-intl";
+import {
+    usePiiRenderedText,
+    containsPiiPlaceholder,
+} from "@/app/hooks/usePiiRenderedText";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TFunc = (key: string, values?: Record<string, any>) => string;
@@ -96,8 +116,7 @@ function BulkEditActions({
                 data: { session },
             } = await supabase.auth.getSession();
             const token = session?.access_token;
-            const apiBase =
-                process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:3001";
+            const apiBase = API_BASE;
 
             // Sequential so the per-document version counter advances in a
             // predictable order and the viewer doesn't race between bumps.
@@ -162,8 +181,8 @@ function BulkEditActions({
                         versionId: annotation.version_id ?? null,
                         message:
                             verb === "accept"
-                                ? "Couldn't save one or more accepts."
-                                : "Couldn't save one or more rejects.",
+                                ? t("bulkAcceptError")
+                                : t("bulkRejectError"),
                     });
                 }
                 done++;
@@ -184,7 +203,7 @@ function BulkEditActions({
             <button
                 onClick={() => handleAll("accept")}
                 disabled={!!busy}
-                className="px-2 py-1 text-xs rounded border border-gray-900 bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 inline-flex items-center gap-1"
+                className="px-2 py-1 text-xs rounded border border-primary bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 inline-flex items-center gap-1"
             >
                 {busy === "accept" && (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -194,7 +213,7 @@ function BulkEditActions({
             <button
                 onClick={() => handleAll("reject")}
                 disabled={!!busy}
-                className="px-2 py-1 text-xs rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-50 inline-flex items-center gap-1"
+                className="px-2 py-1 text-xs rounded border border-border bg-surface-elevated text-foreground hover:bg-accent disabled:opacity-50 inline-flex items-center gap-1"
             >
                 {busy === "reject" && (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -202,7 +221,7 @@ function BulkEditActions({
                 {t("rejectAll")}
             </button>
             {progress && (
-                <span className="text-xs font-serif text-gray-500">
+                <span className="text-xs font-serif text-muted-foreground">
                     {progress.done}/{progress.total}
                 </span>
             )}
@@ -212,7 +231,7 @@ function BulkEditActions({
                         onViewClick(first.annotation, first.filename)
                     }
                     disabled={!!busy}
-                    className="ml-auto px-2 py-1 text-xs rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    className="ml-auto px-2 py-1 text-xs rounded border border-border bg-surface-elevated text-foreground hover:bg-accent disabled:opacity-50"
                 >
                     {t("view")}
                 </button>
@@ -279,16 +298,16 @@ function EditCardsSection({
               : t("resolvedChanges", { count: resolvedCount });
 
     return (
-        <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+        <div className="border border-border rounded-lg bg-background overflow-hidden">
             {/* Row 1: summary + chevron */}
             <div className="flex items-center gap-2 px-3 pt-3">
-                <p className="flex-1 min-w-0 text-sm font-serif text-gray-700 truncate">
+                <p className="flex-1 min-w-0 text-sm font-serif text-foreground truncate">
                     {summary}
                 </p>
                 <button
                     onClick={() => setIsOpen((v) => !v)}
                     aria-label={isOpen ? t("collapseEdits") : t("expandEdits")}
-                    className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 >
                     <ChevronDown
                         className={`h-4 w-4 transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`}
@@ -399,16 +418,16 @@ function ReasoningBlock({
     return (
         <div className="relative">
             {showConnector && (
-                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             <button
                 onClick={() => !isStreaming && setIsOpen((v) => !v)}
-                className="flex items-center text-sm font-serif text-gray-500 hover:text-gray-600 transition-colors"
+                className="reasoning-toggle flex items-center text-muted-foreground hover:text-foreground transition-colors"
             >
                 {isStreaming ? (
-                    <div className="w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
                 ) : (
-                    <div className="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-border shrink-0" />
                 )}
                 <span className="font-medium ml-2">
                     {isStreaming
@@ -423,13 +442,13 @@ function ReasoningBlock({
                 )}
             </button>
             {showContent && (
-                <div className="mt-2 ml-[14px] text-sm font-serif text-gray-400 prose prose-sm max-w-none [&>*]:text-gray-400 [&>*]:text-sm">
+                <div className="mt-2 ml-[14px] text-sm font-serif text-muted-foreground/70 prose prose-sm max-w-none [&>*]:text-muted-foreground/70 [&>*]:text-sm">
                     <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
                             code: ({ node, ...props }) => (
                                 <code
-                                    className="font-serif text-gray-600"
+                                    className="font-serif text-muted-foreground"
                                     {...props}
                                 />
                             ),
@@ -447,8 +466,6 @@ function McpToolResultBlock({
     server,
     tool,
     ok,
-    args,
-    output,
     showConnector,
     t,
 }: {
@@ -460,70 +477,29 @@ function McpToolResultBlock({
     showConnector?: boolean;
     t: TFunc;
 }) {
-    const [expanded, setExpanded] = useState(false);
-    const prettyArgs = (() => {
-        try {
-            const parsed = JSON.parse(args);
-            return JSON.stringify(parsed, null, 2);
-        } catch {
-            return args;
-        }
-    })();
-    const outputPreview = output.split("\n").slice(0, 1).join("\n");
-    const outputClamped =
-        outputPreview.length > 160
-            ? outputPreview.slice(0, 160) + "…"
-            : outputPreview;
+    // Friendly, marketing-grade label for the tool — falls back to the raw MCP
+    // tool name for servers/tools we haven't curated. Presentation only; the
+    // model still calls the real tool name.
+    const labelKey = mcpToolLabelKey(server, tool);
+    const toolDisplay = labelKey ? t(labelKey) : tool;
     return (
-        <div className="text-sm font-serif text-gray-500 relative">
+        <div className="text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             <div className="flex items-start">
                 <div
                     className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${
-                        ok ? "bg-green-400" : "bg-red-400"
+                        ok ? "bg-success" : "bg-destructive"
                     }`}
                 />
-                <button
-                    type="button"
-                    onClick={() => setExpanded((v) => !v)}
-                    className="ml-2 min-w-0 flex-1 text-left hover:text-gray-700 transition-colors"
-                >
+                <div className="ml-2 min-w-0 flex-1">
                     <span className="font-medium">{ok ? t("called") : t("failed")}</span>{" "}
                     <span>
-                        {server} · {tool}
+                        {server} · {toolDisplay}
                     </span>
-                    {!expanded && outputClamped && (
-                        <span className="ml-2 text-gray-400">
-                            — {outputClamped}
-                        </span>
-                    )}
-                    <span className="ml-2 text-xs text-gray-400">
-                        {expanded ? t("hideDetails") : t("showDetails")}
-                    </span>
-                </button>
-            </div>
-            {expanded && (
-                <div className="ml-3.5 mt-2 space-y-2 border-l-2 border-gray-200 pl-3">
-                    <div>
-                        <div className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">
-                            {t("arguments")}
-                        </div>
-                        <pre className="text-xs font-mono bg-gray-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-                            {prettyArgs || t("none")}
-                        </pre>
-                    </div>
-                    <div>
-                        <div className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">
-                            {t("output")}
-                        </div>
-                        <pre className="text-xs font-mono bg-gray-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto">
-                            {output || t("empty")}
-                        </pre>
-                    </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 }
@@ -531,6 +507,7 @@ function McpToolResultBlock({
 function WebSearchBlock({
     query,
     provider,
+    kind,
     results,
     error,
     isStreaming,
@@ -539,6 +516,7 @@ function WebSearchBlock({
 }: {
     query: string;
     provider: string;
+    kind?: "official" | "web" | "news";
     results: {
         title: string;
         url: string;
@@ -553,26 +531,40 @@ function WebSearchBlock({
     const [expanded, setExpanded] = useState(false);
     const hasError = !isStreaming && !!error;
     const count = results.length;
+    // Label varies by which role-based search ran. Falls back to the
+    // generic "web" copy for older events that carry no `kind`.
+    const searchingKey =
+        kind === "official"
+            ? "webSearchSearchingOfficial"
+            : kind === "news"
+                ? "webSearchSearchingNews"
+                : "webSearchSearching";
+    const foundKey =
+        kind === "official"
+            ? "webSearchFoundOfficial"
+            : kind === "news"
+                ? "webSearchFoundNews"
+                : "webSearchFound";
     const label = isStreaming
-        ? t("webSearchSearching")
+        ? t(searchingKey)
         : hasError
             ? t("webSearchFailed")
-            : t("webSearchFound", { count });
+            : t(foundKey, { count });
     const dotClass = isStreaming
         ? ""
         : hasError
-            ? "bg-red-400"
+            ? "bg-destructive"
             : count > 0
-                ? "bg-green-400"
-                : "bg-gray-300";
+                ? "bg-success"
+                : "bg-muted-foreground/70";
     return (
-        <div className="text-sm font-serif text-gray-500 relative">
+        <div className="text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             <div className="flex items-start">
                 {isStreaming ? (
-                    <div className="mt-2 w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                    <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
                 ) : (
                     <div className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
                 )}
@@ -580,27 +572,27 @@ function WebSearchBlock({
                     type="button"
                     onClick={() => !isStreaming && setExpanded((v) => !v)}
                     disabled={isStreaming || (count === 0 && !hasError)}
-                    className="ml-2 min-w-0 flex-1 text-left hover:text-gray-700 transition-colors disabled:cursor-default disabled:hover:text-gray-500"
+                    className="ml-2 min-w-0 flex-1 text-left hover:text-foreground transition-colors disabled:cursor-default disabled:hover:text-muted-foreground"
                 >
                     <span className="font-medium">{label}</span>{" "}
                     <span>
                         &ldquo;{query}&rdquo;
-                        <span className="ml-1 text-gray-400">
+                        <span className="ml-1 text-muted-foreground/70">
                             {t("webSearchVia", { provider })}
                         </span>
                         {isStreaming && "..."}
                     </span>
                     {!isStreaming && count > 0 && (
-                        <span className="ml-2 text-xs text-gray-400">
+                        <span className="ml-2 text-xs text-muted-foreground/70">
                             {expanded ? t("hideDetails") : t("showDetails")}
                         </span>
                     )}
                 </button>
             </div>
             {expanded && !isStreaming && (
-                <div className="ml-3.5 mt-2 border-l-2 border-gray-200 pl-3 space-y-2">
+                <div className="ml-3.5 mt-2 border-l-2 border-border pl-3 space-y-2">
                     {hasError && (
-                        <div className="text-xs text-red-500 break-words">
+                        <div className="text-xs text-destructive break-words">
                             {error}
                         </div>
                     )}
@@ -610,22 +602,136 @@ function WebSearchBlock({
                             href={r.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block rounded border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors p-2"
+                            className="block rounded border border-border bg-muted hover:bg-accent transition-colors p-2"
                         >
-                            <div className="text-[13px] font-medium text-blue-600 hover:underline truncate">
+                            <div className="text-[13px] font-medium text-foreground underline underline-offset-3 truncate">
                                 {r.title || r.url}
                             </div>
-                            <div className="text-[11px] text-gray-500 truncate">
+                            <div className="text-[11px] text-muted-foreground truncate">
                                 {r.url}
                                 {r.published_date ? ` · ${r.published_date}` : ""}
                             </div>
                             {r.snippet && (
-                                <div className="text-[12px] text-gray-600 mt-1 line-clamp-2">
+                                <div className="text-[12px] text-muted-foreground mt-1 line-clamp-2">
                                     {r.snippet}
                                 </div>
                             )}
                         </a>
                     ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * `read_url` block — the model fetched a single web page or PDF. Mirrors
+ * WebSearchBlock's affordance (spinner while reading, a coloured dot +
+ * expandable detail after) but for one URL. A "preview" badge shows when
+ * the model only read a focused excerpt rather than the whole document.
+ */
+function WebExtractBlock({
+    url,
+    title,
+    snippet,
+    isPdf,
+    full,
+    error,
+    isStreaming,
+    showConnector,
+    t,
+}: {
+    url: string;
+    title: string | null;
+    snippet: string;
+    isPdf: boolean;
+    full: boolean;
+    error: string | null;
+    isStreaming?: boolean;
+    showConnector?: boolean;
+    t: TFunc;
+}) {
+    const [expanded, setExpanded] = useState(false);
+    const hasError = !isStreaming && !!error;
+    const host = (() => {
+        try {
+            return new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+            return url;
+        }
+    })();
+    const label = isStreaming
+        ? t("webExtractReading")
+        : hasError
+            ? t("webExtractFailed")
+            : isPdf
+                ? t("webExtractReadPdf")
+                : t("webExtractRead");
+    const dotClass = isStreaming
+        ? ""
+        : hasError
+            ? "bg-destructive"
+            : "bg-success";
+    return (
+        <div className="text-sm font-serif text-muted-foreground relative">
+            {showConnector && (
+                <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+            )}
+            <div className="flex items-start">
+                {isStreaming ? (
+                    <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
+                ) : (
+                    <div className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
+                )}
+                <button
+                    type="button"
+                    onClick={() => !isStreaming && setExpanded((v) => !v)}
+                    disabled={isStreaming}
+                    className="ml-2 min-w-0 flex-1 text-left hover:text-foreground transition-colors disabled:cursor-default disabled:hover:text-muted-foreground"
+                >
+                    <span className="font-medium">{label}</span>{" "}
+                    <span className="text-muted-foreground/70">
+                        {title || host}
+                        {isStreaming && "..."}
+                    </span>
+                    {!isStreaming && !hasError && !full && (
+                        <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                            {t("webExtractPreview")}
+                        </span>
+                    )}
+                    {!isStreaming && (snippet || hasError) && (
+                        <span className="ml-2 text-xs text-muted-foreground/70">
+                            {expanded ? t("hideDetails") : t("showDetails")}
+                        </span>
+                    )}
+                </button>
+            </div>
+            {expanded && !isStreaming && (
+                <div className="ml-3.5 mt-2 border-l-2 border-border pl-3 space-y-2">
+                    {hasError && (
+                        <div className="text-xs text-destructive break-words">
+                            {error}
+                        </div>
+                    )}
+                    <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded border border-border bg-muted hover:bg-accent transition-colors p-2"
+                    >
+                        <div className="text-[13px] font-medium text-foreground underline underline-offset-3 truncate">
+                            {title || url}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                            {url}
+                            {isPdf ? " · PDF" : ""}
+                        </div>
+                        {snippet && (
+                            <div className="text-[12px] text-muted-foreground mt-1 line-clamp-3">
+                                {snippet}
+                            </div>
+                        )}
+                    </a>
                 </div>
             )}
         </div>
@@ -646,14 +752,14 @@ function DocReadBlock({
     t: TFunc;
 }) {
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             {isStreaming ? (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
             ) : (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-success shrink-0" />
             )}
             <div className="ml-2 min-w-0 flex-1 whitespace-normal break-words">
                 <span className="font-medium">
@@ -664,7 +770,7 @@ function DocReadBlock({
                 ) : onClick ? (
                     <button
                         onClick={onClick}
-                        className="text-left hover:text-gray-700 transition-colors cursor-pointer"
+                        className="text-left hover:text-foreground transition-colors cursor-pointer"
                     >
                         {filename}
                     </button>
@@ -696,22 +802,22 @@ function DocFindBlock({
         ? ""
         : ` (${t("matchCount", { count: totalMatches })})`;
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             {isStreaming ? (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
             ) : (
                 <div
-                    className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${totalMatches > 0 ? "bg-green-400" : "bg-gray-300"}`}
+                    className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${totalMatches > 0 ? "bg-success" : "bg-muted-foreground/70"}`}
                 />
             )}
             <div className="ml-2 min-w-0 flex-1 whitespace-normal break-words">
                 <span className="font-medium">{label}</span>{" "}
                 <span>
                     &ldquo;{query}&rdquo;{matchSuffix}
-                    <span className="ml-1 text-gray-400">{t("inFile", { filename })}</span>
+                    <span className="ml-1 text-muted-foreground/70">{t("inFile", { filename })}</span>
                     {isStreaming && "..."}
                 </span>
             </div>
@@ -731,14 +837,14 @@ function DocCreatedBlock({
     t: TFunc;
 }) {
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             {isStreaming ? (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
             ) : (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-success shrink-0" />
             )}
             <div className="ml-2 min-w-0 flex-1 whitespace-normal break-words">
                 <span className="font-medium">
@@ -773,15 +879,15 @@ function DocReplicatedBlock({
     const suffix =
         !isStreaming && count > 1 ? ` ${t("replicatedTimes", { count })}` : isStreaming ? "..." : "";
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             {isStreaming ? (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
             ) : (
                 <div
-                    className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${hasError ? "bg-red-400" : "bg-green-400"}`}
+                    className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${hasError ? "bg-destructive" : "bg-success"}`}
                 />
             )}
             <div className="ml-2 min-w-0 flex-1 whitespace-normal break-words">
@@ -824,8 +930,6 @@ function DocDownloadBlock({
     // Only backend-relative URLs are accepted. The download fetch carries
     // the user's bearer token, so any absolute URL from tool output is
     // refused to keep the token from leaking off-origin.
-    const API_BASE =
-        process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:3001";
     const isSafeHref = download_url.startsWith("/");
     const href = isSafeHref ? `${API_BASE}${download_url}` : null;
     const [busy, setBusy] = useState(false);
@@ -867,16 +971,16 @@ function DocDownloadBlock({
         <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 min-w-0">
-                    <p className="text-base font-serif text-gray-900 text-wrap">
+                    <p className="text-base font-serif text-foreground text-wrap">
                         {basename}
                     </p>
                     {hasVersion && (
-                        <span className="shrink-0 inline-flex items-center rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                        <span className="shrink-0 inline-flex items-center rounded-md border border-border bg-surface-elevated px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                             V{versionNumber}
                         </span>
                     )}
                 </div>
-                <p className="text-xs text-blue-500 mt-0.5">{ext}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{ext}</p>
             </div>
         </div>
     );
@@ -884,7 +988,7 @@ function DocDownloadBlock({
     const downloadIcon = spinning ? (
         <div
             aria-disabled
-            className="shrink-0 flex items-center border-l border-gray-200 px-6 bg-white text-gray-400 cursor-not-allowed"
+            className="shrink-0 flex items-center border-l border-border px-6 bg-surface-elevated text-muted-foreground/70 cursor-not-allowed"
         >
             <Loader2 size={13} className="animate-spin" />
         </div>
@@ -892,7 +996,7 @@ function DocDownloadBlock({
         <button
             type="button"
             onClick={handleDownload}
-            className="shrink-0 flex items-center border-l border-gray-200 px-6 bg-white text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors cursor-pointer"
+            className="shrink-0 flex items-center border-l border-border px-6 bg-surface-elevated text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
         >
             <Download size={13} />
         </button>
@@ -900,11 +1004,11 @@ function DocDownloadBlock({
 
     if (onOpen) {
         return (
-            <div className="flex items-stretch border border-gray-200 rounded-lg overflow-hidden w-full font-sans bg-gray-50">
+            <div className="flex items-stretch border border-border rounded-lg overflow-hidden w-full font-sans bg-muted">
                 <button
                     type="button"
                     onClick={onOpen}
-                    className="flex items-stretch flex-1 min-w-0 text-left hover:bg-gray-100 transition-colors cursor-pointer"
+                    className="flex items-stretch flex-1 min-w-0 text-left hover:bg-accent transition-colors cursor-pointer"
                 >
                     {body}
                 </button>
@@ -915,7 +1019,7 @@ function DocDownloadBlock({
 
     if (spinning) {
         return (
-            <div className="flex items-stretch border border-gray-200 rounded-lg overflow-hidden w-full font-sans bg-gray-50">
+            <div className="flex items-stretch border border-border rounded-lg overflow-hidden w-full font-sans bg-muted">
                 {body}
                 {downloadIcon}
             </div>
@@ -923,11 +1027,11 @@ function DocDownloadBlock({
     }
 
     return (
-        <div className="flex items-stretch border border-gray-200 rounded-lg overflow-hidden w-full font-sans bg-gray-50">
+        <div className="flex items-stretch border border-border rounded-lg overflow-hidden w-full font-sans bg-muted">
             <button
                 type="button"
                 onClick={handleDownload}
-                className="flex items-stretch flex-1 min-w-0 text-left hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex items-stretch flex-1 min-w-0 text-left hover:bg-accent transition-colors cursor-pointer"
             >
                 {body}
             </button>
@@ -948,17 +1052,17 @@ function WorkflowAppliedBlock({
     t: TFunc;
 }) {
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
-            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-success shrink-0" />
             <div className="ml-2 min-w-0 flex-1 whitespace-normal break-words">
                 <span className="font-medium">{t("appliedWorkflow")}</span>{" "}
                 {onClick ? (
                     <button
                         onClick={onClick}
-                        className="text-left hover:text-gray-700 transition-colors cursor-pointer"
+                        className="text-left hover:text-foreground transition-colors cursor-pointer"
                     >
                         {title}
                     </button>
@@ -984,16 +1088,16 @@ function DocEditedBlock({
     t: TFunc;
 }) {
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-muted-foreground relative">
             {showConnector && (
-                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
             )}
             {isStreaming ? (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
             ) : hasError ? (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-destructive shrink-0" />
             ) : (
-                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-success shrink-0" />
             )}
             <div className="ml-2 min-w-0 flex-1 whitespace-normal break-words">
                 <span className="font-medium">
@@ -1015,23 +1119,403 @@ function DocEditedBlock({
 
 function preprocessCitations(
     text: string,
-    annotations: MikeCitationAnnotation[],
-    citationsList: MikeCitationAnnotation[],
+    annotations: MikeAnnotation[],
+    citationsList: MikeAnnotation[],
 ): string {
-    // Replace [N] or [N, M, ...] inline markers with internal §idx§ tokens backed by annotations
-    return text.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (full, refsStr) => {
+    // Replace [N] or [N, M, ...] inline markers with internal §idx§ tokens backed by annotations.
+    // When no annotations exist at all (e.g. MCP-only answers where the model
+    // writes [N] markers but never emits a <CITATIONS> block), strip the
+    // orphan markers entirely so the prose reads cleanly.
+    return text.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (full, refsStr, offset) => {
         const refs = (refsStr as string)
             .split(",")
             .map((s: string) => parseInt(s.trim(), 10));
+        // Context around the marker — used to render legal-source references
+        // (which carry no inline prose text) as a properly spaced, sentence-
+        // case-aware underlined reference instead of glued capitalised text.
+        const before = text.slice(0, offset as number);
+        const prevChar = before.slice(-1);
+        const trimmedBefore = before.replace(/\s+$/, "");
+        const atSentenceStart =
+            trimmedBefore === "" || /[.!?…:]$/.test(trimmedBefore);
+        const nextChar = text.slice(
+            (offset as number) + full.length,
+            (offset as number) + full.length + 1,
+        );
+        let legalCount = 0;
         const tokens = refs.flatMap((ref: number) => {
             const ann = annotations.find((a) => a.ref === ref);
             if (!ann) return [];
             const idx = citationsList.length;
+            // Legal source → underline the reference text (WP-style), no pill.
+            if (ann.type === "legal_source_data") {
+                // Issue #43 — the MCP sometimes drops a suffixed article's
+                // letter (label "17" for 17.a). When the prose around THIS
+                // marker names the suffixed form of the same base number,
+                // upgrade the source so the underline label, the tab title
+                // and the panel scroll all carry the suffix.
+                let source = ann.source;
+                {
+                    const own = articleNumberOf(source.articleLabel);
+                    if (own && !hasArticleSuffix(own)) {
+                        const ctx =
+                            before.slice(-140) +
+                            " " +
+                            text.slice(
+                                (offset as number) + full.length,
+                                (offset as number) + full.length + 140,
+                            );
+                        for (const m of ctx.matchAll(ARTICLE_REF_RE)) {
+                            const n = normalizeArticleNumber(m[1]);
+                            if (hasArticleSuffix(n) && articleBaseOf(n) === own) {
+                                source = upgradeSourceArticleSuffix(
+                                    source,
+                                    m[1],
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Stavak/točka pinpoint for THIS occurrence. The prose right
+                // after the marker usually carries it ("[1] stavak 2. točka
+                // a)" renders as "članak 38. stavak 2. točka a)"); fall back
+                // to the prose before the marker ("članku 38. stavku 2. [1]")
+                // — but only when that mention names the SAME article, so a
+                // pinpoint is never borrowed from a neighbouring reference.
+                let pinpoint = parsePinpoint(
+                    text.slice(
+                        (offset as number) + full.length,
+                        (offset as number) + full.length + 140,
+                    ),
+                );
+                if (!pinpoint) {
+                    const tail = before.slice(-140);
+                    const ownNum = articleNumberOf(source.articleLabel);
+                    let last: RegExpExecArray | null = null;
+                    for (const m of tail.matchAll(ARTICLE_REF_RE)) last = m;
+                    if (
+                        last &&
+                        ownNum &&
+                        // normalize, not toLowerCase — prose writes "17.a",
+                        // the normalized own number is "17a".
+                        normalizeArticleNumber(last[1] ?? "") === ownNum
+                    ) {
+                        pinpoint = parsePinpoint(
+                            tail.slice(last.index + last[0].length),
+                        );
+                    }
+                }
+                citationsList.push({
+                    ...ann,
+                    source,
+                    ...(pinpoint ? { pinpoint } : {}),
+                });
+                const raw = (
+                    source.articleLabel ||
+                    source.title ||
+                    "izvor"
+                )
+                    .trim()
+                    .replace(/\.+$/, "");
+                const firstOfGroup = legalCount === 0;
+                legalCount++;
+                // Capitalise only when the reference opens a sentence;
+                // mid-sentence references stay lowercase.
+                const cased =
+                    firstOfGroup && atSentenceStart
+                        ? raw.charAt(0).toUpperCase() + raw.slice(1)
+                        : raw.charAt(0).toLowerCase() + raw.slice(1);
+                // Add a trailing period unless one already follows the marker.
+                const label = nextChar === "." ? cased : `${cased}.`;
+                // Ensure separation from a glued preceding word.
+                const lead =
+                    firstOfGroup &&
+                    prevChar &&
+                    !/[\s(\[„"'»]/.test(prevChar)
+                        ? " "
+                        : "";
+                return [`${lead}[${label}](#legal-cite-${idx})`];
+            }
             citationsList.push(ann);
             return [`\`§${idx}§\`\u200B`];
         });
-        return tokens.length > 0 ? tokens.join("") : full;
+        if (tokens.length > 0) return tokens.join("");
+        // No annotations matched — strip the marker if none of the
+        // referenced refs exist in the annotation set (MCP / web-search
+        // answers). Keep the marker verbatim if some refs resolved but
+        // others didn't (partial match in a multi-ref like [3, 5]).
+        const anyRefExists = refs.some((ref) =>
+            annotations.some((a) => a.ref === ref),
+        );
+        return anyRefExists ? full : "";
     });
+}
+
+// Article-reference auto-linking. Matches "Članak 5", "čl. 153", "članka 17",
+// "čl. 17.a" (suffixed articles), "Article 6", "Art. 5" (HR + EN),
+// Unicode-boundary aware. The suffix letter must be adjacent to the digits or
+// the dot (NO whitespace) — free prose like "članak 17. i 18." must never
+// capture "17i".
+// Stem-based so ALL Croatian declensions link: člank\w* (članka, članku,
+// člankom, članke), članc\w* (članci, člancima), članak\w* (članak,
+// članaka). Enumerating forms missed the instrumental — "uređeno je člankom
+// 153." rendered unlinked. Safe to be loose here: autoLinkLegalRefs only
+// links numbers that map to exactly one harvested source.
+// Cross-language coverage: HR stems + EN article/art. + FR article (same
+// stem) + IT articol\w* (articolo/articoli) + DE artikel\w* + German-style
+// section signs § / §§ ("§ 153", "§§ 12-14").
+const ARTICLE_REF_RE =
+    /(?<![\p{L}\p{N}])(?:članc\w*|člank\w*|članak\w*|articol\w*|artikel\w*|articles?|art\.?|čl\.?|§{1,2})\s*(\d+(?:\.?[a-z](?![a-z]))?)/giu;
+
+/**
+ * Second citation pass: turn bare article references in the prose into
+ * clickable pills mapped to harvested legal sources, even when the model
+ * omitted the [N] marker. Conservative — only links a reference whose article
+ * number maps to EXACTLY ONE harvested source (no guessing in a high-stakes
+ * legal domain), and never doubles up where a model pill already follows.
+ * Reuses the §idx§ pill token + renderer.
+ */
+function autoLinkLegalRefs(
+    text: string,
+    legalSources: LegalSource[],
+    citationsList: MikeAnnotation[],
+): string {
+    if (legalSources.length === 0) return text;
+    // article number → source; null marks an ambiguous number (skip those).
+    const byNumber = new Map<string, LegalSource | null>();
+    for (const s of legalSources) {
+        // Labels are clean strings ("Članak 17.a", "Članak 17. a") — an
+        // optional space before the suffix letter is safe here, unlike in
+        // free prose (ARTICLE_REF_RE).
+        const raw = s.articleLabel?.match(/\d+(?:\.?\s?[a-z](?![a-z]))?/i)?.[0];
+        if (!raw) continue;
+        const num = normalizeArticleNumber(raw);
+        byNumber.set(num, byNumber.has(num) ? null : s);
+    }
+    if (byNumber.size === 0) return text;
+
+    return text.replace(
+        ARTICLE_REF_RE,
+        (full: string, num: string, offset: number) => {
+            const norm = normalizeArticleNumber(num);
+            let src = byNumber.get(norm);
+            // Issue #43 — suffixed prose ref ("čl. 17.a") with no exact
+            // source: the MCP sometimes returns the BASE number ("17") for a
+            // suffixed article. Fall back to the base-number source when it
+            // is unambiguous AND no sibling source claims another suffixed
+            // variant of the same base (17.b would make "17" a real
+            // ambiguity), and upgrade its labels so the suffix survives into
+            // the tab/header/scroll.
+            if (src === undefined && hasArticleSuffix(norm)) {
+                const base = articleBaseOf(norm);
+                const candidate = byNumber.get(base);
+                const siblingSuffixed = [...byNumber.keys()].some(
+                    (k) =>
+                        k !== norm &&
+                        hasArticleSuffix(k) &&
+                        articleBaseOf(k) === base,
+                );
+                if (candidate && !siblingSuffixed) {
+                    src = upgradeSourceArticleSuffix(candidate, num);
+                }
+            }
+            if (!src) return full; // unknown or ambiguous number
+            // Skip if a citation pill token already follows (model cited it).
+            const after = text.slice(
+                offset + full.length,
+                offset + full.length + 6,
+            );
+            if (after.includes("§")) return full;
+            const idx = citationsList.length;
+            citationsList.push({
+                type: "legal_source_data",
+                ref: 0,
+                source: src,
+                quote: "",
+                // Stavak/točka right after the reference ("članka 38. stavka
+                // 3. točke l)") → magenta pinpoint in the source panel.
+                pinpoint: parsePinpoint(
+                    text.slice(offset + full.length, offset + full.length + 140),
+                ),
+            });
+            // Underline the reference text itself (WP-style) instead of
+            // appending a numbered pill: wrap the matched prose in a link
+            // whose href carries the citation index; the `a` renderer turns
+            // it into a clickable underlined inline reference.
+            return `[${full}](#legal-cite-${idx})`;
+        },
+    );
+}
+
+// Croatian court-decision references in prose: an optional court-register
+// abbreviation (longest-first so "Revr" wins over "Rev"), an optional
+// space/dash separator, then "number/year" with an optional "-N" suffix
+// ("Revr 123/2019", "Gž-456/2020", "Rev 2551/2018-2") — plus full ECLI tokens
+// ("ECLI:HR:VSRH:2019:1234"). Case-SENSITIVE on purpose: with /i the
+// preposition "u" ("u 12/19") would match the "U" register. Unicode-boundary
+// aware like ARTICLE_REF_RE. No capture groups (the replace callback relies
+// on (match, offset) positions).
+const CASE_REF_RE =
+    /(?<![\p{L}\p{N}])(?:ECLI:HR:[A-Z0-9]+:\d{4}:[A-Z0-9.]+|(?:Povrv|Revr|Revd|Rev|UsII|UsI|Us|Gž|Kž|Pž|Ovr|Sti|St|Tt|Pl|Su|Pp|Gr|Pn|Ps|Jt|R1|R2|K|P|O|U)[\s-]?\d+\/\d{2,4}(?:-\d+)?)(?![\p{L}\p{N}])/gu;
+
+/** Comparison key for a case number / ECLI: strip spaces, dashes and dots,
+ *  lowercase — so "Revr 123/2019", "Revr-123/2019" and "revr 123/2019" meet. */
+function normalizeCaseRef(ref: string): string {
+    return ref.replace(/[\s\-.]/g, "").toLowerCase();
+}
+
+/**
+ * Caselaw sibling of `autoLinkLegalRefs`: turn bare Croatian case-number /
+ * ECLI references in the prose into the same clickable underlined references,
+ * mapped to harvested court-decision sources. Conservative on purpose — a
+ * reference is linked ONLY when it resolves to exactly one harvested caselaw
+ * source (case-number-looking text with no matching source is never linked),
+ * and never inside an existing legal-cite link (whose label often embeds the
+ * case number itself).
+ */
+function autoLinkCaseLawRefs(
+    text: string,
+    legalSources: LegalSource[],
+    citationsList: MikeAnnotation[],
+): string {
+    // normalized case number / ECLI → source; null marks a collision (skip).
+    // Registry numbers carry a trailing SUBNUMBER ("Revr-1511/2016-2") that
+    // prose usually omits ("Revr-1511/2016"), so each source is indexed under
+    // BOTH the full form and the base with the trailing "-N" (after the /year
+    // part only) stripped. A Set per source keeps a source from colliding
+    // with itself when the two forms coincide.
+    const byCaseNumber = new Map<string, LegalSource | null>();
+    for (const s of legalSources) {
+        if (s.kind !== "caselaw") continue;
+        const keys = new Set<string>();
+        for (const raw of [s.caseNumber, s.ecli]) {
+            if (!raw) continue;
+            keys.add(normalizeCaseRef(raw));
+            const base = raw.replace(/(\/\d{2,4})-\d+\s*$/, "$1");
+            if (base !== raw) keys.add(normalizeCaseRef(base));
+        }
+        for (const k of keys) {
+            byCaseNumber.set(k, byCaseNumber.has(k) ? null : s);
+        }
+    }
+    if (byCaseNumber.size === 0) return text;
+
+    // Ranges already wrapped as [label](#legal-cite-N) by the earlier passes
+    // — rewriting inside them would nest links and break the markdown.
+    const protectedRanges: Array<[number, number]> = [];
+    for (const m of text.matchAll(/\[[^\]\n]*\]\(#legal-cite-\d+\)/g)) {
+        const start = m.index ?? 0;
+        protectedRanges.push([start, start + m[0].length]);
+    }
+
+    return text.replace(CASE_REF_RE, (full: string, offset: number) => {
+        if (protectedRanges.some(([a, b]) => offset >= a && offset < b)) {
+            return full;
+        }
+        const src = byCaseNumber.get(normalizeCaseRef(full));
+        if (!src) return full; // unknown or ambiguous reference — never guess
+        // Skip if a citation pill token already follows (model cited it).
+        const after = text.slice(offset + full.length, offset + full.length + 6);
+        if (after.includes("§")) return full;
+        const idx = citationsList.length;
+        // No pinpoint / cited-article numbers — decisions have no articles.
+        citationsList.push({
+            type: "legal_source_data",
+            ref: 0,
+            source: src,
+            quote: "",
+        });
+        return `[${full}](#legal-cite-${idx})`;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// PII-aware markdown wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders assistant markdown with lazy PII de-anonymisation.
+ *
+ * Pipeline:
+ *   1. `preprocessCitations` already ran upstream (citation `[N]` markers
+ *      were swapped for internal `§idx§` tokens).
+ *   2. `usePiiRenderedText` detects `⟦PII:ENTITY_N⟧` placeholders and
+ *      asynchronously resolves them via `/pii/sessions/:id/render`.
+ *      Until the round-trip completes the placeholder text is shown
+ *      verbatim — that's the safe fallback.
+ *   3. While the render is in flight, a tiny "decrypting" hint is shown
+ *      next to the message so the user knows the placeholders are
+ *      about to disappear.
+ *
+ * When `piiSessionId` is null/empty the hook short-circuits and the
+ * text passes through unchanged.
+ */
+function PiiRenderedMarkdown({
+    text,
+    citationsList,
+    onCitationClick,
+    onLegalSourceClick,
+    divRef,
+    piiSessionId,
+}: {
+    text: string;
+    citationsList: MikeAnnotation[];
+    onCitationClick?: (c: MikeCitationAnnotation) => void;
+    onLegalSourceClick?: (
+        c: MikeLegalSourceAnnotation,
+        citedArticleNumbers?: string[],
+    ) => void;
+    divRef?: React.RefObject<HTMLDivElement | null>;
+    piiSessionId?: string | null;
+}) {
+    const hasPlaceholder = containsPiiPlaceholder(text);
+    const tPiiBadge = useTranslations("assistant.piiBadge");
+    const {
+        text: renderedText,
+        loading,
+        rendered,
+    } = usePiiRenderedText(piiSessionId ?? null, text);
+
+    return (
+        <>
+            {hasPlaceholder && piiSessionId && (
+                <div
+                    aria-live="polite"
+                    className="mb-1 inline-flex items-center gap-1.5 text-[10px] font-sans uppercase tracking-wider text-muted-foreground/70"
+                    title={
+                        rendered
+                            ? tPiiBadge("restoredTooltip")
+                            : loading
+                              ? tPiiBadge("restoringTooltip")
+                              : tPiiBadge("failedTooltip")
+                    }
+                >
+                    {loading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : rendered ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                    ) : (
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/70" />
+                    )}
+                    <span>
+                        {loading
+                            ? tPiiBadge("decrypting")
+                            : rendered
+                              ? tPiiBadge("restored")
+                              : tPiiBadge("placeholders")}
+                    </span>
+                </div>
+            )}
+            <MarkdownContent
+                text={renderedText}
+                citationsList={citationsList}
+                onCitationClick={onCitationClick}
+                onLegalSourceClick={onLegalSourceClick}
+                divRef={divRef}
+            />
+        </>
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,17 +1526,36 @@ function MarkdownContent({
     text,
     citationsList,
     onCitationClick,
+    onLegalSourceClick,
     divRef,
 }: {
     text: string;
-    citationsList: MikeCitationAnnotation[];
+    citationsList: MikeAnnotation[];
     onCitationClick?: (c: MikeCitationAnnotation) => void;
+    onLegalSourceClick?: (
+        c: MikeLegalSourceAnnotation,
+        citedArticleNumbers?: string[],
+    ) => void;
     divRef?: React.RefObject<HTMLDivElement | null>;
 }) {
+    // Streaming re-parses the markdown on every chunk, so the cite buttons
+    // remount and their CSS underline reveal would restart each time
+    // (visible flicker). Anchor each citation's animation to the moment it
+    // first appeared: remounted nodes resume mid-animation via a negative
+    // animation-delay instead of replaying from zero.
+    const citeAnimStartRef = useRef<Map<number, number>>(new Map());
+    const citeAnimStyle = (idx: number): React.CSSProperties => {
+        let start = citeAnimStartRef.current.get(idx);
+        if (start === undefined) {
+            start = Date.now();
+            citeAnimStartRef.current.set(idx, start);
+        }
+        return { animationDelay: `${start - Date.now()}ms` };
+    };
     return (
         <div
             ref={divRef}
-            className="text-gray-900 mb-4 text-base prose prose-sm max-w-none font-serif"
+            className="text-foreground mb-4 text-base prose prose-sm max-w-none font-serif"
         >
             <ReactMarkdown
                 remarkPlugins={[
@@ -1064,30 +1567,30 @@ function MarkdownContent({
                     table: ({ node, ...props }) => (
                         <div className="overflow-x-auto my-4">
                             <table
-                                className="min-w-full divide-y divide-gray-300 border border-gray-200 rounded-lg overflow-hidden"
+                                className="min-w-full divide-y divide-border border border-border rounded-lg overflow-hidden"
                                 {...props}
                             />
                         </div>
                     ),
                     thead: ({ node, ...props }) => (
-                        <thead className="bg-gray-50" {...props} />
+                        <thead className="bg-muted" {...props} />
                     ),
                     tbody: ({ node, ...props }) => (
                         <tbody
-                            className="divide-y divide-gray-200 bg-white"
+                            className="divide-y divide-border bg-background"
                             {...props}
                         />
                     ),
                     tr: ({ node, ...props }) => <tr {...props} />,
                     th: ({ node, ...props }) => (
                         <th
-                            className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                            className="px-3 py-3.5 text-left text-sm font-semibold text-foreground"
                             {...props}
                         />
                     ),
                     td: ({ node, ...props }) => (
                         <td
-                            className="whitespace-normal px-3 py-4 text-sm text-gray-900"
+                            className="whitespace-normal px-3 py-4 text-sm text-foreground"
                             {...props}
                         />
                     ),
@@ -1105,7 +1608,7 @@ function MarkdownContent({
                     ),
                     h3: ({ node, ...props }) => (
                         <h3
-                            className="text-xl font-semibold mt-4 mb-2"
+                            className="text-xl font-semibold mt-6 mb-2"
                             {...props}
                         />
                     ),
@@ -1120,12 +1623,12 @@ function MarkdownContent({
                         if (parent?.type === "listItem") {
                             return (
                                 <p
-                                    className="inline leading-7 m-0"
+                                    className="inline leading-6 m-0"
                                     {...props}
                                 />
                             );
                         }
-                        return <p className="mb-4 leading-7" {...props} />;
+                        return <p className="mb-4 leading-6" {...props} />;
                     },
                     ul: ({ node, ...props }) => (
                         <ul
@@ -1140,7 +1643,7 @@ function MarkdownContent({
                         />
                     ),
                     li: ({ node, ...props }) => (
-                        <li className="mb-2 leading-7" {...props} />
+                        <li className="mb-2 leading-6" {...props} />
                     ),
                     strong: ({ node, ...props }) => (
                         <strong className="font-semibold" {...props} />
@@ -1155,17 +1658,36 @@ function MarkdownContent({
                             const idx = parseInt(citMatch[1]);
                             const annotation = citationsList[idx];
                             if (annotation) {
+                                // Legal-source citation → underlined inline
+                                // reference (WP-style), opens the right-side
+                                // source panel. Legacy [N]-marker path (no
+                                // matched prose text) falls back to the source
+                                // label as the link text.
+                                if (annotation.type === "legal_source_data") {
+                                    const src = annotation.source;
+                                    const tooltipText = `${src.title}${src.citation ? ` — ${src.citation}` : ""}`;
+                                    return (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                onLegalSourceClick?.(annotation)
+                                            }
+                                            className="legal-cite-link"
+                                            style={citeAnimStyle(idx)}
+                                            title={tooltipText}
+                                        >
+                                            {src.articleLabel || src.title}
+                                        </button>
+                                    );
+                                }
+                                // Document citation → gray pill (unchanged).
                                 const tooltipText = `${formatCitationPage(annotation)}: "${displayCitationQuote(annotation)}"`;
                                 return (
                                     <button
                                         onClick={() => {
-                                            console.log(
-                                                "[AssistantMessage] citation clicked",
-                                                annotation,
-                                            );
                                             onCitationClick?.(annotation);
                                         }}
-                                        className="mx-0.5 inline-flex items-center justify-center rounded-full w-4 h-4 text-[10px] font-medium transition-colors align-super bg-gray-100 text-gray-900 hover:bg-gray-200"
+                                        className="mx-0.5 inline-flex items-center justify-center rounded-full w-4 h-4 text-[10px] font-medium transition-colors align-super bg-secondary text-foreground hover:bg-accent"
                                         title={tooltipText}
                                     >
                                         {idx + 1}
@@ -1175,7 +1697,7 @@ function MarkdownContent({
                         }
                         return (
                             <code
-                                className="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-serif"
+                                className="bg-muted px-1.5 py-0.5 rounded text-sm font-serif"
                                 {...props}
                             >
                                 {children}
@@ -1184,23 +1706,70 @@ function MarkdownContent({
                     },
                     blockquote: ({ node, ...props }) => (
                         <blockquote
-                            className="border-l-4 border-gray-300 pl-4 italic my-4"
+                            className="border-l-4 border-border pl-4 italic my-4"
                             {...props}
                         />
                     ),
-                    a: ({ node, href, children, ...props }) => (
-                        <a
-                            href={href}
-                            className="text-blue-600 hover:text-blue-700 underline"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            {...props}
-                        >
-                            {children}
-                        </a>
-                    ),
+                    a: ({ node, href, children, ...props }) => {
+                        // Inline legal-source reference: the reference text in
+                        // the prose is underlined (brand-blue, animated) and
+                        // opens the right-side source panel — no numbered pill.
+                        const legalCiteMatch =
+                            href?.match(/^#legal-cite-(\d+)$/);
+                        if (legalCiteMatch) {
+                            const idx = parseInt(legalCiteMatch[1]);
+                            const annotation = citationsList[idx];
+                            if (
+                                annotation?.type === "legal_source_data"
+                            ) {
+                                const src = annotation.source;
+                                const tooltipText = `${src.title}${src.citation ? ` — ${src.citation}` : ""}`;
+                                return (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onLegalSourceClick?.(
+                                                annotation,
+                                                citedArticleNumbersFor(
+                                                    annotation.source,
+                                                    citationsList
+                                                        .filter(
+                                                            (a) =>
+                                                                a.type ===
+                                                                "legal_source_data",
+                                                        )
+                                                        .map(
+                                                            (a) =>
+                                                                (
+                                                                    a as MikeLegalSourceAnnotation
+                                                                ).source,
+                                                        ),
+                                                ),
+                                            )
+                                        }
+                                        className="legal-cite-link"
+                                        style={citeAnimStyle(idx)}
+                                        title={tooltipText}
+                                    >
+                                        {children}
+                                    </button>
+                                );
+                            }
+                        }
+                        return (
+                            <a
+                                href={href}
+                                className="text-foreground underline underline-offset-3"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                {...props}
+                            >
+                                {children}
+                            </a>
+                        );
+                    },
                     hr: ({ node, ...props }) => (
-                        <hr className="my-6 border-gray-200" {...props} />
+                        <hr className="my-6 border-border" {...props} />
                     ),
                 }}
             >
@@ -1219,10 +1788,20 @@ interface Props {
     events?: AssistantEvent[];
     isStreaming?: boolean;
     isError?: boolean;
-    /** Human-readable error text rendered alongside the red Max icon. */
+    /** Human-readable error text rendered alongside the red Eulex Desk icon. */
     errorMessage?: string;
-    annotations?: MikeCitationAnnotation[];
+    /**
+     * Daily rate limit blocked this turn — render an in-chat notice
+     * (limit reached + CTA to pick a larger plan) instead of a reply.
+     */
+    rateLimited?: boolean;
+    annotations?: MikeAnnotation[];
     onCitationClick?: (citation: MikeCitationAnnotation) => void;
+    /** Opens the right-side legal-source document panel for a citation. */
+    onLegalSourceClick?: (
+        citation: MikeLegalSourceAnnotation,
+        citedArticleNumbers?: string[],
+    ) => void;
     minHeight?: string;
     onWorkflowClick?: (workflowId: string) => void;
     onEditViewClick?: (ann: MikeEditAnnotation, filename: string) => void;
@@ -1284,6 +1863,13 @@ interface Props {
     isLast?: boolean;
     onShareClick?: () => void;
     /**
+     * "Save as context" affordance next to the Sources heading — the parent
+     * receives this turn's cited legal sources and opens the save modal
+     * (it owns the transcript). Omitted where saving makes no sense
+     * (e.g. shared read-only views).
+     */
+    onSaveAsContext?: (sources: LegalSource[]) => void;
+    /**
      * Server-assigned chat_messages.id for the rendered assistant turn.
      * When present, the bottom toolbar shows the Print, Export PDF, and
      * Flag affordances. While the message is still streaming or has no
@@ -1298,6 +1884,27 @@ interface Props {
      * push it into a separate analytics store).
      */
     onFlagChange?: (messageId: string, flagged: boolean) => void;
+    /**
+     * Active PII Shield session for the chat this message belongs to,
+     * or null when the chat has no anonymisation active. Used to
+     * de-anonymise placeholders like `⟦PII:PERSON_1⟧` in the rendered
+     * markdown via the `/pii/sessions/:id/render` round-trip.
+     *
+     * When omitted/null, content with placeholders renders as-is — the
+     * user sees the obfuscated text. That's the intended fallback when
+     * PII Shield is "off" for the chat or when render fails.
+     */
+    piiSessionId?: string | null;
+    /**
+     * Legal sources harvested from EARLIER assistant turns in this
+     * conversation. Follow-up answers often reuse the already-fetched
+     * sources without calling the legal tools again, so this turn carries
+     * no `legal_sources` events of its own — without this fallback the
+     * article references in those answers render as plain text (issue
+     * #149). Used only for auto-linking; the "Izvori" list below the
+     * answer stays scoped to this turn's own sources.
+     */
+    conversationLegalSources?: LegalSource[];
 }
 
 export function AssistantMessage({
@@ -1306,8 +1913,10 @@ export function AssistantMessage({
     isStreaming = false,
     isError = false,
     errorMessage,
+    rateLimited = false,
     annotations = [],
     onCitationClick,
+    onLegalSourceClick,
     minHeight = "0px",
     onWorkflowClick,
     onEditViewClick,
@@ -1320,15 +1929,19 @@ export function AssistantMessage({
     resolvedEditStatuses,
     isLast = false,
     onShareClick,
+    onSaveAsContext,
     messageId,
     flagged = false,
     onFlagChange,
+    piiSessionId,
+    conversationLegalSources,
 }: Props) {
     const messageKey = useId();
     const t = useTranslations("streaming");
     const tShare = useTranslations("shareChat");
     const tCommon = useTranslations("common");
     const tActions = useTranslations("messageActions");
+    const tErrors = useTranslations("assistant.errors");
     const contentDivRef = useRef<HTMLDivElement | null>(null);
     const [isCopied, setIsCopied] = useState(false);
     const [isFlagged, setIsFlagged] = useState<boolean>(flagged);
@@ -1340,6 +1953,11 @@ export function AssistantMessage({
     useEffect(() => {
         if (!flagBusy) setIsFlagged(flagged);
     }, [flagged, flagBusy]);
+
+    // document_generated is tracked in useAssistantChat's stream loop (the
+    // hook sees doc_created completion definitively and knows the surface);
+    // a render-layer isStreaming-transition detector here would lose the
+    // event whenever the user navigated away before the stream finished.
     // Per-document override of the download URL, set as Accept/Reject resolves
     // each tracked change and produces a new version.
     const [resolvedOverrides, setResolvedOverrides] = useState<
@@ -1369,24 +1987,72 @@ export function AssistantMessage({
           ? "active"
           : null;
 
+    // Legal sources consulted this turn (deduped by id) for the "Izvori"
+    // list under the answer AND for auto-linking article references in prose.
+    // Harvested from the `legal_sources` registry events; falls back to
+    // sources resolved into annotations for old messages persisted before the
+    // registry event existed.
+    const legalSourcesForList: LegalSource[] = (() => {
+        const byId = new Map<string, LegalSource>();
+        for (const ev of events ?? []) {
+            if (ev.type === "legal_sources") {
+                for (const s of ev.sources) if (!byId.has(s.id)) byId.set(s.id, s);
+            }
+        }
+        for (const a of annotations) {
+            if (a.type === "legal_source_data" && !byId.has(a.source.id)) {
+                byId.set(a.source.id, a.source);
+            }
+        }
+        return [...byId.values()];
+    })();
+
+    // Auto-linking additionally falls back to sources from earlier turns —
+    // a follow-up answered from conversation context has no legal_sources
+    // events of its own, but its article references still point at the
+    // sources consulted earlier (issue #149). This turn's own sources win
+    // on id collisions.
+    const legalSourcesForLinking: LegalSource[] = (() => {
+        if (!conversationLegalSources?.length) return legalSourcesForList;
+        const byId = new Map<string, LegalSource>();
+        for (const s of legalSourcesForList) byId.set(s.id, s);
+        for (const s of conversationLegalSources) {
+            if (!byId.has(s.id)) byId.set(s.id, s);
+        }
+        return [...byId.values()];
+    })();
+
     // Pre-process citations for all content events. Each [N] marker resolves
     // to exactly one annotation (models are instructed to use shared refs
     // only for cross-page continuations via the [[PAGE_BREAK]] sentinel).
-    const citationsList: MikeCitationAnnotation[] = [];
+    // A second pass auto-links bare article references ("Članak 5. GDPR-a",
+    // "Article 6") to harvested legal sources even when the model omitted the
+    // [N] marker — so the pill is reliable, not model-dependent. A third pass
+    // does the same for Croatian case-law references ("Revr 123/2019", ECLI).
+    const citationsList: MikeAnnotation[] = [];
     const processedTexts: string[] = [];
     if (events) {
         for (const event of events) {
             processedTexts.push(
                 event.type === "content"
-                    ? preprocessCitations(
-                          event.text,
-                          annotations,
+                    ? autoLinkCaseLawRefs(
+                          autoLinkLegalRefs(
+                              preprocessCitations(
+                                  event.text,
+                                  annotations,
+                                  citationsList,
+                              ),
+                              legalSourcesForLinking,
+                              citationsList,
+                          ),
+                          legalSourcesForLinking,
                           citationsList,
                       )
                     : "",
             );
         }
     }
+
     const handleCopy = async () => {
         try {
             let html = "";
@@ -1434,6 +2100,18 @@ export function AssistantMessage({
 <meta charset="utf-8" />
 <title>max.eulex.ai — ${tActions("documentTitle")}</title>
 <style>
+  /* The printable document is written into a blank, isolated iframe and
+     never loads the app's CSS bundle — so the SHARED THEME custom
+     properties aren't in scope here. Mirror the semantic paper-theme
+     tokens locally so the layout below is token-driven (and the
+     check-theme-tokens gate passes) instead of carrying raw hex. */
+  :root {
+    --print-bg: #FFFCF5;        /* --background literal-ok */
+    --print-fg: #32270D;        /* --foreground / --primary literal-ok */
+    --print-muted: #6F6249;     /* --muted-foreground literal-ok */
+    --print-border: #DDD6C6;    /* --border literal-ok */
+    --print-surface: #F7F3E9;   /* --card / --muted literal-ok */
+  }
   /* Print layout: reserve room at the top + bottom of every A4 page
      for our repeating margin-boxes. Chromium/WebKit honour @page margin
      boxes (top-left/right, bottom-center/right) so we don't have to fake
@@ -1447,7 +2125,7 @@ export function AssistantMessage({
       font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
       font-size: 8pt;
       letter-spacing: 1px;
-      color: #94A3B8;
+      color: var(--print-muted);
       text-transform: lowercase;
     }
     @top-right {
@@ -1455,27 +2133,27 @@ export function AssistantMessage({
       font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
       font-size: 7pt;
       letter-spacing: 2px;
-      color: #CBD5E1;
+      color: var(--print-muted);
       text-transform: uppercase;
     }
     @bottom-left {
       content: "Powered by Eulex.ai — ${tagline}";
       font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
       font-size: 8pt;
-      color: #475569;
+      color: var(--print-muted);
     }
     @bottom-right {
       content: "Stranica " counter(page) " / " counter(pages);
       font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
       font-size: 8pt;
-      color: #94A3B8;
+      color: var(--print-muted);
     }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; }
+  html, body { margin: 0; padding: 0; background: var(--print-bg); }
   body {
     font-family: 'Georgia', 'Times New Roman', serif;
-    color: #111827;
+    color: var(--print-fg);
     line-height: 1.6;
     font-size: 11.5pt;
   }
@@ -1484,7 +2162,7 @@ export function AssistantMessage({
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    border-bottom: 1.5px solid #0F172A;
+    border-bottom: 1.5px solid var(--print-fg);
     padding-bottom: 10px;
     margin-bottom: 18px;
   }
@@ -1493,21 +2171,21 @@ export function AssistantMessage({
     font-weight: 600;
     font-size: 13pt;
     letter-spacing: 0.3px;
-    color: #0F172A;
+    color: var(--print-fg);
   }
-  .doc-header .brand .domain { color: #1D4ED8; font-weight: 700; }
+  .doc-header .brand .domain { color: var(--print-fg); font-weight: 700; }
   .doc-header .doc-meta {
     font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
     font-size: 8.5pt;
-    color: #64748B;
+    color: var(--print-muted);
     text-align: right;
     line-height: 1.4;
   }
-  .doc-meta .label { text-transform: uppercase; letter-spacing: 1.5px; font-size: 7.5pt; color: #94A3B8; }
+  .doc-meta .label { text-transform: uppercase; letter-spacing: 1.5px; font-size: 7.5pt; color: var(--print-muted); }
 
   h1, h2, h3, h4 {
     font-family: 'Georgia', 'Times New Roman', serif;
-    color: #0F172A;
+    color: var(--print-fg);
     page-break-after: avoid;
     break-after: avoid;
   }
@@ -1526,32 +2204,32 @@ export function AssistantMessage({
     break-inside: avoid;
   }
   th, td {
-    border: 1px solid #E2E8F0;
+    border: 1px solid var(--print-border);
     padding: 7px 9px;
     text-align: left;
     font-size: 10.5pt;
     vertical-align: top;
   }
-  th { background: #F8FAFC; font-family: 'Inter', sans-serif; font-weight: 600; }
+  th { background: var(--print-surface); font-family: 'Inter', sans-serif; font-weight: 600; }
   blockquote {
-    border-left: 3px solid #CBD5E1;
+    border-left: 3px solid var(--print-border);
     padding-left: 12px;
-    color: #475569;
+    color: var(--print-muted);
     margin: 10px 0;
     font-style: italic;
   }
-  code { background: #F1F5F9; padding: 1px 4px; border-radius: 3px; font-size: 10.5pt; }
+  code { background: var(--print-surface); padding: 1px 4px; border-radius: 3px; font-size: 10.5pt; }
   pre  {
-    background: #F1F5F9;
+    background: var(--print-surface);
     padding: 10px;
     border-radius: 4px;
     overflow: auto;
     page-break-inside: avoid;
     break-inside: avoid;
   }
-  a { color: #1D4ED8; text-decoration: underline; }
+  a { color: var(--print-fg); text-decoration: underline; }
 
-  /* Strip any rendered inline UI controls Max embeds in the live answer
+  /* Strip any rendered inline UI controls Eulex Desk embeds in the live answer
      (citation pills, etc.) — they shouldn't reach the printout. */
   button { display: none !important; }
 
@@ -1560,20 +2238,20 @@ export function AssistantMessage({
   .doc-disclaimer {
     margin-top: 24px;
     padding-top: 10px;
-    border-top: 1px solid #E2E8F0;
+    border-top: 1px solid var(--print-border);
     font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
     font-size: 8.5pt;
-    color: #64748B;
+    color: var(--print-muted);
     page-break-inside: avoid;
     break-inside: avoid;
   }
   .doc-disclaimer .powered {
     display: block;
-    color: #0F172A;
+    color: var(--print-fg);
     font-weight: 600;
     margin-bottom: 4px;
   }
-  .doc-disclaimer .powered .accent { color: #1D4ED8; }
+  .doc-disclaimer .powered .accent { color: var(--print-fg); }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1606,7 +2284,7 @@ export function AssistantMessage({
      * the browser's print dialog. From there the user can pick "Save as
      * PDF" (Export) or any installed printer (Print). Using an iframe
      * instead of window.print() on the current page keeps the surrounding
-     * Max UI out of the printout.
+     * Eulex Desk UI out of the printout.
      *
      * The spinner is cleared as soon as the print dialog opens (or 1.5s
      * after, whichever comes first) — the modal print dialog blocks the
@@ -1788,11 +2466,13 @@ export function AssistantMessage({
             const processed = processedTexts[globalIdx];
             return (
                 <div key={globalIdx}>
-                    <MarkdownContent
+                    <PiiRenderedMarkdown
                         text={processed}
                         citationsList={citationsList}
                         onCitationClick={onCitationClick}
+                        onLegalSourceClick={onLegalSourceClick}
                         divRef={isLastContent ? contentDivRef : undefined}
+                        piiSessionId={piiSessionId}
                     />
                 </div>
             );
@@ -1812,12 +2492,12 @@ export function AssistantMessage({
             return (
                 <div
                     key={globalIdx}
-                    className="flex items-center text-sm font-serif text-gray-500 relative"
+                    className="flex items-center text-sm font-serif text-muted-foreground relative"
                 >
                     {showConnector && (
-                        <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                        <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
                     )}
-                    <div className="w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
                     <span className="font-medium ml-2">{t("running")}</span>
                     <span className="ml-1">
                         {event.display_name
@@ -1833,12 +2513,12 @@ export function AssistantMessage({
             return (
                 <div
                     key={globalIdx}
-                    className="flex items-center text-sm font-serif text-gray-500 relative"
+                    className="flex items-center text-sm font-serif text-muted-foreground relative"
                 >
                     {showConnector && (
-                        <div className="absolute bottom-0 w-[1px] bg-gray-300 top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
+                        <div className="absolute bottom-0 w-[1px] bg-border top-[13px] left-[2.5px] h-[calc(100%+11px)]" />
                     )}
-                    <div className="w-1.5 h-1.5 rounded-full border border-gray-400 border-t-transparent animate-spin shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full border border-muted-foreground/70 border-t-transparent animate-spin shrink-0" />
                     <span className="ml-2">{t("thinking")}</span>
                 </div>
             );
@@ -1857,6 +2537,7 @@ export function AssistantMessage({
                     key={globalIdx}
                     query={event.query}
                     provider={event.provider}
+                    kind={event.kind}
                     results={results}
                     error={error}
                     isStreaming={isStreaming}
@@ -1865,8 +2546,33 @@ export function AssistantMessage({
                 />
             );
         }
+        if (
+            event.type === "web_extract_started" ||
+            event.type === "web_extract_result"
+        ) {
+            const isStreaming = event.type === "web_extract_started";
+            const isResult = event.type === "web_extract_result";
+            return (
+                <WebExtractBlock
+                    key={globalIdx}
+                    url={event.url}
+                    title={isResult ? event.title : null}
+                    snippet={isResult ? event.snippet : ""}
+                    isPdf={isResult ? event.is_pdf : false}
+                    full={isResult ? event.full : false}
+                    error={isResult ? event.error : null}
+                    isStreaming={isStreaming}
+                    showConnector={showConnector}
+                    t={t}
+                />
+            );
+        }
         if (event.type === "doc_read") {
-            const ann = annotations.find((a) => a.filename === event.filename);
+            const ann = annotations.find(
+                (a): a is MikeCitationAnnotation =>
+                    a.type === "citation_data" &&
+                    a.filename === event.filename,
+            );
             return (
                 <DocReadBlock
                     key={globalIdx}
@@ -1967,9 +2673,9 @@ export function AssistantMessage({
     };
 
     return (
-        <div style={{ minHeight }}>
+        <div style={{ minHeight }} data-testid="chat-message" data-role="assistant">
             <ResponseStatus status={status} />
-            <div className="w-full font-inter relative mt-2">
+            <div className="w-full font-sans relative mt-2">
                 {events && events.length > 0 ? (
                     <div className="flex flex-col gap-4">
                         {groups.map((g, gIdx) => {
@@ -1978,15 +2684,19 @@ export function AssistantMessage({
                                     g.index === lastContentIdx;
                                 return (
                                     <div key={`c-${g.index}`}>
-                                        <MarkdownContent
+                                        <PiiRenderedMarkdown
                                             text={processedTexts[g.index]}
                                             citationsList={citationsList}
                                             onCitationClick={onCitationClick}
+                                            onLegalSourceClick={
+                                                onLegalSourceClick
+                                            }
                                             divRef={
                                                 isLastContent
                                                     ? contentDivRef
                                                     : undefined
                                             }
+                                            piiSessionId={piiSessionId}
                                         />
                                     </div>
                                 );
@@ -2015,6 +2725,37 @@ export function AssistantMessage({
                                 </PreResponseWrapper>
                             );
                         })}
+                        {/* "Izvori" — legal sources consulted this turn.
+                            Below the answer, only after streaming stops. */}
+                        {!isStreaming &&
+                            legalSourcesForList.length > 0 &&
+                            onLegalSourceClick && (
+                                <SourcesList
+                                    sources={legalSourcesForList}
+                                    onSourceClick={(s) =>
+                                        onLegalSourceClick(
+                                            {
+                                                type: "legal_source_data",
+                                                ref: 0,
+                                                source: s,
+                                                quote: "",
+                                            },
+                                            citedArticleNumbersFor(
+                                                s,
+                                                legalSourcesForList,
+                                            ),
+                                        )
+                                    }
+                                    onSaveAsContext={
+                                        onSaveAsContext
+                                            ? () =>
+                                                  onSaveAsContext(
+                                                      legalSourcesForList,
+                                                  )
+                                            : undefined
+                                    }
+                                />
+                            )}
                         {/* Bulk accept/reject + per-edit cards — below the
                             response content, only after streaming stops,
                             rendered above the download card. */}
@@ -2111,12 +2852,14 @@ export function AssistantMessage({
                 ) : null}
 
                 {isError && (
-                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-serif text-red-700">
+                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm font-serif text-destructive">
                         <span className="leading-snug">
-                            {errorMessage ?? "Sorry, something went wrong."}
+                            {errorMessage ?? tErrors("generic")}
                         </span>
                     </div>
                 )}
+
+                {rateLimited && <RateLimitChatNotice />}
 
                 {/* Download card for each edited doc — only after streaming
                     stops, and deduped per document (keep the latest edit). */}
@@ -2235,10 +2978,13 @@ export function AssistantMessage({
                     Flag toggles chat_messages.is_flagged via the API. The
                     Share button still appears only on the last assistant
                     reply so the affordance is consistently anchored. */}
+                {/* No copy/print/export affordances for a content-less
+                    rate-limit notice — there's no answer to act on. */}
+                {!(rateLimited && (!events || events.length === 0)) && (
                 <div className="flex items-center gap-1 pt-2 pb-4 md:pb-8 font-sans justify-start">
                     {!isStreaming && (
                         <button
-                            className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
                             onClick={handleCopy}
                             title={
                                 isCopied
@@ -2248,7 +2994,7 @@ export function AssistantMessage({
                             aria-label={tCommon("copy")}
                         >
                             {isCopied ? (
-                                <Check className="h-3.5 w-3.5 text-green-600" />
+                                <Check className="h-3.5 w-3.5 text-success" />
                             ) : (
                                 <Copy className="h-3.5 w-3.5" />
                             )}
@@ -2256,7 +3002,7 @@ export function AssistantMessage({
                     )}
                     {!isStreaming && (
                         <button
-                            className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
                             onClick={handlePrint}
                             title={tActions("print")}
                             aria-label={tActions("print")}
@@ -2266,7 +3012,7 @@ export function AssistantMessage({
                     )}
                     {!isStreaming && (
                         <button
-                            className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50"
                             onClick={handleExportPdf}
                             disabled={exporting}
                             title={tActions("exportPdf")}
@@ -2283,8 +3029,8 @@ export function AssistantMessage({
                         <button
                             className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
                                 isFlagged
-                                    ? "text-red-600 hover:bg-red-50"
-                                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                    ? "text-destructive hover:bg-destructive/10"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
                             }`}
                             onClick={handleToggleFlag}
                             disabled={flagBusy}
@@ -2304,7 +3050,7 @@ export function AssistantMessage({
                     )}
                     {!isStreaming && isLast && onShareClick && (
                         <button
-                            className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
                             onClick={onShareClick}
                             title={tShare("title")}
                             aria-label={tShare("title")}
@@ -2313,6 +3059,7 @@ export function AssistantMessage({
                         </button>
                     )}
                 </div>
+                )}
             </div>
         </div>
     );

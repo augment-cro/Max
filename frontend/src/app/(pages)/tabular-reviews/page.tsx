@@ -18,6 +18,7 @@ import { AddNewTRModal } from "@/app/components/tabular/AddNewTRModal";
 import { OwnerOnlyModal } from "@/app/components/shared/OwnerOnlyModal";
 import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { track } from "@/app/lib/analytics";
 import { useTranslations } from "next-intl";
 
 type Tab = "all" | "in-project" | "standalone";
@@ -146,6 +147,7 @@ export default function TabularReviewsPage() {
                 columns_config: columnsConfig ?? [],
                 ...(projectId && { project_id: projectId }),
             });
+            track("tabular_review_created", { from_workflow: false });
             router.push(
                 projectId
                     ? `/projects/${projectId}/tabular-reviews/${review.id}`
@@ -193,10 +195,21 @@ export default function TabularReviewsPage() {
             if (!ok) return;
         }
         setSelectedIds([]);
-        await Promise.all(
-            owned.map((id) => deleteTabularReview(id).catch(() => {})),
+        // Remove from the list only the rows that ACTUALLY deleted — otherwise
+        // a failed delete vanishes from the UI and silently reappears on the
+        // next reload.
+        const results = await Promise.all(
+            owned.map((id) =>
+                deleteTabularReview(id)
+                    .then(() => id)
+                    .catch(() => null),
+            ),
         );
-        setReviews((prev) => prev.filter((r) => !owned.includes(r.id)));
+        const deleted = new Set(
+            results.filter((id): id is string => id !== null),
+        );
+        if (deleted.size > 0)
+            setReviews((prev) => prev.filter((r) => !deleted.has(r.id)));
         if (blocked > 0) {
             setOwnerOnlyAction(
                 t("ownerOnlyDeletePartial", { count: blocked }),
@@ -210,29 +223,29 @@ export default function TabularReviewsPage() {
                 onClick={() => setFilterOpen((o) => !o)}
                 className={`flex items-center gap-1 text-xs font-medium transition-colors ${
                     projectFilter
-                        ? "text-gray-700 hover:text-gray-900"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "text-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
                 }`}
             >
                 {selectedProject ? selectedProject.name : t("filterByProject")}
                 <ChevronDown className="h-3 w-3" />
             </button>
             {filterOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-20 w-52 rounded-xl border border-gray-100 bg-white shadow-lg overflow-hidden">
+                <div className="absolute right-0 top-full mt-1.5 z-20 w-52 rounded-xl border border-border bg-surface-elevated overflow-hidden">
                     <button
                         onClick={() => {
                             setProjectFilter(null);
                             setFilterOpen(false);
                         }}
-                        className="flex items-center justify-between w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                        className="flex items-center justify-between w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                     >
                         {t("allProjects")}
                         {!projectFilter && (
-                            <Check className="h-3.5 w-3.5 text-gray-400" />
+                            <Check className="h-3.5 w-3.5 text-muted-foreground/70" />
                         )}
                     </button>
                     {projects.length > 0 && (
-                        <div className="border-t border-gray-100" />
+                        <div className="border-t border-border" />
                     )}
                     {projects.map((p) => (
                         <button
@@ -241,11 +254,11 @@ export default function TabularReviewsPage() {
                                 setProjectFilter(p.id);
                                 setFilterOpen(false);
                             }}
-                            className="flex items-center justify-between w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                            className="flex items-center justify-between w-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
                         >
                             <span className="truncate pr-2">{p.name}</span>
                             {projectFilter === p.id && (
-                                <Check className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                             )}
                         </button>
                     ))}
@@ -260,16 +273,16 @@ export default function TabularReviewsPage() {
                 <div ref={actionsRef} className="relative">
                     <button
                         onClick={() => setActionsOpen((v) => !v)}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                        className="flex items-center gap-1 text-xs font-medium text-foreground hover:text-foreground transition-colors"
                     >
                         {tCommon("actions")}
                         <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     {actionsOpen && (
-                        <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-gray-100 bg-white shadow-lg z-50 overflow-hidden">
+                        <div className="absolute top-full right-0 mt-1 w-36 rounded-lg border border-border bg-surface-elevated z-50 overflow-hidden">
                             <button
                                 onClick={handleDeleteSelected}
-                                className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 transition-colors"
                             >
                                 {tCommon("delete")}
                             </button>
@@ -282,10 +295,10 @@ export default function TabularReviewsPage() {
     );
 
     return (
-        <div className="flex-1 overflow-y-auto bg-white">
+        <div className="flex-1 h-full overflow-y-auto bg-background">
             {/* Page header */}
             <div className="flex items-center justify-between px-8 py-4">
-                <h1 className="text-2xl font-medium font-serif text-gray-900">
+                <h1 className="text-2xl font-medium font-serif text-foreground">
                     {t("title")}
                 </h1>
                 <div className="flex items-center gap-2">
@@ -293,7 +306,7 @@ export default function TabularReviewsPage() {
                     <button
                         onClick={() => setNewTROpen(true)}
                         disabled={creating}
-                        className="flex items-center justify-center p-1.5 text-gray-500 hover:text-gray-900 transition-colors disabled:opacity-40"
+                        className="flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
                     >
                         {creating ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -314,8 +327,8 @@ export default function TabularReviewsPage() {
             {/* Table */}
             <div className="w-full overflow-x-auto">
                 <div className="min-w-max">
-                <div className="flex items-center h-8 pr-8 border-b border-gray-200 text-xs text-gray-500 font-medium select-none">
-                    <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-white flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-white`}>
+                <div className="flex items-center h-8 pr-8 border-b border-border text-xs text-muted-foreground font-medium select-none">
+                    <div className={`sticky left-0 z-[60] ${CHECK_W} relative bg-background flex items-center justify-center self-stretch before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-background`}>
                         {!loading && (
                             <input
                                 type="checkbox"
@@ -324,11 +337,11 @@ export default function TabularReviewsPage() {
                                     if (el) el.indeterminate = someSelected;
                                 }}
                                 onChange={toggleAll}
-                                className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                className="h-2.5 w-2.5 rounded border-input cursor-pointer accent-primary"
                             />
                         )}
                     </div>
-                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-white pl-2 text-left`}>
+                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} bg-background pl-2 text-left`}>
                         {t("columns.name")}
                     </div>
                     <div className="ml-auto w-24 shrink-0">{t("columns.columns")}</div>
@@ -343,23 +356,23 @@ export default function TabularReviewsPage() {
                         {[1, 2, 3].map((i) => (
                             <div
                                 key={i}
-                                className="flex items-center h-10 pr-8 border-b border-gray-50"
+                                className="flex items-center h-10 pr-8 border-b border-border"
                             >
                                 <div className="w-8 shrink-0" />
                                 <div className="flex-1 min-w-0 pl-3 pr-4">
-                                    <div className="h-3.5 w-48 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3.5 w-48 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-24 shrink-0">
-                                    <div className="h-3 w-8 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-8 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-24 shrink-0">
-                                    <div className="h-3 w-8 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-8 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-40 shrink-0">
-                                    <div className="h-3 w-24 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-24 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-32 shrink-0">
-                                    <div className="h-3 w-20 rounded bg-gray-100 animate-pulse" />
+                                    <div className="h-3 w-20 rounded bg-muted animate-pulse" />
                                 </div>
                                 <div className="w-8 shrink-0" />
                             </div>
@@ -369,23 +382,23 @@ export default function TabularReviewsPage() {
                     <div className="flex flex-col items-start py-24 w-full max-w-xs mx-auto">
                         {activeTab === "all" && !projectFilter ? (
                             <>
-                                <Table2 className="h-8 w-8 text-gray-300 mb-4" />
-                                <p className="text-2xl font-medium font-serif text-gray-900">
+                                <Table2 className="h-8 w-8 text-muted-foreground/70 mb-4" />
+                                <p className="text-2xl font-medium font-serif text-foreground">
                                     {t("empty.title")}
                                 </p>
-                                <p className="mt-1 text-xs text-gray-400 max-w-xs text-left">
+                                <p className="mt-1 text-xs text-muted-foreground/70 max-w-xs text-left">
                                     {t("empty.description")}
                                 </p>
                                 <button
                                     onClick={() => setNewTROpen(true)}
                                     disabled={creating}
-                                    className="mt-4 inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 transition-colors shadow-md disabled:opacity-40"
+                                    className="mt-4 inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
                                 >
                                     {t("empty.createNew")}
                                 </button>
                             </>
                         ) : (
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-muted-foreground/70">
                                 {t("empty.noReviews")}
                             </p>
                         )}
@@ -397,8 +410,8 @@ export default function TabularReviewsPage() {
                                 (p) => p.id === review.project_id,
                             );
                             const rowBg = selectedIds.includes(review.id)
-                                ? "bg-gray-50"
-                                : "bg-white";
+                                ? "bg-muted"
+                                : "bg-background";
                             return (
                                 <div
                                     key={review.id}
@@ -410,10 +423,10 @@ export default function TabularReviewsPage() {
                                                 : `/tabular-reviews/${review.id}`,
                                         );
                                     }}
-                                    className="group flex items-center h-10 pr-8 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                                    className="group flex items-center h-10 pr-8 border-b border-border hover:bg-accent cursor-pointer transition-colors"
                                 >
                                     <div
-                                        className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-gray-50`}
+                                        className={`sticky left-0 z-[60] ${CHECK_W} p-2 flex items-center justify-center ${rowBg} group-hover:bg-accent`}
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         <input
@@ -424,10 +437,10 @@ export default function TabularReviewsPage() {
                                             onChange={() =>
                                                 toggleOne(review.id)
                                             }
-                                            className="h-2.5 w-2.5 rounded border-gray-200 cursor-pointer accent-black"
+                                            className="h-2.5 w-2.5 rounded border-input cursor-pointer accent-primary"
                                         />
                                     </div>
-                                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-gray-50`}>
+                                    <div className={`sticky left-8 z-[60] ${NAME_COL_W} p-2 ${rowBg} group-hover:bg-accent`}>
                                         {renamingId === review.id ? (
                                             <input
                                                 autoFocus
@@ -453,35 +466,35 @@ export default function TabularReviewsPage() {
                                                 onClick={(e) =>
                                                     e.stopPropagation()
                                                 }
-                                                className="w-full text-sm text-gray-800 bg-transparent outline-none"
+                                                className="w-full text-sm text-foreground bg-transparent outline-none"
                                             />
                                         ) : (
-                                            <span className="text-sm text-gray-800 truncate block">
+                                            <span className="text-sm text-foreground truncate block">
                                                 {review.title ??
                                                     t("empty.title")}
                                             </span>
                                         )}
                                     </div>
-                                    <div className="ml-auto w-24 shrink-0 text-sm text-gray-500 truncate">
+                                    <div className="ml-auto w-24 shrink-0 text-sm text-muted-foreground truncate">
                                         {review.columns_config?.length ?? 0}
                                     </div>
-                                    <div className="w-24 shrink-0 text-sm text-gray-500 truncate">
+                                    <div className="w-24 shrink-0 text-sm text-muted-foreground truncate">
                                         {review.document_count ?? 0}
                                     </div>
-                                    <div className="w-40 shrink-0 text-sm text-gray-500 truncate pr-2">
+                                    <div className="w-40 shrink-0 text-sm text-muted-foreground truncate pr-2">
                                         {project ? (
                                             project.name
                                         ) : (
-                                            <span className="text-gray-300">
+                                            <span className="text-muted-foreground/70">
                                                 —
                                             </span>
                                         )}
                                     </div>
-                                    <div className="w-32 shrink-0 text-sm text-gray-500 truncate">
+                                    <div className="w-32 shrink-0 text-sm text-muted-foreground truncate">
                                         {review.created_at ? (
                                             formatDate(review.created_at)
                                         ) : (
-                                            <span className="text-gray-300">
+                                            <span className="text-muted-foreground/70">
                                                 —
                                             </span>
                                         )}

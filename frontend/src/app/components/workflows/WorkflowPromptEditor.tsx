@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import {
     Bold,
     Heading1,
@@ -41,8 +42,8 @@ function ToolbarBtn({
             }}
             className={`p-1.5 rounded transition-colors ${
                 active
-                    ? "bg-gray-200 text-gray-900"
-                    : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
             }`}
         >
             {children}
@@ -55,6 +56,7 @@ export function WorkflowPromptEditor({
     onChange,
     readOnly = false,
 }: Props) {
+    const tEditor = useTranslations("documents.editor");
     const lastEmittedRef = useRef(value);
 
     const editor = useEditor({
@@ -99,9 +101,9 @@ export function WorkflowPromptEditor({
     }, [value, editor]);
 
     return (
-        <div className="flex flex-col h-full border border-gray-200 rounded-md overflow-hidden bg-white">
+        <div className="flex flex-col h-full border border-input rounded-md overflow-hidden bg-surface-elevated">
             {!readOnly && editor && (
-                <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-gray-100 bg-gray-50 shrink-0">
+                <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border bg-muted shrink-0">
                     <ToolbarBtn
                         onClick={() =>
                             editor
@@ -111,7 +113,7 @@ export function WorkflowPromptEditor({
                                 .run()
                         }
                         active={editor.isActive("heading", { level: 1 })}
-                        title="Heading 1"
+                        title={tEditor("heading1")}
                     >
                         <Heading1 className="h-4 w-4" />
                     </ToolbarBtn>
@@ -124,7 +126,7 @@ export function WorkflowPromptEditor({
                                 .run()
                         }
                         active={editor.isActive("heading", { level: 2 })}
-                        title="Heading 2"
+                        title={tEditor("heading2")}
                     >
                         <Heading2 className="h-4 w-4" />
                     </ToolbarBtn>
@@ -137,17 +139,17 @@ export function WorkflowPromptEditor({
                                 .run()
                         }
                         active={editor.isActive("heading", { level: 3 })}
-                        title="Heading 3"
+                        title={tEditor("heading3")}
                     >
                         <Heading3 className="h-4 w-4" />
                     </ToolbarBtn>
-                    <div className="w-px h-4 bg-gray-200 mx-1 shrink-0" />
+                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
                     <ToolbarBtn
                         onClick={() =>
                             editor.chain().focus().toggleBold().run()
                         }
                         active={editor.isActive("bold")}
-                        title="Bold"
+                        title={tEditor("bold")}
                     >
                         <Bold className="h-4 w-4" />
                     </ToolbarBtn>
@@ -156,17 +158,17 @@ export function WorkflowPromptEditor({
                             editor.chain().focus().toggleItalic().run()
                         }
                         active={editor.isActive("italic")}
-                        title="Italic"
+                        title={tEditor("italic")}
                     >
                         <Italic className="h-4 w-4" />
                     </ToolbarBtn>
-                    <div className="w-px h-4 bg-gray-200 mx-1 shrink-0" />
+                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
                     <ToolbarBtn
                         onClick={() =>
                             editor.chain().focus().toggleBulletList().run()
                         }
                         active={editor.isActive("bulletList")}
-                        title="Bullet list"
+                        title={tEditor("bulletList")}
                     >
                         <List className="h-4 w-4" />
                     </ToolbarBtn>
@@ -175,7 +177,7 @@ export function WorkflowPromptEditor({
                             editor.chain().focus().toggleOrderedList().run()
                         }
                         active={editor.isActive("orderedList")}
-                        title="Numbered list"
+                        title={tEditor("orderedList")}
                     >
                         <ListOrdered className="h-4 w-4" />
                     </ToolbarBtn>

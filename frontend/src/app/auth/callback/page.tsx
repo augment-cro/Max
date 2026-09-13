@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
     exchangeCodeForTokens,
     consumePostLoginRedirect,
 } from "@/lib/oauth";
 import { useAuth } from "@/contexts/AuthContext";
+import { track } from "@/app/lib/analytics";
 import { SiteLogo } from "@/components/site-logo";
 import { Suspense } from "react";
 
@@ -14,6 +16,7 @@ function CallbackHandler() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { isAuthenticated } = useAuth();
+    const t = useTranslations("login");
     const [error, setError] = useState<string | null>(null);
     const [tokensReady, setTokensReady] = useState(false);
     const [pendingNext, setPendingNext] = useState<string | null>(null);
@@ -25,12 +28,19 @@ function CallbackHandler() {
         const errorDesc = searchParams.get("error_description");
 
         if (oauthError) {
-            setError(errorDesc || oauthError);
+            // Raw OAuth error strings are English — log them, render
+            // localized copy.
+            console.error("[auth/callback]", oauthError, errorDesc);
+            setError(
+                oauthError === "access_denied"
+                    ? t("callbackAccessDenied")
+                    : t("callbackGenericError"),
+            );
             return;
         }
 
         if (!code || !state) {
-            setError("Missing authorization code or state parameter.");
+            setError(t("callbackMissingCode"));
             return;
         }
 
@@ -42,14 +52,24 @@ function CallbackHandler() {
                 // flips to true, so the destination layout never sees a
                 // stale unauthenticated state (which would bounce us
                 // back to /login and force a second click).
+                //
+                // New-vs-returning signal: no reliable client-side indicator
+                // is available (no `is_new`, `created_at`, or first-login
+                // flag returned by the OAuth token endpoint or profile API).
+                // CONCERN: `signup_completed` cannot be distinguished from
+                // `login_completed` here. Firing `login_completed` for all
+                // successful auth as a safe fallback. To properly split
+                // new vs returning, the token endpoint or /user/profile
+                // would need to return an `is_new_account` boolean.
+                track("login_completed");
                 setPendingNext(consumePostLoginRedirect() ?? "/assistant");
                 setTokensReady(true);
             })
             .catch((err: Error) => {
                 console.error("[auth/callback] Token exchange failed:", err);
-                setError(err.message || "Authentication failed. Please try again.");
+                setError(t("callbackGenericError"));
             });
-    }, [searchParams]);
+    }, [searchParams, t]);
 
     useEffect(() => {
         if (tokensReady && isAuthenticated && pendingNext) {
@@ -59,15 +79,15 @@ function CallbackHandler() {
 
     if (error) {
         return (
-            <div className="min-h-dvh bg-white flex items-start justify-center px-6 pt-32 md:pt-40 pb-10 relative">
+            <div className="min-h-dvh bg-background flex items-start justify-center px-6 pt-32 md:pt-40 pb-10 relative">
                 <div className="absolute top-4 md:top-8 left-1/2 -translate-x-1/2">
                     <SiteLogo size="md" className="md:text-4xl" asLink />
                 </div>
                 <div className="w-full max-w-md">
-                    <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center">
-                        <div className="mx-auto w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mb-6">
+                    <div className="bg-card border border-border rounded-2xl p-8 text-center">
+                        <div className="mx-auto w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center mb-6">
                             <svg
-                                className="h-6 w-6 text-red-600"
+                                className="h-6 w-6 text-destructive"
                                 fill="none"
                                 viewBox="0 0 24 24"
                                 strokeWidth={1.5}
@@ -80,15 +100,15 @@ function CallbackHandler() {
                                 />
                             </svg>
                         </div>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">
-                            Authentication Failed
+                        <h2 className="text-xl font-semibold text-foreground mb-3">
+                            {t("callbackFailedTitle")}
                         </h2>
-                        <p className="text-gray-600 text-sm mb-6">{error}</p>
+                        <p className="text-muted-foreground text-sm mb-6">{error}</p>
                         <button
                             onClick={() => router.push("/login")}
-                            className="w-full py-3 rounded-xl bg-black text-white font-medium hover:bg-gray-900 transition-colors"
+                            className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
                         >
-                            Try Again
+                            {t("callbackTryAgain")}
                         </button>
                     </div>
                 </div>
@@ -97,10 +117,12 @@ function CallbackHandler() {
     }
 
     return (
-        <div className="min-h-dvh bg-white flex items-center justify-center">
+        <div className="min-h-dvh bg-background flex items-center justify-center">
             <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-300 border-t-black mx-auto mb-4" />
-                <p className="text-gray-500 text-sm">Completing sign-in...</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-border border-t-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground text-sm">
+                    {t("callbackCompleting")}
+                </p>
             </div>
         </div>
     );
@@ -110,8 +132,8 @@ export default function AuthCallbackPage() {
     return (
         <Suspense
             fallback={
-                <div className="min-h-dvh bg-white flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-300 border-t-black" />
+                <div className="min-h-dvh bg-background flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-border border-t-foreground" />
                 </div>
             }
         >

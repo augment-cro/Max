@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for "mike:auth-expired" — fired by apiFetch() whenever the
     // backend returns 401. We can't run OAuth refresh inside Office, so
-    // any expired JWT means the user has to re-pair from the Max web
+    // any expired JWT means the user has to re-pair from the Eulex Desk web
     // app. Reset to the Login view immediately so they're not staring
     // at confusing "chat 401" / "projects 401" error rows.
     useEffect(() => {

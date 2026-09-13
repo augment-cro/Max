@@ -1,63 +1,8 @@
-/**
- * Per-turn LLM cost tracking.
- *
- * Anthropic returns authoritative token counts on every API response.
- * The provider does NOT return a USD figure on the wire — we compute
- * it here from the published per-million-token rates so the numbers
- * match what shows up on the Anthropic console invoice.
- *
- * Pricing references (verified via TokenMix.ai / pecollective.com /
- * pricepertoken.com / Anthropic docs, May 2026):
- *
- *   Claude Sonnet 4.6 (claude-sonnet-4-6):
- *     input                   $3.00  / 1M tokens
- *     output                  $15.00 / 1M tokens
- *     cache write (5 min)     $3.75  / 1M tokens   (1.25× input)
- *     cache read              $0.30  / 1M tokens   (0.10× input, "90% off")
- *
- * Add new model entries here when we expose them in product. Unknown
- * model ids fall back to no cost rather than guessing — the row still
- * gets the raw token counts so we can backfill USD later.
- */
+/** Provider token receipts + published prices, persisted once per user query. */
 import type { LlmUsage } from "./llm/types";
 import { query } from "./db";
-
-type Rate = {
-    input: number;
-    output: number;
-    cacheWrite: number;
-    cacheRead: number;
-};
-
-const M = 1_000_000;
-
-const PRICING: Record<string, Rate> = {
-    // Standard API rates for Claude Sonnet 4.6 as of May 2026.
-    "claude-sonnet-4-6": {
-        input: 3.0 / M,
-        output: 15.0 / M,
-        cacheWrite: 3.75 / M,
-        cacheRead: 0.3 / M,
-    },
-};
-
-/**
- * Compute USD cost for a usage block. Returns 0 (rather than throwing)
- * when the model is unpriced — that way unknown models still get a row
- * with token counts and we can revisit pricing later.
- */
-export function computeCostUsd(model: string, usage: LlmUsage): number {
-    const rate = PRICING[model];
-    if (!rate) return 0;
-    const cost =
-        usage.inputTokens * rate.input +
-        usage.outputTokens * rate.output +
-        usage.cacheCreationInputTokens * rate.cacheWrite +
-        usage.cacheReadInputTokens * rate.cacheRead;
-    // Round to 6 decimals to fit numeric(12, 6). The smallest meaningful
-    // unit is 1 cache-read token = $3 × 10⁻⁷, which still rounds cleanly.
-    return Math.round(cost * 1e6) / 1e6;
-}
+import { priceUsage } from "./llmPricing";
+export { computeCostUsd } from "./llmPricing";
 
 export type RecordUsageInput = {
     userId: string;
@@ -67,10 +12,22 @@ export type RecordUsageInput = {
     projectId?: string | null;
     chatMessageId?: string | null;
     projectChatMessageId?: string | null;
+    /** Which surface produced this turn: "web" or "word" (the Word add-in).
+     *  Recorded for attribution/reporting; usage is counted toward the
+     *  user's quota regardless of client. */
+    client?: string | null;
     usage: LlmUsage;
     durationMs?: number | null;
     status?: "ok" | "error" | "aborted";
     errorMessage?: string | null;
+    /**
+     * Additional USD costs incurred during this turn that don't come
+     * from LLM tokens — e.g. web-search provider charges aggregated
+     * by lib/searchPricing. Folded into `cost_usd` before insert so
+     * the column reflects the *full* per-turn spend. Optional; legacy
+     * callers that don't pass it record only the LLM cost.
+     */
+    extraCostUsd?: number;
 };
 
 /**
@@ -87,13 +44,18 @@ export async function recordLlmUsage(input: RecordUsageInput): Promise<void> {
         projectId = null,
         chatMessageId = null,
         projectChatMessageId = null,
+        client = null,
         usage,
         durationMs = null,
         status = "ok",
         errorMessage = null,
+        extraCostUsd = 0,
     } = input;
 
-    const costUsd = computeCostUsd(model, usage);
+    const breakdown = priceUsage(model, usage, extraCostUsd);
+    const costUsd = breakdown.costUsd;
+    const safeExtra = breakdown.extraCostUsd;
+    const llmCostUsd = breakdown.knownLlmCostUsd;
 
     // Single structured line — easy to grep "[llm/usage]" in Cloud
     // Logging and dump it through `gcloud logging read` for ad-hoc
@@ -103,8 +65,12 @@ export async function recordLlmUsage(input: RecordUsageInput): Promise<void> {
             `iters=${usage.iterations} ` +
             `in=${usage.inputTokens} out=${usage.outputTokens} ` +
             `cache_w=${usage.cacheCreationInputTokens} cache_r=${usage.cacheReadInputTokens} ` +
-            `cost_usd=${costUsd.toFixed(6)} ` +
+            `cost_usd=${costUsd ?? "unknown"} cost_complete=${breakdown.complete} ` +
+            (safeExtra > 0
+                ? `(llm=${llmCostUsd.toFixed(6)} extra=${safeExtra.toFixed(6)}) `
+                : "") +
             `chat=${chatId ?? "-"} project=${projectId ?? "-"} ` +
+            `client=${client ?? "-"} ` +
             `status=${status}` +
             (durationMs != null ? ` duration_ms=${durationMs}` : "") +
             (errorMessage ? ` error=${JSON.stringify(errorMessage)}` : ""),
@@ -120,7 +86,8 @@ export async function recordLlmUsage(input: RecordUsageInput): Promise<void> {
                 iterations,
                 input_tokens, output_tokens,
                 cache_creation_input_tokens, cache_read_input_tokens,
-                cost_usd, duration_ms, status, error_message
+                cost_usd, duration_ms, status, error_message,
+                client, cost_breakdown
             ) VALUES (
                 $1, $2, $3,
                 $4, $5,
@@ -128,7 +95,8 @@ export async function recordLlmUsage(input: RecordUsageInput): Promise<void> {
                 $8,
                 $9, $10,
                 $11, $12,
-                $13, $14, $15, $16
+                $13, $14, $15, $16,
+                $17, $18::jsonb
             )
             `,
             [
@@ -148,10 +116,124 @@ export async function recordLlmUsage(input: RecordUsageInput): Promise<void> {
                 durationMs,
                 status,
                 errorMessage,
+                client,
+                JSON.stringify(breakdown),
             ],
         );
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[llm/usage] insert failed (non-fatal): ${msg}`);
+    }
+
+    // Drain any overage past the daily quota from active credit packs.
+    // We do this AFTER the insert so the rolling-window aggregate the
+    // limiter reads next time already includes this turn. Failures are
+    // swallowed — they only affect bonus accounting, not the chat reply.
+    try {
+        await drainCreditsForOverage(userId, usage);
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[llm/usage] credit drain failed (non-fatal): ${msg}`);
+    }
+}
+
+/**
+ * Compute the post-call rolling-window total for the user; if it
+ * exceeds the daily tier quota, deduct the *new* overage portion from
+ * active credit packs (FIFO). The rate limiter still gates future
+ * requests off the rolling total — credit consumption is purely the
+ * accounting half of "user spent past their daily quota".
+ */
+async function drainCreditsForOverage(
+    userId: string,
+    justRecorded: LlmUsage,
+): Promise<void> {
+    // Lazy import to avoid a circular load when ratelimit.ts pulls
+    // this file in the future.
+    const {
+        getRollingTokenUsage,
+        getActiveCredits,
+        consumeCredits,
+        resolveTierLimits,
+    } = await import("./rateLimit");
+
+    // We don't have tier_level_id on this code path (recordLlmUsage is
+    // called from many handlers, some of which don't carry res.locals).
+    // Fetch it from user_profiles … or fall back to free defaults.
+    const tierLevelId = await fetchTierLevelIdForUser(userId);
+    if (tierLevelId == null) return;
+    const [tierLimits, snapshot, credits] = await Promise.all([
+        resolveTierLimits(tierLevelId, null),
+        getRollingTokenUsage(userId),
+        getActiveCredits(userId),
+    ]);
+    if (credits.bonusRemaining <= 0) return;
+    const rollingTotal = snapshot.tokens;
+    const dailyCap = tierLimits.daily_tokens;
+    if (rollingTotal <= dailyCap) return;
+
+    // The user is over the daily cap — but we don't want to charge the
+    // ENTIRE rolling overage to credits each call (that double-counts).
+    // The new overage is at most the tokens recorded by THIS turn; the
+    // earlier turns either drained or pre-dated cap-cross. We charge
+    // min(thisTurnTokens, rollingTotal - dailyCap).
+    const turnTokens =
+        (justRecorded.inputTokens ?? 0) +
+        (justRecorded.outputTokens ?? 0) +
+        (justRecorded.cacheCreationInputTokens ?? 0) +
+        (justRecorded.cacheReadInputTokens ?? 0);
+    const overage = Math.min(turnTokens, rollingTotal - dailyCap);
+    if (overage <= 0) return;
+    const drawn = await consumeCredits(userId, overage);
+    if (drawn > 0) {
+        console.log(
+            `[llm/usage] credit drain user=${userId} overage=${overage} drawn=${drawn}`,
+        );
+    }
+}
+
+/**
+ * Look up the user's tier_level_id for credit-drain accounting. Returns
+ * null when we can't determine it — caller treats that as "skip credit
+ * accounting", because without a tier we can't know the daily cap.
+ *
+ * Primary source is `user_tier_state` (the same Stripe-webhook-fed
+ * override `requireAuth` uses), so a Pro/Team user's real daily cap is
+ * respected — the old credits-imply-Plus heuristic drained their packs
+ * while the (much larger) daily quota still had headroom. The heuristic
+ * stays as a fallback for users with packs but no tier row.
+ */
+async function fetchTierLevelIdForUser(userId: string): Promise<number | null> {
+    try {
+        const state = await query<{
+            active_tier_level_id: number | null;
+            active_tier_until: string | Date | null;
+        }>(
+            `SELECT active_tier_level_id, active_tier_until
+             FROM public.user_tier_state
+             WHERE user_id = $1`,
+            [userId],
+        );
+        const row = state.rows[0];
+        if (row?.active_tier_level_id != null) {
+            const expired =
+                row.active_tier_until &&
+                new Date(row.active_tier_until as string) < new Date();
+            if (!expired) return Number(row.active_tier_level_id);
+        }
+        const res = await query<{ tier_level_id: number | null }>(
+            `SELECT 2::int AS tier_level_id
+             FROM public.user_token_credits
+             WHERE user_id = $1
+               AND voided_at IS NULL
+               AND tokens_consumed < tokens_granted
+               AND (expires_at IS NULL OR expires_at > NOW())
+             LIMIT 1`,
+            [userId],
+        );
+        if (res.rows.length > 0) return 2;
+        return null;
+    } catch {
+        return null;
     }
 }

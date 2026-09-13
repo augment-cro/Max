@@ -72,7 +72,7 @@ export function _resetEmailProviderForTesting(): void {
  */
 export function getDefaultSender(): EmailAddress {
     const email = (process.env.EMAIL_FROM_ADDR ?? "").trim();
-    const name = (process.env.EMAIL_FROM_NAME ?? "Max").trim() || "Max";
+    const name = (process.env.EMAIL_FROM_NAME ?? "Eulex Desk").trim() || "Eulex Desk";
     if (!email) {
         // Surfaced as a clear log line on first send instead of crashing
         // boot — local dev often runs without the value set.

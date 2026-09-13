@@ -505,7 +505,7 @@ function EditProposalCard({
                 the open document. We show this whenever the doc has
                 pending revisions OR the user has applied at least one
                 of the suggestions on this card. The count comes from
-                Word.document.revisions and refreshes after each Apply,
+                body.getTrackedChanges() and refreshes after each Apply,
                 so it reflects the user's manual edits too. */}
             {wordOk &&
             (revCount === null

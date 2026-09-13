@@ -10,10 +10,12 @@ import {
     addDocumentToProject,
     deleteDocument,
 } from "@/app/lib/mikeApi";
+import { track, fileTypeOf } from "@/app/lib/analytics";
 import type { MikeDocument } from "./types";
 import { FileDirectory } from "./FileDirectory";
 import { useDirectoryData, invalidateDirectoryCache } from "./useDirectoryData";
 import { OwnerOnlyModal } from "./OwnerOnlyModal";
+import { ConnectorsButton } from "./ConnectorsButton";
 import { useAuth } from "@/contexts/AuthContext";
 
 export { invalidateDirectoryCache };
@@ -94,6 +96,17 @@ export function AddDocumentsModal({
         ...projects.flatMap((p) => p.documents || []),
     ];
 
+    // Docs uploaded through this modal already exist server-side, so closing
+    // WITHOUT confirming used to leave them invisible to the parent until a
+    // reload ("ghost" documents, issue #101). Surface them on close — the
+    // parent dedups by id, so this is safe even after a confirm.
+    function handleClose() {
+        if (extraUploadedDocs.length > 0) {
+            onSelect(extraUploadedDocs, projectId);
+        }
+        onClose();
+    }
+
     async function handleConfirm() {
         const selected = allDocs.filter((d) => selectedIds.has(d.id));
 
@@ -149,9 +162,7 @@ export function AddDocumentsModal({
         });
         const blocked = ids.length - owned.length;
         if (owned.length === 0 && blocked > 0) {
-            setOwnerOnlyAction(
-                "delete these documents — only the document creator can delete a document",
-            );
+            setOwnerOnlyAction(t("ownerOnlyDelete"));
             return;
         }
         const idSet = new Set(owned);
@@ -170,7 +181,7 @@ export function AddDocumentsModal({
         });
         if (blocked > 0) {
             setOwnerOnlyAction(
-                `delete ${blocked} of the selected documents — only the document creator can delete a document`,
+                t("ownerOnlyDeletePartial", { count: blocked }),
             );
         }
     }
@@ -181,11 +192,28 @@ export function AddDocumentsModal({
         setUploading(true);
         try {
             const uploaded = await Promise.all(
-                files.map((f) =>
-                    projectId
-                        ? uploadProjectDocument(projectId, f)
-                        : uploadStandaloneDocument(f),
-                ),
+                files.map(async (f) => {
+                    const surface = projectId ? "project" : "standalone";
+                    const fileType = fileTypeOf(f);
+                    try {
+                        const doc = projectId
+                            ? await uploadProjectDocument(projectId, f)
+                            : await uploadStandaloneDocument(f);
+                        track("document_uploaded", {
+                            surface,
+                            file_type: fileType,
+                            result: "success",
+                        });
+                        return doc;
+                    } catch (err) {
+                        track("document_uploaded", {
+                            surface,
+                            file_type: fileType,
+                            result: "error",
+                        });
+                        throw err;
+                    }
+                }),
             );
             invalidateDirectoryCache();
             setExtraUploadedDocs((prev) => [...uploaded, ...prev]);
@@ -200,12 +228,24 @@ export function AddDocumentsModal({
         }
     }
 
+    // Cloud-connector imports (Google Drive / Microsoft 365 / Box). The
+    // ConnectorsButton already drives the OAuth + picker flow and hands us
+    // the resulting MikeDocument; we just need to surface it in the list
+    // and pre-select it so the user can confirm in one click.
+    function handleConnectorImport(doc: MikeDocument) {
+        invalidateDirectoryCache();
+        setExtraUploadedDocs((prev) =>
+            prev.some((d) => d.id === doc.id) ? prev : [doc, ...prev],
+        );
+        setSelectedIds((prev) => new Set([...prev, doc.id]));
+    }
+
     return createPortal(
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 backdrop-blur-xs">
-            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col h-[600px]">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-foreground/10 backdrop-blur-xs">
+            <div className="w-full max-w-2xl rounded-2xl bg-background border border-border flex flex-col h-[600px]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
                         {breadcrumb.map((segment, i) => (
                             <span key={i} className="flex items-center gap-1.5">
                                 {i > 0 && <span>›</span>}
@@ -214,8 +254,8 @@ export function AddDocumentsModal({
                         ))}
                     </div>
                     <button
-                        onClick={onClose}
-                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        onClick={handleClose}
+                        className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-accent hover:text-muted-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -223,20 +263,20 @@ export function AddDocumentsModal({
 
                 {/* Search bar */}
                 <div className="px-4 pt-1 pb-2">
-                    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                        <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    <div className="flex items-center gap-2 rounded-lg border border-input bg-surface-elevated px-3 py-2">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                         <input
                             type="text"
                             placeholder={t("searchPlaceholder")}
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="flex-1 bg-transparent text-sm text-gray-700 placeholder:text-gray-400 outline-none"
+                            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 outline-none"
                             autoFocus
                         />
                         {search && (
                             <button
                                 onClick={() => setSearch("")}
-                                className="text-gray-400 hover:text-gray-600"
+                                className="text-muted-foreground/70 hover:text-muted-foreground"
                             >
                                 <X className="h-3.5 w-3.5" />
                             </button>
@@ -262,8 +302,8 @@ export function AddDocumentsModal({
                 </div>
 
                 {/* Footer */}
-                <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between gap-3">
-                    <div>
+                <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -275,7 +315,7 @@ export function AddDocumentsModal({
                         <button
                             onClick={() => fileInputRef.current?.click()}
                             disabled={uploading}
-                            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
                         >
                             {uploading ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -284,23 +324,27 @@ export function AddDocumentsModal({
                             )}
                             {uploading ? t("uploading") : t("upload")}
                         </button>
+                        <ConnectorsButton
+                            projectId={projectId ?? null}
+                            onImport={handleConnectorImport}
+                        />
                     </div>
                     <div className="flex items-center gap-2">
                         {selectedIds.size > 0 && (
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-muted-foreground/70">
                                 {t("selected", { count: selectedIds.size })}
                             </span>
                         )}
                         <button
-                            onClick={onClose}
-                            className="rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100"
+                            onClick={handleClose}
+                            className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent"
                         >
                             {tc("cancel")}
                         </button>
                         <button
                             onClick={handleConfirm}
                             disabled={selectedIds.size === 0 || uploading}
-                            className="rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
+                            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
                         >
                             {uploading ? tc("saving") : t("confirm")}
                         </button>

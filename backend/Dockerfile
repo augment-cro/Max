@@ -1,5 +1,5 @@
 # ────────────────────────────────────────────────────────────────
-#  MikeOSS Backend — Cloud Run Dockerfile
+#  Max Backend — Cloud Run Dockerfile
 #
 #  Multi-stage build:
 #    1. builder  — install deps + tsc compile
@@ -51,8 +51,17 @@ ENV NODE_ENV=production
 
 EXPOSE 8080
 
-# Non-root for security
-RUN groupadd -r mike && useradd -r -g mike mike
+# Non-root for security. Create a writable home + XDG cache/config dirs so
+# headless LibreOffice (soffice) and Fontconfig can write their per-user
+# cache. Without this the system user has no writable HOME and DOCX→PDF
+# conversion fails with "unable to create directory '/home/mike/.cache/dconf':
+# Permission denied" / "Fontconfig error: No writable cache directories".
+RUN groupadd -r mike && useradd -r -g mike -m -d /home/mike mike \
+    && mkdir -p /home/mike/.cache /home/mike/.config \
+    && chown -R mike:mike /home/mike
+ENV HOME=/home/mike \
+    XDG_CACHE_HOME=/home/mike/.cache \
+    XDG_CONFIG_HOME=/home/mike/.config
 USER mike
 
 CMD ["node", "dist/index.js"]

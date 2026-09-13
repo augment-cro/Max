@@ -1,20 +1,72 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { streamChat, streamProjectChat } from "@/app/lib/mikeApi";
+import { useTranslations } from "next-intl";
+import { piiAttachChat, streamChat, streamProjectChat } from "@/app/lib/mikeApi";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
 import { useGenerateChatTitle } from "./useGenerateChatTitle";
+import { track } from "@/app/lib/analytics";
+import { modelTierOf } from "@/app/components/assistant/ModelToggle";
 import type {
     AssistantEvent,
-    MikeCitationAnnotation,
+    LegalSource,
+    MikeAnnotation,
     MikeMessage,
 } from "@/app/components/shared/types";
+
+// ---------------------------------------------------------------------------
+// Analytics helpers
+// ---------------------------------------------------------------------------
+
+/** localStorage key used to detect the account's first-ever message (per browser). */
+const FIRST_MESSAGE_FLAG = "mike_sa_first_message";
+
+/**
+ * Whether chat_first_message already fired. Cached in-module so the send
+ * path does one localStorage read per page load, not per message — and
+ * guarded because storage access can throw (Chrome "block site data",
+ * Safari private mode); analytics must never break the send flow.
+ */
+let firstMessageTracked: boolean | null = null;
+
+function trackFirstMessageOnce(surface: string): void {
+    if (firstMessageTracked === true) return;
+    try {
+        if (firstMessageTracked === null) {
+            firstMessageTracked = !!localStorage.getItem(FIRST_MESSAGE_FLAG);
+            if (firstMessageTracked) return;
+        }
+        localStorage.setItem(FIRST_MESSAGE_FLAG, "1");
+        firstMessageTracked = true;
+        track("chat_first_message", { surface });
+    } catch {
+        // Storage unavailable — skip the event rather than risk the send.
+        firstMessageTracked = true;
+    }
+}
 
 interface UseAssistantChatOptions {
     initialMessages?: MikeMessage[];
     chatId?: string;
     projectId?: string;
+}
+
+/**
+ * Non-OK HTTP answer from the chat endpoint before the SSE stream started.
+ * Carries the status and the backend's stable error `code` (when present) so
+ * the catch block can pick a localized banner message — the raw response body
+ * (English `detail` strings, JSON) must never reach the chat surface.
+ */
+class ChatHttpError extends Error {
+    constructor(
+        readonly status: number,
+        readonly code: string | null,
+        detail: string | null,
+    ) {
+        super(detail || `HTTP ${status}`);
+        this.name = "ChatHttpError";
+    }
 }
 
 function findLastContentIndex(events: AssistantEvent[]): number {
@@ -24,12 +76,42 @@ function findLastContentIndex(events: AssistantEvent[]): number {
     return -1;
 }
 
+const PII_OPEN_CHAR = "\u27E6"; // ⟦
+const PII_CLOSE_CHAR = "\u27E7"; // ⟧
+
+/**
+ * Returns the largest `len <= desiredLen` such that `target.slice(0, len)`
+ * doesn't end in the middle of a `⟦PII:…⟧` placeholder. When the desired
+ * boundary is mid-placeholder, we back off to the position just before
+ * the opening `⟦`, so the next drip tick reveals the whole token at once.
+ *
+ * Bounded look-back: a placeholder is at most ~64 chars
+ * (`⟦PII:` + 50 char entity + `_NNN⟧`), so scanning back 80 chars is
+ * always sufficient — keeps the per-tick cost O(1) regardless of message
+ * size.
+ */
+function clampToCompletePlaceholder(target: string, desiredLen: number): number {
+    if (desiredLen <= 0 || desiredLen >= target.length) return desiredLen;
+    const scanStart = Math.max(0, desiredLen - 80);
+    const openIdx = target.lastIndexOf(PII_OPEN_CHAR, desiredLen - 1);
+    if (openIdx < scanStart) return desiredLen; // no recent opening bracket
+    const closeIdx = target.indexOf(PII_CLOSE_CHAR, openIdx);
+    if (closeIdx === -1) {
+        // Streaming hasn't received the closing bracket yet — hold the
+        // boundary just before `⟦`.
+        return openIdx;
+    }
+    if (closeIdx < desiredLen) return desiredLen; // fully inside window
+    return openIdx; // straddles → back off
+}
+
 export function useAssistantChat({
     initialMessages = [],
     chatId: initialChatId,
     projectId,
 }: UseAssistantChatOptions = {}) {
     const router = useRouter();
+    const tErrors = useTranslations("assistant.errors");
     const {
         replaceChatId,
         loadChats,
@@ -151,10 +233,17 @@ export function useAssistantChat({
             const displayLen = dripDisplayLenRef.current;
             if (displayLen >= target.length) return;
 
-            const newLen = Math.min(
+            const desiredLen = Math.min(
                 displayLen + DRIP_CHARS_PER_TICK,
                 target.length,
             );
+            // PII Shield safety (plan §1.5): when a placeholder
+            // `⟦PII:ENTITY_N⟧` straddles the current drip boundary,
+            // back off to the character before the opening bracket so
+            // the user never sees a half-rendered "⟦PII:" token. The
+            // next tick flushes the whole placeholder atomically.
+            // Cheap O(n) scan — we only check the last 80 chars.
+            const newLen = clampToCompletePlaceholder(target, desiredLen);
             dripDisplayLenRef.current = newLen;
             const visibleText = target.slice(0, newLen);
             const events = eventsRef.current;
@@ -184,6 +273,35 @@ export function useAssistantChat({
             setIsLoadingCitations(false);
         }
     };
+
+    // Navigating away mid-stream must stop the SSE fetch and the drip
+    // interval — otherwise the request keeps consuming (and billing) in
+    // the background with no way to cancel it, and a leaked interval keeps
+    // calling setMessages on an unmounted component (issue #89).
+    //
+    // StrictMode caveat: a dev mount runs effect → cleanup → effect
+    // synchronously, and the auto-send effect has already started the
+    // first stream by the time that simulated cleanup runs — aborting
+    // there killed every first message in dev. Defer the abort one tick
+    // and cancel it when the effect re-runs, so only a genuine unmount
+    // aborts.
+    const pendingUnmountAbortRef = useRef<ReturnType<
+        typeof setTimeout
+    > | null>(null);
+    useEffect(() => {
+        if (pendingUnmountAbortRef.current !== null) {
+            clearTimeout(pendingUnmountAbortRef.current);
+            pendingUnmountAbortRef.current = null;
+        }
+        return () => {
+            pendingUnmountAbortRef.current = setTimeout(() => {
+                abortControllerRef.current?.abort();
+                abortControllerRef.current = null;
+                stopDrip();
+            }, 0);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Transient placeholder events (tool_call_start, thinking) fill the
     // latency gap between real SSE events so the wrapper doesn't look stuck.
@@ -278,7 +396,7 @@ export function useAssistantChat({
             displayedDoc?: { filename: string; documentId: string } | null;
         },
     ): Promise<string | null> => {
-        if (!message.content.trim()) return null;
+        if (!message.content.trim() && !message.files?.length && !message.workflow) return null;
 
         setIsResponseLoading(true);
 
@@ -296,6 +414,22 @@ export function useAssistantChat({
             ...newMessages,
             { role: "assistant", content: "", annotations: [], events: [] },
         ]);
+
+        // ── Analytics ──────────────────────────────────────────────────────
+        // Fire after the message is committed to state, before the network
+        // call. `surface` is derived from whether a projectId is in scope;
+        // `model_tier` is a coarse label (never the raw model id string);
+        // `has_attachment` is a plain boolean (no file names or counts).
+        const surface = projectId ? "project" : "assistant";
+        const model_tier = modelTierOf(message.model);
+        const has_attachment = !!(message.files && message.files.length > 0);
+
+        track("chat_message_sent", { surface, model_tier, has_attachment });
+
+        // `chat_first_message` fires once per browser (localStorage flag).
+        // This is a per-browser approximation — noted as a known limitation.
+        trackFirstMessageOnce(surface);
+        // ───────────────────────────────────────────────────────────────────
 
         let streamedChatId: string | null = null;
 
@@ -317,6 +451,7 @@ export function useAssistantChat({
 
             const model = message.model;
             const effort = message.effort;
+            const webSearch = message.webSearch;
 
             const displayedDoc = opts?.displayedDoc ?? null;
 
@@ -339,6 +474,7 @@ export function useAssistantChat({
                       chat_id: chatId,
                       model,
                       effort,
+                      web_search: webSearch,
                       displayed_doc: displayedDoc
                           ? {
                                 filename: displayedDoc.filename,
@@ -354,12 +490,37 @@ export function useAssistantChat({
                       chat_id: chatId,
                       model,
                       effort,
+                      web_search: webSearch,
                       signal: controller.signal,
                   }));
 
             if (!response.ok) {
+                // 429 (rate-limited) is owned by the banner — streamFetch
+                // has already parsed the body and pushed it into
+                // rateLimitStore, so we just need to bail without
+                // dumping the raw JSON into the chat as an "answer".
+                if (response.status === 429) {
+                    const rlError = new Error("RATE_LIMITED") as Error & {
+                        rateLimited?: true;
+                    };
+                    rlError.rateLimited = true;
+                    throw rlError;
+                }
                 const errText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errText}`);
+                let code: string | null = null;
+                let detail: string | null = null;
+                try {
+                    const body = JSON.parse(errText) as {
+                        code?: unknown;
+                        detail?: unknown;
+                    };
+                    code = typeof body.code === "string" ? body.code : null;
+                    detail =
+                        typeof body.detail === "string" ? body.detail : null;
+                } catch {
+                    /* non-JSON body — keep nulls */
+                }
+                throw new ChatHttpError(response.status, code, detail);
             }
 
             const reader = response.body?.getReader();
@@ -385,6 +546,63 @@ export function useAssistantChat({
 
                     try {
                         const data = JSON.parse(dataStr);
+
+                        if (data.type === "rate_limited") {
+                            // Mid-stream gate (e.g. tool-use loop pushed
+                            // the user past their limit while the reply
+                            // was already underway). Push the snapshot,
+                            // flag the bubble so it renders the in-chat
+                            // notice (alongside any partial content), and
+                            // stop reading.
+                            const { pushFromRateLimitedError } = await import(
+                                "../lib/rateLimitStore"
+                            );
+                            pushFromRateLimitedError(data);
+                            setMessages((prev) => {
+                                const last = prev[prev.length - 1];
+                                if (last?.role === "assistant") {
+                                    const updated = [...prev];
+                                    updated[updated.length - 1] = {
+                                        ...last,
+                                        rateLimited: true,
+                                    };
+                                    return updated;
+                                }
+                                return prev;
+                            });
+                            await reader.cancel();
+                            break;
+                        }
+
+                        if (data.type === "error") {
+                            // Mid-stream backend failure (the LLM/tool loop
+                            // died after headers were flushed). The payload
+                            // message is an English marker string — show the
+                            // localized banner instead, keeping any partial
+                            // content already streamed. A fail-closed PII
+                            // abort ships its own code so the banner can
+                            // explain why the turn was withheld.
+                            stopDrip();
+                            flushDrip();
+                            clearStreamingPlaceholders();
+                            const errorText =
+                                data.code === "PII_SHIELD_UNAVAILABLE"
+                                    ? tErrors("piiUnavailable")
+                                    : tErrors("streamError");
+                            setMessages((prev) => {
+                                const last = prev[prev.length - 1];
+                                if (last?.role === "assistant") {
+                                    const updated = [...prev];
+                                    updated[updated.length - 1] = {
+                                        ...last,
+                                        error: errorText,
+                                    };
+                                    return updated;
+                                }
+                                return prev;
+                            });
+                            continue;
+                        }
 
                         if (data.type === "chat_id") {
                             streamedChatId = data.chatId;
@@ -616,6 +834,11 @@ export function useAssistantChat({
                                 type: "web_search_started",
                                 query: (data.query as string) ?? "",
                                 provider: (data.provider as string) ?? "auto",
+                                kind: (data.kind as
+                                    | "official"
+                                    | "web"
+                                    | "news"
+                                    | undefined),
                                 isStreaming: true,
                             });
                             continue;
@@ -656,9 +879,77 @@ export function useAssistantChat({
                                 type: "web_search_result" as const,
                                 query,
                                 provider,
+                                kind: (data.kind as
+                                    | "official"
+                                    | "web"
+                                    | "news"
+                                    | undefined),
                                 results,
                                 error,
                             };
+                            if (idx >= 0) {
+                                const next = [...events];
+                                next[idx] = finalEvent;
+                                eventsRef.current = next;
+                                const snapshot = [...next];
+                                setMessages((prev) => {
+                                    const updated = [...prev];
+                                    const last = updated[updated.length - 1];
+                                    if (last?.role === "assistant") {
+                                        updated[updated.length - 1] = {
+                                            ...last,
+                                            events: snapshot,
+                                        };
+                                    }
+                                    return updated;
+                                });
+                            } else {
+                                pushEvent(finalEvent);
+                            }
+                            pushThinkingPlaceholder();
+                            continue;
+                        }
+
+                        if (data.type === "web_extract_started") {
+                            // "Reading link…" affordance, matched to the
+                            // follow-up web_extract_result by `url`.
+                            pushEvent({
+                                type: "web_extract_started",
+                                url: (data.url as string) ?? "",
+                                isStreaming: true,
+                            });
+                            continue;
+                        }
+
+                        if (data.type === "web_extract_result") {
+                            const url = (data.url as string) ?? "";
+                            const finalEvent = {
+                                type: "web_extract_result" as const,
+                                url,
+                                title:
+                                    typeof data.title === "string"
+                                        ? (data.title as string)
+                                        : null,
+                                snippet:
+                                    typeof data.snippet === "string"
+                                        ? (data.snippet as string)
+                                        : "",
+                                is_pdf: data.is_pdf === true,
+                                full: data.full === true,
+                                error:
+                                    typeof data.error === "string" && data.error
+                                        ? (data.error as string)
+                                        : null,
+                            };
+                            // Replace the in-flight started placeholder for
+                            // this url; append if there's no match (race).
+                            const events = eventsRef.current;
+                            const idx = events.findIndex(
+                                (e) =>
+                                    e.type === "web_extract_started" &&
+                                    e.url === url &&
+                                    e.isStreaming,
+                            );
                             if (idx >= 0) {
                                 const next = [...events];
                                 next[idx] = finalEvent;
@@ -727,6 +1018,13 @@ export function useAssistantChat({
                         }
 
                         if (data.type === "doc_created") {
+                            // Analytics: a generated document finished
+                            // streaming. Fired here — the hook owns the
+                            // stream loop, sees completion definitively
+                            // (a component effect loses the event when the
+                            // user navigates away mid-stream) and knows the
+                            // real surface. No filename/id in metadata.
+                            track("document_generated", { surface });
                             updateMatchingEvent(
                                 (e) =>
                                     e.type === "doc_created" &&
@@ -871,13 +1169,24 @@ export function useAssistantChat({
                             continue;
                         }
 
+                        if (data.type === "legal_sources") {
+                            // Per-turn legal-source registry — drives the
+                            // "Izvori" list and the right-side panel.
+                            pushEvent({
+                                type: "legal_sources",
+                                sources: (data.sources as LegalSource[]) ?? [],
+                            });
+                            pushThinkingPlaceholder();
+                            continue;
+                        }
+
                         if (data.type === "citations") {
                             // End-of-stream signal — scrub any lingering
                             // placeholders so they don't persist into the
                             // finalised message.
                             clearStreamingPlaceholders();
                             const incoming = (data.citations ??
-                                []) as MikeCitationAnnotation[];
+                                []) as MikeAnnotation[];
                             setMessages((prev) => {
                                 const updated = [...prev];
                                 const last = updated[updated.length - 1];
@@ -902,7 +1211,38 @@ export function useAssistantChat({
             }
 
             flushDrip();
+            finalizeStreamingContent();
             finalizeStreamingReasoning();
+            // Persist the streamed text onto message.content — the events
+            // array is what renders, but `content` is what gets sent back
+            // as history on the NEXT turn (apiMessages maps role+content
+            // only). Leaving it "" made every follow-up in-session transmit
+            // prior assistant turns as empty strings, so the model lost its
+            // own answers (issue #84). Same join as getChat().
+            {
+                const finalContent = eventsRef.current
+                    .filter(
+                        (e): e is { type: "content"; text: string } =>
+                            e.type === "content" &&
+                            typeof (e as { text?: unknown }).text === "string",
+                    )
+                    .map((e) => e.text)
+                    .join("");
+                if (finalContent) {
+                    setMessages((prev) => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role !== "assistant" || last.content) {
+                            return prev;
+                        }
+                        const updated = [...prev];
+                        updated[updated.length - 1] = {
+                            ...last,
+                            content: finalContent,
+                        };
+                        return updated;
+                    });
+                }
+            }
             setIsResponseLoading(false);
             setIsLoadingCitations(false);
 
@@ -912,7 +1252,13 @@ export function useAssistantChat({
                     replaceChatId(
                         chatId,
                         finalChatId,
-                        message.content.trim().slice(0, 120) || "New Chat",
+                        // Undefined fallback — let the backend title
+                        // generator pick a proper localized title on the
+                        // first exchange. Hard-coding "New Chat" here
+                        // baked an untranslated English string into HR
+                        // users' chat lists; undefined preserves the
+                        // null title until the real one arrives.
+                        message.content.trim().slice(0, 120) || undefined,
                     );
                 }
                 setCurrentChatId(finalChatId);
@@ -940,13 +1286,13 @@ export function useAssistantChat({
         } catch (error: any) {
             if (error.name === "AbortError") {
                 flushDrip();
+                const cancelText = tErrors("cancelled");
                 setMessages((prev) => {
                     const last = prev[prev.length - 1];
                     if (last?.role === "assistant") {
                         const updated = [...prev];
                         const events = last.events ?? [];
                         const idx = findLastContentIndex(events);
-                        const cancelText = "Cancelled by user";
                         if (idx >= 0) {
                             const newEvents = [...events];
                             const existing = newEvents[idx] as {
@@ -956,7 +1302,7 @@ export function useAssistantChat({
                             newEvents[idx] = {
                                 type: "content",
                                 text: existing.text
-                                    ? `${existing.text}\n\nCancelled by user`
+                                    ? `${existing.text}\n\n${cancelText}`
                                     : cancelText,
                             };
                             updated[updated.length - 1] = {
@@ -979,18 +1325,48 @@ export function useAssistantChat({
                         {
                             role: "assistant",
                             content: "",
-                            events: [
-                                { type: "content", text: "Cancelled by user" },
-                            ],
+                            events: [{ type: "content", text: cancelText }],
                         },
                     ];
                 });
+            } else if (error?.rateLimited) {
+                // Daily limit hit before the reply started. Keep the
+                // assistant bubble but flag it so it renders an in-chat
+                // notice (limit reached + CTA to pick a larger plan)
+                // instead of a blank/red bubble. The composer banner
+                // still mirrors the same state above the input.
+                stopDrip();
+                flushDrip();
+                setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === "assistant") {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = {
+                            ...last,
+                            rateLimited: true,
+                        };
+                        return updated;
+                    }
+                    return prev;
+                });
             } else {
                 stopDrip();
-                const errorMessage =
-                    typeof error?.message === "string" && error.message
-                        ? error.message
-                        : "Sorry, something went wrong.";
+                // Never surface raw backend/browser error text — banner copy
+                // is owned by the frontend i18n layer (assistant.errors.*),
+                // keyed off the backend's stable error codes. The original
+                // error still goes to the console for diagnostics.
+                console.error("[useAssistantChat] send failed", error);
+                let errorMessage = tErrors("generic");
+                if (error instanceof ChatHttpError) {
+                    if (error.status === 401) {
+                        errorMessage = tErrors("sessionExpired");
+                    } else if (error.code === "PROJECT_NOT_FOUND") {
+                        errorMessage = tErrors("projectNotFound");
+                    }
+                } else if (error instanceof TypeError) {
+                    // fetch() network failure ("Failed to fetch", offline…)
+                    errorMessage = tErrors("network");
+                }
                 setMessages((prev) => {
                     const last = prev[prev.length - 1];
                     if (last?.role === "assistant") {
@@ -1017,6 +1393,13 @@ export function useAssistantChat({
             return null;
         } finally {
             abortControllerRef.current = null;
+            // The RateLimit-* headers on the stream carry the numbers from
+            // BEFORE this turn (they're written when the stream opens), so
+            // the usage ring would lag one message behind. Pull a fresh
+            // snapshot now that the turn's usage row is recorded.
+            void import("./useRateLimitStatus").then(
+                ({ refreshRateLimitStatus }) => refreshRateLimitStatus(),
+            );
         }
     };
 
@@ -1024,15 +1407,43 @@ export function useAssistantChat({
         message: MikeMessage,
         projectId?: string,
     ): Promise<string | null> => {
-        if (!message.content.trim()) return null;
+        if (!message.content.trim() && !message.files?.length && !message.workflow) return null;
 
         setMessages([message]);
         setNewChatMessages([message]);
 
         const newChatId = await saveChat(projectId);
         if (newChatId) {
+            // Fresh-page strict review (#16 follow-up): the review modal
+            // ran BEFORE this chat existed, on a standalone session that
+            // holds the user's disclosure approvals. Adopt it as the
+            // chat's session BEFORE the first turn streams, so the
+            // turn's anonymization resolves to it. Await on purpose —
+            // fire-and-forget would race the turn's session lookup.
+            // Non-fatal: on failure entities simply stay masked.
+            if (message.piiSessionId) {
+                try {
+                    await piiAttachChat(message.piiSessionId, newChatId);
+                } catch (err) {
+                    console.warn(
+                        "[pii] attach-chat failed — first-turn disclosure approvals may not apply:",
+                        err,
+                    );
+                }
+            }
             setChatId(newChatId);
             setCurrentChatId(newChatId);
+        } else {
+            // /chat/create failed. Clearing the pending message matters:
+            // a leftover here becomes `initialMessages` for the NEXT chat
+            // the user opens — hiding that chat's history and auto-sending
+            // this message into it (issue #88). Also show the failure
+            // instead of a silent dead end.
+            setNewChatMessages(null);
+            setMessages([
+                message,
+                { role: "assistant", content: "", error: tErrors("network") },
+            ]);
         }
 
         return newChatId;

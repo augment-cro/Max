@@ -6,9 +6,9 @@ import {
     Upload,
     LayoutGridIcon,
     Loader2Icon,
-    CloudIcon,
     LinkIcon,
 } from "lucide-react";
+import { IntegrationIcon } from "../shared/IntegrationIcon";
 import { useTranslations } from "next-intl";
 import {
     DropdownMenu,
@@ -18,20 +18,49 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
     listIntegrations,
     startIntegrationOAuth,
     uploadStandaloneDocument,
     type IntegrationProviderId,
     type IntegrationProviderStatus,
 } from "@/app/lib/mikeApi";
+import { track, fileTypeOf } from "@/app/lib/analytics";
 import type { MikeDocument } from "../shared/types";
 
 interface Props {
     onSelectDoc: (doc: MikeDocument) => void;
     onBrowseAll: () => void;
-    /** Opens the integration file picker modal. Wired up in Phase 5c. */
-    onOpenIntegrationPicker?: (provider: IntegrationProviderId) => void;
+    /**
+     * Opens the integration file picker modal. Receives both the
+     * provider id and its display name (so the modal can render
+     * "Iz Google Drive" without re-fetching /integrations).
+     */
+    onOpenIntegrationPicker?: (
+        provider: IntegrationProviderId,
+        displayName: string,
+    ) => void;
     selectedDocIds?: string[];
+    // -----------------------------------------------------------------
+    // PII Shield review hook (plan §1.1 phase 4 — see also
+    // `DocumentAnonymizationPreviewModal`). The parent supplies this
+    // when the user's mode is strict (#14 — review is strict-only).
+    // When set, the upload path forwards the
+    // freshly-uploaded document so the parent can call
+    // `piiPreviewDocument()` and open the modal before the doc
+    // appears in the chat composer chip-list.
+    //
+    // The intercept happens AFTER `uploadStandaloneDocument` so the
+    // sidecar already has the cleaned text and we just need to surface
+    // the entity list. Parents that don't need the modal (basic
+    // composer in "standard"/"off" mode) leave this undefined and the
+    // legacy code path runs unchanged.
+    // -----------------------------------------------------------------
+    onPiiReview?: (doc: MikeDocument) => Promise<boolean>;
 }
 
 export function AddDocButton({
@@ -39,6 +68,7 @@ export function AddDocButton({
     onBrowseAll,
     onOpenIntegrationPicker,
     selectedDocIds = [],
+    onPiiReview,
 }: Props) {
     const [isOpen, setIsOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -91,9 +121,36 @@ export function AddDocButton({
         setUploading(true);
         try {
             const uploaded = await Promise.all(
-                files.map((f) => uploadStandaloneDocument(f)),
+                files.map(async (f) => {
+                    const fileType = fileTypeOf(f);
+                    try {
+                        const doc = await uploadStandaloneDocument(f);
+                        track("document_uploaded", {
+                            surface: "standalone",
+                            file_type: fileType,
+                            result: "success",
+                        });
+                        return doc;
+                    } catch (err) {
+                        track("document_uploaded", {
+                            surface: "standalone",
+                            file_type: fileType,
+                            result: "error",
+                        });
+                        throw err;
+                    }
+                }),
             );
-            uploaded.forEach((doc) => onSelectDoc(doc));
+            for (const doc of uploaded) {
+                if (onPiiReview) {
+                    // PII Shield gate (plan §1.1 phase 4). Parent decides
+                    // whether to open the review modal; returning false
+                    // means "user cancelled" — drop the document.
+                    const approved = await onPiiReview(doc);
+                    if (!approved) continue;
+                }
+                onSelectDoc(doc);
+            }
         } catch (err) {
             console.error("Upload failed:", err);
         } finally {
@@ -107,38 +164,40 @@ export function AddDocButton({
             <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc"
+                accept=".pdf,.docx,.doc,.txt"
                 multiple
                 className="hidden"
                 onChange={handleUpload}
             />
             <DropdownMenu onOpenChange={setIsOpen}>
-                <DropdownMenuTrigger asChild>
-                    <button
-                        className={`flex items-center gap-1 px-2 h-8 rounded-lg text-sm transition-colors cursor-pointer ${
-                            selectedDocIds.length > 0
-                                ? "text-black hover:bg-gray-100"
-                                : "text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-                        } ${isOpen ? "bg-gray-100" : ""}`}
-                        title={t("addDocuments")}
-                        aria-label={t("addDocuments")}
-                    >
-                        {selectedDocIds.length > 0 ? (
-                            <span className="font-medium tabular-nums">{selectedDocIds.length}</span>
-                        ) : (
-                            <PlusIcon
-                                className={`h-4 w-4 shrink-0 transition-transform duration-300 ${isOpen ? "rotate-[135deg]" : ""}`}
-                            />
-                        )}
-                        <span className="hidden sm:inline">
-                            {selectedDocIds.length === 1
-                                ? t("documentLabel")
-                                : t("documentsLabel")}
-                        </span>
-                    </button>
-                </DropdownMenuTrigger>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                className={`flex shrink-0 items-center gap-1 px-2 h-8 rounded-lg text-sm transition-colors cursor-pointer text-foreground hover:bg-accent ${isOpen ? "bg-secondary" : ""}`}
+                                aria-label={t("addDocuments")}
+                            >
+                                {selectedDocIds.length > 0 ? (
+                                    <span className="font-medium tabular-nums">{selectedDocIds.length}</span>
+                                ) : (
+                                    <PlusIcon
+                                        className={`h-4 w-4 shrink-0 transition-transform duration-300 ${isOpen ? "rotate-[135deg]" : ""}`}
+                                    />
+                                )}
+                                <span className="hidden @[46rem]/composer:inline">
+                                    {selectedDocIds.length === 1
+                                        ? t("documentLabel")
+                                        : t("documentsLabel")}
+                                </span>
+                            </button>
+                        </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-60">
+                        {t("addDocumentsTooltip")}
+                    </TooltipContent>
+                </Tooltip>
                 <DropdownMenuContent
-                    className="w-44 z-50"
+                    className="w-56 z-50"
                     side="bottom"
                     align="start"
                 >
@@ -151,11 +210,11 @@ export function AddDocButton({
                         }}
                     >
                         {uploading ? (
-                            <Loader2Icon className="h-4 w-4 mr-2 animate-spin text-gray-400" />
+                            <Loader2Icon className="h-4 w-4 mr-2 animate-spin text-muted-foreground/70" />
                         ) : (
-                            <Upload className="h-4 w-4 mr-2 text-gray-500" />
+                            <Upload className="h-4 w-4 mr-2 text-muted-foreground" />
                         )}
-                        <span className="text-sm">
+                        <span className="text-sm whitespace-nowrap">
                             {uploading ? t("uploading") : t("uploadFiles")}
                         </span>
                     </DropdownMenuItem>
@@ -163,8 +222,10 @@ export function AddDocButton({
                         className="cursor-pointer"
                         onClick={onBrowseAll}
                     >
-                        <LayoutGridIcon className="h-4 w-4 mr-2 text-gray-500" />
-                        <span className="text-sm">{t("browseAll")}</span>
+                        <LayoutGridIcon className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <span className="text-sm whitespace-nowrap">
+                            {t("browseAll")}
+                        </span>
                     </DropdownMenuItem>
 
                     {integrations && integrations.length > 0 && (
@@ -178,6 +239,7 @@ export function AddDocButton({
                                         if (provider.connected) {
                                             onOpenIntegrationPicker?.(
                                                 provider.id,
+                                                provider.display_name,
                                             );
                                         } else {
                                             void handleConnect(provider.id);
@@ -185,11 +247,14 @@ export function AddDocButton({
                                     }}
                                 >
                                     {provider.connected ? (
-                                        <CloudIcon className="h-4 w-4 mr-2 text-blue-600" />
+                                        <IntegrationIcon
+                                            provider={provider.id}
+                                            className="h-4 w-4 mr-2 shrink-0"
+                                        />
                                     ) : (
-                                        <LinkIcon className="h-4 w-4 mr-2 text-gray-400" />
+                                        <LinkIcon className="h-4 w-4 mr-2 text-muted-foreground/70 shrink-0" />
                                     )}
-                                    <span className="text-sm">
+                                    <span className="text-sm whitespace-nowrap">
                                         {provider.connected
                                             ? t("browseProvider", {
                                                   name: provider.display_name,

@@ -28,11 +28,21 @@ export type LoadedMcpServer = {
     tools: OpenAIToolSchema[];
     /** prefixed tool name → original MCP tool name */
     toolNameMap: Map<string, string>;
+    /** The server's initialize-time `instructions` (its own tool-usage
+     *  guidance), when it ships any — surfaced into the system prompt by
+     *  buildMcpPromptAddenda. */
+    instructions?: string;
     client: {
         callTool: (
             toolName: string,
             args: Record<string, unknown>,
         ) => Promise<string>;
+        /** Like `callTool` but also returns the server's typed
+         *  `structuredContent` (when present) for harvesting legal sources. */
+        callToolRich: (
+            toolName: string,
+            args: Record<string, unknown>,
+        ) => Promise<{ text: string; structured?: unknown }>;
         close: () => Promise<void>;
     };
 };

@@ -1,5 +1,5 @@
 /**
- * Max web parity for assistant chat: same Plug affordance + dropdown toggles
+ * Eulex Desk web parity for assistant chat: same Plug affordance + dropdown toggles
  * for built-in and user MCP connectors (see frontend `McpToggleButton.tsx`).
  */
 

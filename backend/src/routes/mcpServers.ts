@@ -375,7 +375,7 @@ mcpServersRouter.post("/:id/oauth/start", requireAuth, async (req, res) => {
         // Signed-out state with leftover DCR cache — nuke it so the SDK
         // re-discovers and re-registers with the auth server. This is the
         // common "Client Not Registered" recovery path: the auth server
-        // forgot us (restart, registry reset, server URL change), but Max
+        // forgot us (restart, registry reset, server URL change), but Eulex Desk
         // still has the old client_id sitting in oauth_metadata.
         console.info(
             `[mcp-oauth] clearing stale DCR cache for connector ${id} (no tokens, refreshing client registration)`,
