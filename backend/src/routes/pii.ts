@@ -35,8 +35,8 @@ import { requireEntitlement } from "../lib/entitlements";
 import { getPool } from "../lib/db";
 import { piiClient, type PiiMode } from "../lib/pii";
 import { downloadFile } from "../lib/storage";
-import { extractDocxBodyText } from "../lib/docxTrackedChanges";
-import { extractPdfText } from "../lib/chatTools";
+import { extractDocumentText } from "../lib/documentText";
+import { isSupportedUploadType } from "../lib/fileTypes";
 
 export const piiRouter = Router();
 
@@ -233,36 +233,24 @@ piiRouter.post(
             }
 
             const fileType = (doc.file_type ?? "").toLowerCase();
+            if (!isSupportedUploadType(fileType) && fileType !== "md") {
+                return res.status(415).json({
+                    error: "unsupported_file_type",
+                    detail: `file_type='${doc.file_type}' is not supported for preview.`,
+                });
+            }
             let text = "";
             try {
-                if (fileType === "pdf") {
-                    text = await extractPdfText(
-                        raw,
-                        process.env.GEMINI_API_KEY ?? null,
-                    );
-                } else if (fileType === "docx") {
-                    text = await extractDocxBodyText(Buffer.from(raw));
-                    if (!text) {
-                        const mammoth = await import("mammoth");
-                        const r = await mammoth.extractRawText({
-                            buffer: Buffer.from(raw),
-                        });
-                        text = r.value ?? "";
-                    }
-                } else if (fileType === "doc") {
-                    const WordExtractor = (await import("word-extractor"))
-                        .default;
-                    const extractor = new WordExtractor();
-                    const d = await extractor.extract(Buffer.from(raw));
-                    text = d.getBody();
-                } else if (fileType === "txt" || fileType === "md") {
-                    text = Buffer.from(raw).toString("utf8");
-                } else {
-                    return res.status(415).json({
-                        error: "unsupported_file_type",
-                        detail: `file_type='${doc.file_type}' is not supported for preview.`,
-                    });
-                }
+                // Same extractor — and, for PDFs, the same persisted OCR
+                // transcription — as chat read_document, so the analysis
+                // the user reviews here is of the exact text the model reads.
+                text = await extractDocumentText({
+                    fileType: fileType === "md" ? "txt" : fileType,
+                    bytes: raw,
+                    flavor: "plain",
+                    geminiApiKey: process.env.GEMINI_API_KEY ?? null,
+                    storagePath,
+                });
             } catch (err) {
                 console.error(
                     `[pii] preview extraction failed doc=${documentId} fileType="${fileType}":`,

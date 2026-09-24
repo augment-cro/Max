@@ -1054,7 +1054,8 @@
       "empty": "No files found",
       "emptyRoot": "This folder is empty",
       "loadMore": "Load more",
-      "importing": "Importing…"
+      "importing": "Importing…",
+      "unsupported": "Unsupported format"
     },
     "importing": {
       "title": "Importing from {name}",
@@ -1062,12 +1063,21 @@
       "done": "Import from {name} finished",
       "failed": "Import from {name} failed",
       "summaryDone": "{count, plural, one {1 file imported} other {{count} files imported}}",
-      "summaryMixed": "{done} succeeded, {failed} failed"
+      "summaryMixed": "{done} succeeded, {failed} failed",
+      "unsupported": "Unsupported format: {types}"
     },
     "processing": "Processing…",
     "uploadFailed": "Upload failed",
     "removeDocument": "Remove document",
-    "clearSearch": "Clear search"
+    "clearSearch": "Clear search",
+    "uploadErrors": {
+      "title": "{count, plural, one {# file wasn't uploaded} other {# files weren't uploaded}}",
+      "unsupported": "unsupported format",
+      "unsupportedType": "unsupported format ({type})",
+      "tooLarge": "file too large (max {max} MB)",
+      "failed": "upload failed",
+      "supportedTypes": "Supported formats: {types}."
+    }
   },
   "uploadVersion": {
     "title": "Upload new version",
@@ -1220,7 +1230,8 @@
     "cancel": "Cancel",
     "create": "Create project",
     "creating": "Creating…",
-    "failedToCreate": "Failed to create project"
+    "failedToCreate": "Failed to create project",
+    "openProject": "Open project"
   },
   "addNewTR": {
     "projects": "Projects",
@@ -1288,7 +1299,7 @@
     "searchPlaceholder": "Search…",
     "peopleWithAccess": "People with access",
     "uploadDocumentFirst": "Upload a document first",
-    "dropFilesHere": "Drop PDF or DOCX files here",
+    "dropFilesHere": "Drop files here ({types})",
     "projectNotFound": "Project not found",
     "createNew": "+ Create New",
     "tabularEmptyDescription": "Extract data from project documents into tables using AI.",
@@ -1677,7 +1688,8 @@
     "editSelection": "Edit selection (Draft Mode)",
     "draftBadge": "Draft",
     "acceptSaveFailed": "Couldn't save accept — please retry.",
-    "rejectSaveFailed": "Couldn't save reject — please retry."
+    "rejectSaveFailed": "Couldn't save reject — please retry.",
+    "emptyText": "This document contains no text."
   },
   "legalSource": {
     "sourcesHeading": "Sources",

@@ -431,37 +431,43 @@ export default function AdminMaxDashboardPage() {
                     </button>
                     <Link
                         href="/adminmax/analytics"
-                        className="rounded-md border border-action/40 px-3 py-1.5 text-sm font-medium text-action hover:bg-action/10"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
                     >
                         Analitika
                     </Link>
                     <Link
                         href="/adminmax/chats"
-                        className="rounded-md border border-action/40 px-3 py-1.5 text-sm font-medium text-action hover:bg-action/10"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
                     >
                         Razgovori
                     </Link>
                     <Link
                         href="/adminmax/audit"
-                        className="rounded-md border border-action/40 px-3 py-1.5 text-sm font-medium text-action hover:bg-action/10"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
                     >
                         Audit
                     </Link>
                     <Link
                         href="/adminmax/tiers"
-                        className="rounded-md border border-action/40 px-3 py-1.5 text-sm font-medium text-action hover:bg-action/10"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
                     >
                         Tier limiti
                     </Link>
                     <Link
                         href="/adminmax/promos"
-                        className="rounded-md border border-action/40 px-3 py-1.5 text-sm font-medium text-action hover:bg-action/10"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
                     >
                         Promo kodovi
                     </Link>
                     <Link
+                        href="/adminmax/databases"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+                    >
+                        Baze
+                    </Link>
+                    <Link
                         href="/adminmax/bugfix"
-                        className="rounded-md border border-action/40 px-3 py-1.5 text-sm font-medium text-action hover:bg-action/10"
+                        className="rounded-md border border-foreground/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
                     >
                         {tBugfix("navLink")}
                     </Link>

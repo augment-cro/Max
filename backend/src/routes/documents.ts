@@ -28,11 +28,14 @@ import { ensureDocAccess } from "../lib/access";
 import { normalizeUploadFilename } from "../lib/filenameUtf8";
 import { singleFileUpload } from "../lib/upload";
 import { recordAuditEvent, recordFeatureUse } from "../lib/audit";
+import {
+  UnsupportedFileTypeError,
+  assertSupportedUploadType,
+  contentTypeForUpload,
+} from "../lib/fileTypes";
+import { textCachePathsFor } from "../lib/documentText";
 
 export const documentsRouter = Router();
-// "txt" exists for the chat composer's long-paste → attachment flow; it
-// skips the DOCX→PDF rendition (no visual preview, text-only pipeline).
-const ALLOWED_TYPES = new Set(["pdf", "docx", "doc", "txt"]);
 
 // Hard cap on /download-zip request size. Each entry triggers a parallel
 // loadActiveVersion + downloadFile + JSZip.file(...) that holds the full
@@ -96,7 +99,11 @@ documentsRouter.delete("/:documentId", requireAuth, async (req, res) => {
     .eq("document_id", documentId);
   await Promise.all(
     (versions ?? []).flatMap((v: { storage_path?: string; pdf_storage_path?: string }) =>
-      [v.storage_path, v.pdf_storage_path]
+      [
+        v.storage_path,
+        v.pdf_storage_path,
+        ...(v.storage_path ? textCachePathsFor(v.storage_path) : []),
+      ]
         .filter((p): p is string => typeof p === "string" && p.length > 0)
         .map((p) => deleteFile(p).catch(() => {})),
     ),
@@ -521,16 +528,16 @@ documentsRouter.post(
 
     // Reject if the uploaded file's extension doesn't match the document's
     // declared type — otherwise every downstream viewer/extractor breaks.
-    const suffix = uploadFilename.includes(".")
-      ? uploadFilename.split(".").pop()!.toLowerCase()
-      : "";
     // An extension-less blob used to slip through (the old check required a
     // non-empty suffix), then got served as application/pdf by /display and
     // as DOCX by /docx (issue #112). Require a supported extension.
-    if (!ALLOWED_TYPES.has(suffix)) {
-      return void res.status(400).json({
-        detail: `Unsupported file type: ${suffix || "(none)"}. Allowed: pdf, docx, doc`,
-      });
+    let suffix: ReturnType<typeof assertSupportedUploadType>;
+    try {
+      suffix = assertSupportedUploadType(uploadFilename, "version");
+    } catch (e) {
+      if (e instanceof UnsupportedFileTypeError)
+        return void res.status(400).json(e.toResponseBody());
+      throw e;
     }
     if (doc.file_type && doc.file_type !== suffix) {
       return void res.status(400).json({
@@ -547,12 +554,7 @@ documentsRouter.post(
       versionSlug,
       uploadFilename,
     );
-    const contentType =
-      suffix === "pdf"
-        ? "application/pdf"
-        : suffix === "txt"
-          ? "text/plain; charset=utf-8"
-          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const contentType = contentTypeForUpload(suffix);
     try {
       await uploadFile(
         key,
@@ -1108,12 +1110,13 @@ documentsRouter.post(
  * extraction, DOCX→PDF conversion, document_versions row, status flip).
  *
  * This is the single source of truth for "putting a file into Eulex Desk";
- * the multipart upload route and the integrations import endpoint
- * (Google Drive / OneDrive / Box) both call into here so any future
- * pipeline change is picked up by both paths automatically.
+ * the standalone and project multipart upload routes and the integrations
+ * import endpoint (Google Drive / OneDrive / Box) all call into here so any
+ * future pipeline change is picked up by every path automatically.
  *
- * Throws on validation/storage errors. Caller is responsible for
- * mapping exceptions to HTTP responses.
+ * Throws on validation/storage errors (`UnsupportedFileTypeError` for a
+ * format outside lib/fileTypes). Caller is responsible for mapping
+ * exceptions to HTTP responses.
  */
 export async function processDocumentBytes(params: {
   userId: string;
@@ -1133,14 +1136,12 @@ export async function processDocumentBytes(params: {
 }): Promise<Record<string, unknown>> {
   const { userId, projectId, filename, content, db, source } = params;
 
-  const suffix = filename.includes(".")
-    ? filename.split(".").pop()!.toLowerCase()
-    : "";
-  if (!ALLOWED_TYPES.has(suffix)) {
-    throw new Error(
-      `Unsupported file type: ${suffix}. Allowed: pdf, docx, doc, txt`,
-    );
-  }
+  // "txt" exists for the chat composer's long-paste → attachment flow; it
+  // skips the DOCX→PDF rendition (text-only pipeline).
+  const suffix = assertSupportedUploadType(
+    filename,
+    source ? `connector:${source.provider}` : projectId ? "project" : "standalone",
+  );
 
   const insertPayload: Record<string, unknown> = {
     project_id: projectId,
@@ -1171,12 +1172,7 @@ export async function processDocumentBytes(params: {
   try {
     const docId = doc.id as string;
     const key = storageKey(userId, docId, filename);
-    const contentType =
-      suffix === "pdf"
-        ? "application/pdf"
-        : suffix === "txt"
-          ? "text/plain; charset=utf-8"
-          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const contentType = contentTypeForUpload(suffix);
     const ab = content.buffer.slice(
       content.byteOffset,
       content.byteOffset + content.byteLength,
@@ -1273,7 +1269,10 @@ export async function processDocumentBytes(params: {
   }
 }
 
-async function handleDocumentUpload(
+/** Multipart upload → processDocumentBytes → HTTP response. Shared by the
+ *  standalone (`POST /single-documents`) and project
+ *  (`POST /projects/:id/documents`) upload routes. */
+export async function handleDocumentUpload(
   req: import("express").Request,
   res: import("express").Response,
   userId: string,
@@ -1293,10 +1292,10 @@ async function handleDocumentUpload(
     });
     return void res.status(201).json(responseDoc);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.startsWith("Unsupported file type")) {
-      return void res.status(400).json({ detail: msg });
+    if (e instanceof UnsupportedFileTypeError) {
+      return void res.status(400).json(e.toResponseBody());
     }
+    const msg = e instanceof Error ? e.message : String(e);
     return void res.status(500).json({ detail: msg });
   }
 }

@@ -9,6 +9,7 @@ import {
     LinkIcon,
 } from "lucide-react";
 import { IntegrationIcon } from "../shared/IntegrationIcon";
+import { UploadFailuresAlert } from "../shared/UploadFailuresAlert";
 import { useTranslations } from "next-intl";
 import {
     DropdownMenu,
@@ -29,7 +30,8 @@ import {
     type IntegrationProviderId,
     type IntegrationProviderStatus,
 } from "@/app/lib/mikeApi";
-import { track, fileTypeOf } from "@/app/lib/analytics";
+import { uploadFilesBulk, type UploadFailure } from "@/app/lib/bulkUpload";
+import { SUPPORTED_UPLOAD_ACCEPT } from "@/app/lib/supportedFileTypes";
 import type { MikeDocument } from "../shared/types";
 
 interface Props {
@@ -72,6 +74,9 @@ export function AddDocButton({
 }: Props) {
     const [isOpen, setIsOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadFailures, setUploadFailures] = useState<UploadFailure[]>(
+        [],
+    );
     const [integrations, setIntegrations] =
         useState<IntegrationProviderStatus[] | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -119,28 +124,15 @@ export function AddDocButton({
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
         setUploading(true);
+        setUploadFailures([]);
         try {
-            const uploaded = await Promise.all(
-                files.map(async (f) => {
-                    const fileType = fileTypeOf(f);
-                    try {
-                        const doc = await uploadStandaloneDocument(f);
-                        track("document_uploaded", {
-                            surface: "standalone",
-                            file_type: fileType,
-                            result: "success",
-                        });
-                        return doc;
-                    } catch (err) {
-                        track("document_uploaded", {
-                            surface: "standalone",
-                            file_type: fileType,
-                            result: "error",
-                        });
-                        throw err;
-                    }
-                }),
-            );
+            // allSettled semantics: the files that did upload are attached
+            // even when others fail; the failures get their own notice.
+            const { uploaded, failures } = await uploadFilesBulk(files, {
+                upload: uploadStandaloneDocument,
+                surface: "standalone",
+            });
+            setUploadFailures(failures);
             for (const doc of uploaded) {
                 if (onPiiReview) {
                     // PII Shield gate (plan §1.1 phase 4). Parent decides
@@ -164,10 +156,15 @@ export function AddDocButton({
             <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.txt"
+                accept={SUPPORTED_UPLOAD_ACCEPT}
                 multiple
                 className="hidden"
                 onChange={handleUpload}
+            />
+            <UploadFailuresAlert
+                failures={uploadFailures}
+                onDismiss={() => setUploadFailures([])}
+                floating
             />
             <DropdownMenu onOpenChange={setIsOpen}>
                 <Tooltip>

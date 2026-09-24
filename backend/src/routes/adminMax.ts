@@ -85,6 +85,11 @@ import { sendExpiryReminders } from "../lib/expiryReminders";
 import { backfillSignupContacts } from "../lib/brevoContacts";
 import { sendContextAlertDigests } from "../lib/contextAlertDigest";
 import { logAdminAudit } from "../lib/adminAudit";
+import {
+    OpsInventoryError,
+    opsInventoryConfigured,
+    opsInventoryFetch,
+} from "../lib/opsInventory";
 
 export const adminMaxRouter = Router();
 
@@ -3584,5 +3589,32 @@ adminMaxRouter.patch("/promos/:id", async (req: Request, res: Response) => {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[adminmax/promos PATCH]", msg);
         res.status(500).json({ detail: msg });
+    }
+});
+
+// ── databases inventory (external ops service) ────────────────────────────
+//
+// GET /adminmax/databases — generic proxy to the ops-inventory service
+// (OPS_INVENTORY_URL). Max holds no knowledge of the data stores behind the
+// "Baze" tab: it forwards the request and returns the JSON as-is. Reads serve
+// that service's stored snapshot; `?refresh=1` asks it to scan now (minutes).
+// Unset URL → `{ available: false }` and the tab says so.
+
+adminMaxRouter.get("/databases", async (req: Request, res: Response) => {
+    if (!opsInventoryConfigured()) {
+        res.json({ available: false, detail: "OPS_INVENTORY_URL not configured" });
+        return;
+    }
+    const refresh = req.query.refresh === "1" || req.query.refresh === "true";
+    try {
+        const data = await opsInventoryFetch<Record<string, unknown>>(
+            `/v1/databases${refresh ? "?refresh=1" : ""}`,
+            { timeoutMs: refresh ? 1_150_000 : 30_000 },
+        );
+        res.json({ available: true, ...data });
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[adminmax/databases]", msg);
+        res.status(err instanceof OpsInventoryError ? 502 : 500).json({ detail: msg });
     }
 });

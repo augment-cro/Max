@@ -546,6 +546,21 @@ export async function renameDocumentVersion(
     );
 }
 
+/**
+ * Non-2xx answer from a multipart document upload. `message` stays the raw
+ * response body (as before); `status` lets callers tell a 413 (file too
+ * large) from other failures — see `classifyUploadError` in `bulkUpload.ts`.
+ */
+export class UploadHttpError extends Error {
+    readonly status: number;
+
+    constructor(status: number, body: string) {
+        super(body || `API error: ${status}`);
+        this.name = "UploadHttpError";
+        this.status = status;
+    }
+}
+
 export async function uploadProjectDocument(
     projectId: string,
     file: File,
@@ -561,7 +576,8 @@ export async function uploadProjectDocument(
             body: form,
         },
     );
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok)
+        throw new UploadHttpError(response.status, await response.text());
     return response.json() as Promise<MikeDocument>;
 }
 
@@ -576,7 +592,8 @@ export async function uploadStandaloneDocument(
         headers: { ...authHeaders },
         body: form,
     });
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok)
+        throw new UploadHttpError(response.status, await response.text());
     return response.json() as Promise<MikeDocument>;
 }
 

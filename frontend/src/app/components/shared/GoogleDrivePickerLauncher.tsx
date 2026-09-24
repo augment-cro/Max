@@ -39,6 +39,12 @@ import {
     importIntegrationFile,
     type GoogleDrivePickerToken,
 } from "@/app/lib/mikeApi";
+import {
+    UPLOAD_CONCURRENCY,
+    classifyUploadError,
+    settleWithConcurrency,
+} from "@/app/lib/bulkUpload";
+import { GOOGLE_PICKER_MIME_TYPES } from "@/app/lib/supportedFileTypes";
 import type { MikeDocument } from "./types";
 import { ConnectorImportProgress } from "./ConnectorImportProgress";
 
@@ -62,17 +68,20 @@ export function GoogleDrivePickerLauncher({
     projectId = null,
 }: Props) {
     const t = useTranslations("googleDrivePicker");
+    const tDocs = useTranslations("documents");
     const [tokenState, setTokenState] = useState<GoogleDrivePickerToken | null>(
         null,
     );
     const [error, setError] = useState<string | null>(null);
     // Progress counters surfaced through the floating toast so the
     // user gets visible feedback after the Picker iframe dismisses
-    // itself. `total` 0 hides the toast entirely.
+    // itself. `total` 0 hides the toast entirely. `unsupportedTypes`
+    // names the formats the backend rejected.
     const [progress, setProgress] = useState({
         total: 0,
         done: 0,
         failed: 0,
+        unsupportedTypes: [] as string[],
     });
     // Latch — we don't want to call onClose() twice for the same open
     // cycle (e.g. once on `picker-canceled` and once on unmount).
@@ -122,46 +131,73 @@ export function GoogleDrivePickerLauncher({
                 return;
             }
             // Reset + seed counters so the floating toast picks up.
-            setProgress({ total: docs.length, done: 0, failed: 0 });
-            // Fire imports in parallel — server-side processing already
-            // serialises into the same documents pipeline as direct
-            // upload, so this just parallelises the network round-trips.
-            // We use individual promises (not allSettled-then-forEach) so
-            // counters tick up as each import finishes — important for
-            // multi-file imports where the slow ones would otherwise hide
-            // progress entirely.
-            const tasks = docs.map((d) =>
-                importIntegrationFile("google_drive", d.id, projectId)
-                    .then((doc) => {
+            setProgress({
+                total: docs.length,
+                done: 0,
+                failed: 0,
+                unsupportedTypes: [],
+            });
+            // Each import is a server-side download + processing run, so
+            // keep at most UPLOAD_CONCURRENCY in flight (a multi-select
+            // used to fire them all at once). Counters still tick up as
+            // each import settles, so slow ones don't hide progress.
+            const unsupportedTypes = new Set<string>();
+            const results = await settleWithConcurrency(
+                docs,
+                UPLOAD_CONCURRENCY,
+                async (d) => {
+                    try {
+                        const doc = await importIntegrationFile(
+                            "google_drive",
+                            d.id,
+                            projectId,
+                        );
                         onImport(doc);
                         setProgress((p) => ({ ...p, done: p.done + 1 }));
-                        return { ok: true as const };
-                    })
-                    .catch((reason) => {
+                    } catch (reason) {
                         console.error(
                             `Google Drive import failed for ${d?.name ?? d?.id}:`,
                             reason,
                         );
+                        const failure = classifyUploadError(reason);
+                        if (
+                            failure.reason === "unsupported" &&
+                            failure.fileType
+                        ) {
+                            unsupportedTypes.add(
+                                failure.fileType.toUpperCase(),
+                            );
+                        }
                         setProgress((p) => ({
                             ...p,
                             failed: p.failed + 1,
+                            unsupportedTypes: [...unsupportedTypes],
                         }));
-                        return { ok: false as const };
-                    }),
+                        throw reason;
+                    }
+                },
             );
-            const results = await Promise.all(tasks);
-            const failedCount = results.filter((r) => !r.ok).length;
+            const failedCount = results.filter(
+                (r) => r.status === "rejected",
+            ).length;
             if (failedCount > 0 && failedCount === results.length) {
                 // Hard fail — surface the error card so the user knows
                 // *something* went wrong rather than silently closing.
-                setError(t("importFailed", { count: failedCount }));
+                const importFailed = t("importFailed", { count: failedCount });
+                setError(
+                    unsupportedTypes.size > 0
+                        ? `${importFailed} ${tDocs("importing.unsupported", {
+                              types: [...unsupportedTypes].join(", "),
+                          })}`
+                        : importFailed,
+                );
                 return;
             }
             // Soft close — the floating toast keeps showing the
             // result for ~1.5s after we close.
             close();
         },
-        [onImport, projectId, close, t],
+        [onImport, projectId, close, t, tDocs],
     );
 
     const handleCanceled = useCallback(
@@ -189,6 +225,7 @@ export function GoogleDrivePickerLauncher({
             total={progress.total}
             done={progress.done}
             failed={progress.failed}
+            unsupportedTypes={progress.unsupportedTypes}
         />
     );
 
@@ -247,10 +284,14 @@ export function GoogleDrivePickerLauncher({
                 onCanceled={handleCanceled}
                 onOauthError={handleOauthError}
             >
+                {/* Only offer what the backend imports: PDF / Word / text
+                    and native Google Docs (exported to .docx). Sheets and
+                    Slides export to xlsx / pptx, which would be rejected. */}
                 <DrivePickerDocsView
                     {...({
                         "include-folders": "false",
                         "owned-by-me": "default",
+                        "mime-types": GOOGLE_PICKER_MIME_TYPES,
                     } as Record<string, unknown>)}
                 />
             </DrivePicker>

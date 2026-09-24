@@ -953,3 +953,79 @@ export async function triggerCsvDownload(
     a.remove();
     URL.revokeObjectURL(url);
 }
+
+// ── databases inventory ───────────────────────────────────────────────────
+
+export type DbLayerStatus = "ok" | "partial" | "empty" | "error" | "unconfigured";
+export type DbStatValue = number | string | boolean | null;
+
+export type DbLayer = {
+    status: DbLayerStatus;
+    source: string;
+    stats: Record<string, DbStatValue>;
+    notes: string[];
+    error?: string;
+};
+
+export type DbJurisdiction = {
+    code: string;
+    flag: string;
+    name: string;
+    tier: number;
+    sql: DbLayer;
+    vector: DbLayer;
+    graph: DbLayer;
+    services: { api: string | null; mcp: string | null; scope: string | null };
+};
+
+export type DbSource = {
+    key: string;
+    kind: "postgres" | "neo4j" | "pinecone";
+    label: string;
+    status: "ok" | "error" | "unconfigured";
+    latency_ms: number | null;
+    error?: string;
+    details: Record<string, DbStatValue>;
+};
+
+export type DbSnapshotMeta = {
+    id: number;
+    taken_at: string;
+    trigger: "manual" | "cron" | "boot";
+    scan_ms: number;
+};
+
+export type DatabasesOverview = {
+    /** false when the backend has no external ops-inventory service configured. */
+    available?: boolean;
+    detail?: string;
+    generated_at: string;
+    cached: boolean;
+    scan_ms: number;
+    snapshot: DbSnapshotMeta | null;
+    history: DbSnapshotMeta[];
+    schedule: string;
+    sources: DbSource[];
+    jurisdictions: DbJurisdiction[];
+    totals: {
+        jurisdictions: number;
+        tier3: number;
+        tier2: number;
+        tier1: number;
+        sql_documents: number;
+        vectors: number;
+        graph_nodes: number;
+    };
+    scan: { scanning: boolean; schedule: string };
+};
+
+/** Generic proxy to the external ops-inventory service. Without `refresh`
+ *  it returns that service's latest stored snapshot; with `refresh` the
+ *  service scans now (can take minutes) and stores a new one. */
+export async function getDatabasesOverview(
+    refresh = false,
+): Promise<DatabasesOverview> {
+    return adminFetch<DatabasesOverview>(
+        `/databases${refresh ? "?refresh=1" : ""}`,
+    );
+}

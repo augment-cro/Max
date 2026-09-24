@@ -36,6 +36,7 @@ import {
 } from "../lib/integrations/store";
 import type { ProviderId } from "../lib/integrations/types";
 import { processDocumentBytes } from "./documents";
+import { UnsupportedFileTypeError } from "../lib/fileTypes";
 
 export const integrationsRouter = Router();
 
@@ -346,15 +347,18 @@ integrationsRouter.post(
             });
             res.status(201).json(doc);
         } catch (err) {
+            // Google Sheets/Slides export as xlsx/pptx and are rejected
+            // here until those formats are supported — same structured
+            // 400 as a direct upload so the UI can name the format.
+            if (err instanceof UnsupportedFileTypeError) {
+                return void res.status(400).json(err.toResponseBody());
+            }
             const msg = err instanceof Error ? err.message : String(err);
             console.error(
                 `[integrations] /import for ${provider} failed:`,
                 msg,
             );
-            const status = msg.startsWith("Unsupported file type")
-                ? 400
-                : 502;
-            res.status(status).json({ detail: msg });
+            res.status(502).json({ detail: msg });
         }
     },
 );

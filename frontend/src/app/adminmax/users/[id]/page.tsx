@@ -624,7 +624,7 @@ function SubscriptionPanel({
                                         onClick={() =>
                                             setUntilMonthsFromNow(opt.months)
                                         }
-                                        className="rounded-md border border-action/40 px-2 py-0.5 text-xs font-medium text-action hover:bg-action/10"
+                                        className="rounded-md border border-foreground/60 px-2 py-0.5 text-xs font-medium text-foreground hover:bg-accent"
                                     >
                                         {opt.label}
                                     </button>

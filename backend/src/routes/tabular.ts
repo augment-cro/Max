@@ -4,7 +4,7 @@ import { enforceRateLimit } from "../lib/rateLimit";
 import { createServerSupabase } from "../lib/supabase";
 import { downloadFile } from "../lib/storage";
 import { loadActiveVersion } from "../lib/documentVersions";
-import { normalizeDocxZipPaths } from "../lib/convert";
+import { extractDocumentText, splitTextIntoParts } from "../lib/documentText";
 import { normalizeSharedEmails } from "../lib/sharing";
 import { recordAuditEvent, recordFeatureUse } from "../lib/audit";
 import {
@@ -1456,10 +1456,13 @@ tabularRouter.post(
             const buf = await downloadFile(docActive.storage_path);
             if (buf) {
                 try {
-                    markdown =
-                        (doc.file_type as string) === "pdf"
-                            ? await extractPdfMarkdown(buf, api_keys.gemini)
-                            : await extractDocxMarkdown(buf);
+                    markdown = await extractDocumentText({
+                        fileType: doc.file_type as string,
+                        bytes: buf,
+                        flavor: "markdown",
+                        geminiApiKey: api_keys.gemini,
+                        storagePath: docActive.storage_path,
+                    });
                 } catch (err) {
                     console.error(
                         `[regenerate-cell] extraction error doc=${document_id}`,
@@ -1784,10 +1787,13 @@ tabularRouter.post("/:reviewId/generate", requireAuth, enforceRateLimit(), async
                     const buf = await downloadFile(active.storage_path);
                     if (buf) {
                         try {
-                            markdown =
-                                (doc.file_type as string) === "pdf"
-                                    ? await extractPdfMarkdown(buf, api_keys.gemini)
-                                    : await extractDocxMarkdown(buf);
+                            markdown = await extractDocumentText({
+                                fileType: doc.file_type as string,
+                                bytes: buf,
+                                flavor: "markdown",
+                                geminiApiKey: api_keys.gemini,
+                                storagePath: active.storage_path,
+                            });
                         } catch (err) {
                             console.error(
                                 `[tabular/generate] extraction error doc=${docId}`,
@@ -3180,35 +3186,7 @@ function extractionCharBudget(model: string): number {
  * anyway).
  */
 function splitDocumentForExtraction(text: string, budget: number): string[] {
-    if (text.length <= budget) return [text];
-
-    // Last-resort split for a single segment larger than the budget
-    // (a paragraph/page that alone exceeds it) — plain slices.
-    const hardSplit = (seg: string): string[] => {
-        const out: string[] = [];
-        for (let i = 0; i < seg.length; i += budget)
-            out.push(seg.slice(i, i + budget));
-        return out;
-    };
-
-    const pageSegments = text.split(/\n(?=## Page \d)/);
-    const segments =
-        pageSegments.length > 1 ? pageSegments : text.split(/\n\n+/);
-
-    const chunks: string[] = [];
-    let current = "";
-    const flush = () => {
-        if (current.trim()) chunks.push(current);
-        current = "";
-    };
-    for (const seg of segments) {
-        const pieces = seg.length > budget ? hardSplit(seg) : [seg];
-        for (const piece of pieces) {
-            if (current && current.length + piece.length + 2 > budget) flush();
-            current = current ? `${current}\n\n${piece}` : piece;
-        }
-    }
-    flush();
+    const chunks = splitTextIntoParts(text, budget);
 
     // Runaway guard, NOT a quality cap: 24 chunks is thousands of pages even
     // on the smallest budget — unreachable for real documents, but it bounds
@@ -3650,96 +3628,4 @@ function extractJsonObjects(text: string): string[] {
         }
     }
     return out;
-}
-
-/**
- * Tabular review path's PDF text extractor. Backed by Gemini multimodal
- * OCR so scanned PDFs (image-based, no text layer) work the same as
- * native text PDFs. Returns Markdown with `## Page N` headers because
- * that's what `queryGemini` already feeds the downstream tabular model
- * — keep that contract stable so per-cell prompts don't shift when this
- * helper changes.
- *
- * Falls back to pdfjs-dist if Gemini is unreachable / no key configured,
- * so text-layer PDFs still extract something rather than failing the
- * whole review run.
- */
-async function extractPdfMarkdown(
-    buf: ArrayBuffer,
-    apiKey?: string | null,
-): Promise<string> {
-    const { extractPdfWithGemini } = await import("../lib/pdfOcr");
-    const geminiText = await extractPdfWithGemini(buf, {
-        apiKey,
-        pageMarker: "heading",
-    });
-    if (geminiText.trim().length > 0) return geminiText;
-
-    console.warn(
-        "[extractPdfMarkdown] Gemini OCR returned empty, falling back to pdfjs-dist",
-    );
-    return extractPdfMarkdownWithPdfJs(buf);
-}
-
-async function extractPdfMarkdownWithPdfJs(buf: ArrayBuffer): Promise<string> {
-    try {
-        const pdfjsLib = await import(
-            "pdfjs-dist/legacy/build/pdf.mjs" as string
-        );
-        const pdf = await (
-            pdfjsLib as unknown as {
-                getDocument: (opts: unknown) => {
-                    promise: Promise<{
-                        numPages: number;
-                        getPage: (n: number) => Promise<{
-                            getTextContent: () => Promise<{
-                                items: { str?: string; hasEOL?: boolean }[];
-                            }>;
-                        }>;
-                    }>;
-                };
-            }
-        ).getDocument({ data: new Uint8Array(buf) }).promise;
-        const pages: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const tc = await page.getTextContent();
-            const text = tc.items
-                .filter((it): it is { str: string } => "str" in it)
-                .map((it) => it.str)
-                .join(" ")
-                .trim();
-            if (text) pages.push(`## Page ${i}\n\n${text}`);
-        }
-        return pages.join("\n\n");
-    } catch {
-        return "";
-    }
-}
-
-async function extractDocxMarkdown(buf: ArrayBuffer): Promise<string> {
-    try {
-        const mammoth = await import("mammoth");
-        const normalized = await normalizeDocxZipPaths(Buffer.from(buf));
-        const { value: html } = await mammoth.convertToHtml({
-            buffer: normalized,
-        });
-        return html
-            .replace(
-                /<h([1-6])[^>]*>(.*?)<\/h\1>/gi,
-                (_, l, t) => "#".repeat(Number(l)) + " " + t + "\n\n",
-            )
-            .replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**")
-            .replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n")
-            .replace(/<p[^>]*>(.*?)<\/p>/gi, "$1\n\n")
-            .replace(/<[^>]+>/g, "")
-            .replace(/&nbsp;/g, " ")
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/\n{3,}/g, "\n\n")
-            .trim();
-    } catch {
-        return "";
-    }
 }

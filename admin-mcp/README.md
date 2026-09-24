@@ -1,5 +1,11 @@
 # mike-admin-mcp
 
+> **Legacy.** The LIVE `mike-admin-mcp` Cloud Run service is built from the
+> separate repo `Desk/eulex-max-admin-mcp` (scoped tokens, OAuth, PII modes,
+> growth/product tools, `get_databases`). This directory is the original
+> extraction point and is no longer deployed — do not run
+> `scripts/deploy-admin-mcp.sh` against production.
+
 ADMIN-ONLY FastMCP server exposing AdminMax stats + management over MCP.
 It is a **thin wrapper over the `/adminmax` REST API** — no database of its
 own. The backend enforces all rules, idempotency and audit logging.

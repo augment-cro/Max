@@ -50,6 +50,7 @@ import {
 } from "@/app/components/shared/legalSourceUtils";
 import { OwnerOnlyModal } from "@/app/components/shared/OwnerOnlyModal";
 import { ShareChatModal } from "@/app/components/shared/ShareChatModal";
+import { UploadFailuresAlert } from "@/app/components/shared/UploadFailuresAlert";
 import { useConfirmDialog } from "@/app/components/modals/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { DocxViewer } from "@/app/components/shared/DocxViewer";
@@ -69,7 +70,11 @@ import type {
     MikeProject,
 } from "@/app/components/shared/types";
 import { expandCitationToEntries } from "@/app/components/shared/types";
-import { track, fileTypeOf } from "@/app/lib/analytics";
+import { uploadFilesBulk, type UploadFailure } from "@/app/lib/bulkUpload";
+import {
+    SUPPORTED_UPLOAD_ACCEPT,
+    SUPPORTED_UPLOAD_LABEL,
+} from "@/app/lib/supportedFileTypes";
 
 interface Props {
     params: Promise<{ id: string; chatId: string }>;
@@ -273,6 +278,7 @@ function ProjectAssistantChatPageInner({ params }: Props) {
     // Upload state
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
+    const [uploadFailures, setUploadFailures] = useState<UploadFailure[]>([]);
     const [explorerDragOver, setExplorerDragOver] = useState(false);
 
     // Tabs
@@ -811,40 +817,29 @@ function ProjectAssistantChatPageInner({ params }: Props) {
     }
 
     // ── Upload ────────────────────────────────────────────────────────────────
+    // Shared by the explorer's upload button and its file drop (a drop
+    // bypasses `accept`, so the helper's pre-filter matters most there).
     async function uploadFiles(files: File[]) {
         if (!files.length) return;
         setUploading(true);
+        setUploadFailures([]);
         try {
-            const uploaded = await Promise.all(
-                files.map(async (f) => {
-                    const fileType = fileTypeOf(f);
-                    try {
-                        const doc = await uploadProjectDocument(projectId, f);
-                        track("document_uploaded", {
-                            surface: "project",
-                            file_type: fileType,
-                            result: "success",
-                        });
-                        return doc;
-                    } catch (err) {
-                        track("document_uploaded", {
-                            surface: "project",
-                            file_type: fileType,
-                            result: "error",
-                        });
-                        throw err;
-                    }
-                }),
-            );
-            setProject((prev) => {
-                if (!prev) return prev;
-                return {
-                    ...prev,
-                    documents: [...(prev.documents ?? []), ...uploaded],
-                };
+            // Each document joins the explorer as soon as it lands, so one
+            // failed file never hides the others.
+            const { failures } = await uploadFilesBulk(files, {
+                upload: (f) => uploadProjectDocument(projectId, f),
+                surface: "project",
+                onUploaded: (doc) =>
+                    setProject((prev) =>
+                        prev
+                            ? {
+                                  ...prev,
+                                  documents: [...(prev.documents ?? []), doc],
+                              }
+                            : prev,
+                    ),
             });
-        } catch (err) {
-            console.error("Upload failed:", err);
+            setUploadFailures(failures);
         } finally {
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1131,7 +1126,7 @@ function ProjectAssistantChatPageInner({ params }: Props) {
                                     <input
                                         ref={fileInputRef}
                                         type="file"
-                                        accept=".pdf,.docx,.doc"
+                                        accept={SUPPORTED_UPLOAD_ACCEPT}
                                         multiple
                                         className="hidden"
                                         onChange={(e) =>
@@ -1170,6 +1165,12 @@ function ProjectAssistantChatPageInner({ params }: Props) {
                                 </div>
                             </div>
 
+                            <UploadFailuresAlert
+                                failures={uploadFailures}
+                                onDismiss={() => setUploadFailures([])}
+                                className="mx-2 mt-2 w-auto shrink-0"
+                            />
+
                             {/* Drop overlay */}
                             <div
                                 className={`flex-1 overflow-y-auto relative h-full ${explorerDragOver ? "bg-accent" : ""}`}
@@ -1197,7 +1198,9 @@ function ProjectAssistantChatPageInner({ params }: Props) {
                                 {explorerDragOver && (
                                     <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
                                         <p className="text-xs text-foreground font-medium">
-                                            {tProject("dropFilesHere")}
+                                            {tProject("dropFilesHere", {
+                                                types: SUPPORTED_UPLOAD_LABEL,
+                                            })}
                                         </p>
                                     </div>
                                 )}

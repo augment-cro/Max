@@ -6,13 +6,14 @@ import { supabase } from "@/lib/supabase";
 
 import { API_BASE } from "@/app/lib/apiBase";
 /**
- * /display returns either PDF bytes (when the active version has a PDF
- * rendition) or raw DOCX bytes otherwise. Reporting the type lets the
- * caller swap between DocView (PDF.js) and DocxView (docx-preview)
- * accordingly.
+ * /display returns PDF bytes (when the active version has a PDF
+ * rendition), the raw text of a plain-text (.txt) document, or raw DOCX
+ * bytes otherwise. Reporting the type lets the caller pick PDF.js,
+ * TextDocView or DocxView (docx-preview) accordingly.
  */
 export type DocResult =
     | { type: "pdf"; buffer: ArrayBuffer }
+    | { type: "text"; text: string }
     | { type: "docx" }
     | null;
 
@@ -66,6 +67,9 @@ export function useFetchSingleDoc(
                 if (contentType.includes("application/pdf")) {
                     const buffer = await response.arrayBuffer();
                     if (!cancelled) setResult({ type: "pdf", buffer });
+                } else if (contentType.includes("text/plain")) {
+                    const text = await response.text();
+                    if (!cancelled) setResult({ type: "text", text });
                 } else {
                     // Drain the body so the connection is reusable, but the
                     // bytes are useless to the PDF viewer — the caller will

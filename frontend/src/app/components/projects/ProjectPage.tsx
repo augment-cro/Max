@@ -69,6 +69,7 @@ import { invalidateDocxBytes } from "@/app/hooks/useFetchDocxBytes";
 import { AddNewTRModal } from "@/app/components/tabular/AddNewTRModal";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
 import { track } from "@/app/lib/analytics";
+import { SUPPORTED_UPLOAD_LABEL } from "@/app/lib/supportedFileTypes";
 import { useLocale, useTranslations } from "next-intl";
 
 interface Props {
@@ -1535,7 +1536,7 @@ export function ProjectPage({ projectId }: Props) {
                                 className="flex-1 flex cursor-pointer flex-col items-center justify-center py-24 text-center"
                             >
                                 <Upload className="h-8 w-8 text-muted-foreground/70 mb-3" />
-                                <p className="text-sm text-muted-foreground/70">{tProject("dropFilesHere")}</p>
+                                <p className="text-sm text-muted-foreground/70">{tProject("dropFilesHere", { types: SUPPORTED_UPLOAD_LABEL })}</p>
                             </div>
                         ) : (
                             <div

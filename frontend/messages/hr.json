@@ -1054,7 +1054,8 @@
       "empty": "Nema pronađenih datoteka",
       "emptyRoot": "Mapa je prazna",
       "loadMore": "Učitaj više",
-      "importing": "Uvozim…"
+      "importing": "Uvozim…",
+      "unsupported": "Nepodržani format"
     },
     "importing": {
       "title": "Uvoz iz {name}",
@@ -1062,12 +1063,21 @@
       "done": "Uvoz iz {name} završen",
       "failed": "Uvoz iz {name} nije uspio",
       "summaryDone": "{count, plural, one {Uvezena 1 datoteka} few {Uvezene {count} datoteke} other {Uvezeno {count} datoteka}}",
-      "summaryMixed": "{done} uspješno, {failed} neuspjelo"
+      "summaryMixed": "{done} uspješno, {failed} neuspjelo",
+      "unsupported": "Nepodržani format: {types}"
     },
     "processing": "Obrada…",
     "uploadFailed": "Učitavanje nije uspjelo",
     "removeDocument": "Ukloni dokument",
-    "clearSearch": "Očisti pretraživanje"
+    "clearSearch": "Očisti pretraživanje",
+    "uploadErrors": {
+      "title": "{count, plural, one {# datoteka nije učitana} few {# datoteke nisu učitane} other {# datoteka nije učitano}}",
+      "unsupported": "nepodržani format",
+      "unsupportedType": "nepodržani format ({type})",
+      "tooLarge": "prevelika datoteka (najviše {max} MB)",
+      "failed": "učitavanje nije uspjelo",
+      "supportedTypes": "Podržani formati: {types}."
+    }
   },
   "uploadVersion": {
     "title": "Učitaj novu verziju",
@@ -1220,7 +1230,8 @@
     "cancel": "Odustani",
     "create": "Izradi predmet",
     "creating": "Stvaranje…",
-    "failedToCreate": "Stvaranje predmeta nije uspjelo"
+    "failedToCreate": "Stvaranje predmeta nije uspjelo",
+    "openProject": "Otvori predmet"
   },
   "addNewTR": {
     "projects": "Predmeti",
@@ -1288,7 +1299,7 @@
     "searchPlaceholder": "Pretraži…",
     "peopleWithAccess": "Osobe s pristupom",
     "uploadDocumentFirst": "Najprije prenesi dokument",
-    "dropFilesHere": "Ispusti PDF ili DOCX datoteke ovdje",
+    "dropFilesHere": "Ispusti datoteke ovdje ({types})",
     "projectNotFound": "Predmet nije pronađen",
     "createNew": "+ Novi",
     "tabularEmptyDescription": "Izdvojite podatke iz dokumenata predmeta u tablice pomoću umjetne inteligencije.",
@@ -1677,7 +1688,8 @@
     "editSelection": "Uredi odabir (Draft Mode)",
     "draftBadge": "Draft",
     "acceptSaveFailed": "Prihvaćanje nije spremljeno — pokušajte ponovno.",
-    "rejectSaveFailed": "Odbijanje nije spremljeno — pokušajte ponovno."
+    "rejectSaveFailed": "Odbijanje nije spremljeno — pokušajte ponovno.",
+    "emptyText": "Dokument ne sadrži tekst."
   },
   "legalSource": {
     "sourcesHeading": "Izvori",

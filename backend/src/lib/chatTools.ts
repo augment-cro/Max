@@ -1,4 +1,3 @@
-import path from "path";
 import { createHash } from "node:crypto";
 import { emptyUsage, sumUsage, attachUsage } from "./llm/usage";
 import {
@@ -11,7 +10,6 @@ import { convertedPdfKey } from "./convert";
 import { createServerSupabase } from "./supabase";
 import {
     applyTrackedEdits,
-    extractDocxBodyText,
     preNormalize,
     type EditInput,
 } from "./docxTrackedChanges";
@@ -35,7 +33,19 @@ import {
 import { runOrchestratedChat } from "./orchestration/runOrchestratedChat";
 import { createQuoteMatcher, type QuoteMatcher } from "./quoteVerification";
 import { resolveDefaultMainModel } from "./userSettings";
-import { extractPdfWithGemini } from "./pdfOcr";
+import {
+    chatReadCharBudget,
+    extractDocumentText,
+    formatDocumentPart,
+    splitTextIntoParts,
+} from "./documentText";
+import { generatedDocumentFilename } from "./filenameUtf8";
+import {
+    EMPTY_PLACEHOLDER_MAP,
+    restorePlaceholders,
+    stripPlaceholders,
+    type PlaceholderMap,
+} from "./pii/restoreArgs";
 import { findMcpServerForTool } from "./mcp/servers";
 import type { LoadedMcpServer } from "./mcp/types";
 import {
@@ -87,15 +97,6 @@ import {
     injectScopeParam,
     isLegalMcpServer,
 } from "./seams/scopeEnforcement";
-
-const STANDARD_FONT_DATA_URL = (() => {
-    try {
-        const pkgPath = require.resolve("pdfjs-dist/package.json");
-        return path.join(path.dirname(pkgPath), "standard_fonts") + path.sep;
-    } catch {
-        return undefined;
-    }
-})();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -495,7 +496,7 @@ export const TOOLS = [
         function: {
             name: "read_document",
             description:
-                "Read the full text content of a document attached by the user. Always call this before answering questions about, summarising, or citing from a document.",
+                "Read the full text content of a document attached by the user. Always call this before answering questions about, summarising, or citing from a document. A very long document is returned in parts; the result then says which part you have and how to request the next one.",
             parameters: {
                 type: "object",
                 properties: {
@@ -503,6 +504,12 @@ export const TOOLS = [
                         type: "string",
                         description:
                             "The document ID to read (e.g. 'doc-0', 'doc-1')",
+                    },
+                    part: {
+                        type: "integer",
+                        minimum: 1,
+                        description:
+                            "Only for long documents returned in parts: the 1-based part to read. Omit on the first read.",
                     },
                 },
                 required: ["doc_id"],
@@ -948,75 +955,22 @@ export function buildMessages(
     return formatted;
 }
 
-/**
- * Primary PDF text extraction path. Uses Gemini multimodal OCR
- * (`extractPdfWithGemini`) so scanned / image-based PDFs work the
- * same as text-layer PDFs — the old pdfjs-dist path silently returned
- * "" for scans, which the model downstream couldn't tell apart from a
- * truly empty document.
- *
- * If Gemini fails or no API key is configured we fall back to
- * pdfjs-dist as a defense-in-depth measure so we still get *something*
- * for text-layer PDFs even when Gemini is unreachable.
- */
-export async function extractPdfText(
-    buf: ArrayBuffer,
-    apiKey?: string | null,
-): Promise<string> {
-    const geminiText = await extractPdfWithGemini(buf, {
-        apiKey,
-        pageMarker: "plain",
-    });
-    if (geminiText.trim().length > 0) return geminiText;
-
-    console.warn(
-        "[extractPdfText] Gemini OCR returned empty, falling back to pdfjs-dist",
-    );
-    return extractPdfTextWithPdfJs(buf);
-}
-
-async function extractPdfTextWithPdfJs(buf: ArrayBuffer): Promise<string> {
-    try {
-        const pdfjsLib = await import(
-            "pdfjs-dist/legacy/build/pdf.mjs" as string
-        );
-        const pdf = await (
-            pdfjsLib as unknown as {
-                getDocument: (opts: unknown) => {
-                    promise: Promise<{
-                        numPages: number;
-                        getPage: (n: number) => Promise<{
-                            getTextContent: () => Promise<{
-                                items: { str?: string }[];
-                            }>;
-                        }>;
-                    }>;
-                };
-            }
-        ).getDocument({
-            data: new Uint8Array(buf),
-            standardFontDataUrl: STANDARD_FONT_DATA_URL,
-        }).promise;
-        const parts: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            parts.push(
-                `[Page ${i}]\n${textContent.items.map((it) => it.str ?? "").join(" ")}`,
-            );
-        }
-        return parts.join("\n\n");
-    } catch {
-        return "";
-    }
-}
-
 export async function generateDocx(
     title: string,
     sections: unknown[],
     userId: string,
     db: ReturnType<typeof createServerSupabase>,
-    options?: { landscape?: boolean; projectId?: string | null },
+    options?: {
+        landscape?: boolean;
+        projectId?: string | null;
+        /**
+         * Title the filename is built from when it must differ from the
+         * in-document heading — in PII mode the heading carries restored
+         * real values, the filename never does (it is shown to the model
+         * again in later turns).
+         */
+        filenameTitle?: string;
+    },
 ) {
     try {
         // Safeguard: ensure sections is actually an array
@@ -1024,7 +978,11 @@ export async function generateDocx(
             console.error(`[generateDocx] sections is not an array! type=${typeof sections}, value=${JSON.stringify(sections).slice(0, 500)}`);
             sections = [];
         }
-        console.log(`[generateDocx] Processing ${sections.length} sections for title="${title}"`);
+        const filename = generatedDocumentFilename(
+            options?.filenameTitle ?? title,
+            "docx",
+        );
+        console.log(`[generateDocx] Processing ${sections.length} sections for filename="${filename}"`);
         const {
             Document, Paragraph, HeadingLevel, Packer,
             Table, TableRow, TableCell, WidthType, BorderStyle,
@@ -1186,12 +1144,6 @@ export async function generateDocx(
         const doc = new Document({ sections: [{ properties: pageSetup, children }] });
         const buf = await Packer.toBuffer(doc);
         const docId = crypto.randomUUID().replace(/-/g, "");
-        const safeTitle =
-            title
-                .replace(/[^a-zA-Z0-9 -]/g, "")
-                .trim()
-                .slice(0, 64) || "document";
-        const filename = `${safeTitle}.docx`;
         const key = generatedDocKey(userId, docId, filename);
 
         await uploadFile(
@@ -1620,74 +1572,17 @@ async function readDocumentContent(
                 `[read_document] magic bytes hex=${hex} ascii="${ascii}" for filename="${docInfo.filename}"`,
             );
         }
-        let text: string;
-        if (docInfo.file_type === "pdf") {
-            text = await extractPdfText(raw, opts?.geminiApiKey);
-            console.log(
-                `[read_document] pdf extracted length=${text.length} for filename="${docInfo.filename}"`,
-            );
-        } else if (docInfo.file_type === "docx") {
-            // Use the same flattening as the edit_document matcher so the
-            // LLM sees exactly the characters it can anchor against.
-            text = await extractDocxBodyText(Buffer.from(raw));
-            console.log(
-                `[read_document] docx extractDocxBodyText length=${text.length} for filename="${docInfo.filename}"`,
-            );
-            if (!text) {
-                console.log(
-                    `[read_document] docx accepted-view extractor returned empty, falling back to mammoth for filename="${docInfo.filename}"`,
-                );
-                const mammoth = await import("mammoth");
-                const result = await mammoth.extractRawText({
-                    buffer: Buffer.from(raw),
-                });
-                text = result.value;
-                console.log(
-                    `[read_document] docx mammoth fallback length=${text.length} for filename="${docInfo.filename}"`,
-                );
-            }
-        } else if (docInfo.file_type === "txt") {
-            // Pasted-text attachments (long-paste composer flow) — the
-            // stored bytes ARE the text, no extraction needed.
-            text = Buffer.from(raw).toString("utf8");
-            console.log(
-                `[read_document] txt decoded length=${text.length} for filename="${docInfo.filename}"`,
-            );
-        } else if (docInfo.file_type === "doc") {
-            // Legacy .doc (OLE binary) — use word-extractor
-            console.log(
-                `[read_document] doc (OLE) using word-extractor for filename="${docInfo.filename}"`,
-            );
-            const WordExtractor = (await import("word-extractor")).default;
-            const extractor = new WordExtractor();
-            const doc = await extractor.extract(Buffer.from(raw));
-            text = doc.getBody();
-            console.log(
-                `[read_document] word-extractor length=${text.length} for filename="${docInfo.filename}"`,
-            );
-        } else {
-            console.log(
-                `[read_document] unknown file_type="${docInfo.file_type}" for filename="${docInfo.filename}", trying mammoth then word-extractor`,
-            );
-            try {
-                const mammoth = await import("mammoth");
-                const result = await mammoth.extractRawText({
-                    buffer: Buffer.from(raw),
-                });
-                text = result.value;
-            } catch {
-                // mammoth failed — try word-extractor (handles OLE .doc)
-                const WordExtractor = (await import("word-extractor")).default;
-                const extractor = new WordExtractor();
-                const doc = await extractor.extract(Buffer.from(raw));
-                text = doc.getBody();
-            }
-            console.log(
-                `[read_document] fallback extractor length=${text.length} for filename="${docInfo.filename}"`,
-            );
-        }
+        let text = await extractDocumentText({
+            fileType: docInfo.file_type,
+            bytes: raw,
+            flavor: "plain",
+            geminiApiKey: opts?.geminiApiKey ?? null,
+            storagePath: sourcePath,
+        });
+        // Length only — never document content: this line lands in Cloud
+        // Logging before any PII anonymization has run.
         console.log(
-            `[read_document] DONE filename="${docInfo.filename}" finalTextLength=${text.length} firstChars=${JSON.stringify(text.slice(0, 120))}`,
+            `[read_document] DONE filename="${docInfo.filename}" file_type="${docInfo.file_type}" finalTextLength=${text.length}`,
         );
 
         // -------- PII Shield interception (plan §1.1) -------------------
@@ -1739,6 +1634,60 @@ export class PiiShieldUnavailableError extends Error {
         super("PII Shield unavailable — turn aborted (fail-closed mode)");
         this.name = "PiiShieldUnavailableError";
     }
+}
+
+/**
+ * What read_document hands the model: the whole text when it fits the
+ * turn's budget, otherwise the requested part (default 1) framed with how
+ * many parts exist and how to continue. Sentinels pass through untouched.
+ */
+export function documentPartForModel(
+    text: string,
+    docLabel: string,
+    requestedPart: unknown,
+    budget: number,
+): string {
+    if (isUnreadableDocText(text) || text.length <= budget) return text;
+    const parts = splitTextIntoParts(text, budget);
+    const asked = Math.floor(Number(requestedPart));
+    const part = Number.isFinite(asked)
+        ? Math.min(Math.max(asked, 1), parts.length)
+        : 1;
+    return formatDocumentPart({
+        docLabel,
+        parts,
+        part,
+        totalChars: text.length,
+    });
+}
+
+/** Tool result when placeholders could not be restored — nothing was written. */
+const PII_RESTORE_FAILED =
+    "ERROR: the anonymized values in this request could not be restored (PII Shield unavailable), so the document was NOT written. Tell the user to try again shortly.";
+
+/**
+ * Restore PII placeholders in the arguments of a tool that writes into the
+ * user's files (generate_docx, edit_document). Identity map outside an
+ * active PII mode or when the arguments hold no placeholders; null when
+ * they do and the shield cannot resolve them — the caller must not write.
+ */
+async function restoreDocToolPii(
+    args: unknown,
+    pii: PiiToolContext | null | undefined,
+): Promise<PlaceholderMap | null> {
+    if (!pii || pii.mode === "off") return EMPTY_PLACEHOLDER_MAP;
+    const piiMod = await import("./pii");
+    const map = await restorePlaceholders(args, pii.chatId, {
+        getSessionId: piiMod.getChatSessionId,
+        deanonymizeJson: (sessionId, data) =>
+            piiMod.piiClient.deanonymizeJson(sessionId, data),
+    });
+    if (!map) {
+        console.warn(
+            `[pii] could not restore placeholders for a document tool (chat=${pii.chatId}) — refusing to write`,
+        );
+    }
+    return map;
 }
 
 /** True when `text` is one of our non-content sentinels (read failed or PII-withheld). */
@@ -2417,6 +2366,12 @@ export async function runToolCalls(
      * in `mapCitationsToAnnotations`. Undefined → per-batch cache as before.
      */
     docTextSink?: Map<string, string>,
+    /**
+     * The model this turn runs on. Sizes what one read_document /
+     * fetch_documents result may return (lib/documentText
+     * `chatReadCharBudget`); longer documents are served in parts.
+     */
+    model?: string,
 ): Promise<{
     toolResults: unknown[];
     docsRead: { filename: string; document_id?: string }[];
@@ -2477,6 +2432,7 @@ export async function runToolCalls(
     // When the caller passes `docTextSink` it doubles as the cache, so the
     // text survives across tool batches for citation verification.
     const docTextCache = docTextSink ?? new Map<string, string>();
+    const readBudget = chatReadCharBudget(model);
 
     for (const tc of toolCalls) {
         let args: Record<string, unknown> = {};
@@ -2699,7 +2655,14 @@ export async function runToolCalls(
             const filename = docStore.get(docId)?.filename;
             const documentId = docIndex?.[docId]?.document_id;
             if (filename) docsRead.push({ filename, document_id: documentId });
-            toolResults.push({ role: "tool", tool_call_id: tc.id, content });
+            // The cache keeps the FULL text (citation verification and
+            // find_in_document need all of it); only what the model gets
+            // back is sized.
+            toolResults.push({
+                role: "tool",
+                tool_call_id: tc.id,
+                content: documentPartForModel(content, docId, args.part, readBudget),
+            });
 
         } else if (tc.function.name === "find_in_document") {
             const rawDocId = args.doc_id as string;
@@ -2759,6 +2722,7 @@ export async function runToolCalls(
                 (id) => resolveDocLabel(id, docStore, docIndex) ?? id,
             );
             const parts: string[] = [];
+            let returnedChars = 0;
             for (const docId of docIds) {
                 let content: string;
                 const cached = docTextCache.get(docId);
@@ -2792,7 +2756,19 @@ export async function runToolCalls(
                     }
                 }
                 const filename = docStore.get(docId)?.filename ?? docId;
-                parts.push(`--- ${filename} (${docId}) ---\n${content}`);
+                if (
+                    !isUnreadableDocText(content) &&
+                    returnedChars + content.length > readBudget
+                ) {
+                    // Too long to return alongside the others — point the
+                    // model at read_document, which serves it in parts.
+                    parts.push(
+                        `--- ${filename} (${docId}) ---\n[Not included: this document is ${content.length} characters long, more than this fetch_documents call can still return. Read it on its own with read_document {"doc_id": "${docId}"} — long documents are returned in parts.]`,
+                    );
+                } else {
+                    returnedChars += content.length;
+                    parts.push(`--- ${filename} (${docId}) ---\n${content}`);
+                }
                 if (docStore.get(docId)) {
                     const documentId = docIndex?.[docId]?.document_id;
                     docsRead.push({ filename, document_id: documentId });
@@ -2949,15 +2925,23 @@ export async function runToolCalls(
                     }),
                 );
                 const reuseVersion = turnEditState?.get(indexed.document_id);
+                // PII mode: find/context/replace carry placeholders; the
+                // real document carries the real values. Restore before
+                // anchoring, mask anything that goes back to the model.
+                const piiMap = await restoreDocToolPii(edits, piiContext);
                 let result: Awaited<ReturnType<typeof runEditDocument>>;
                 try {
-                    result = await runEditDocument({
-                        documentId: indexed.document_id,
-                        userId,
-                        edits,
-                        db,
-                        reuseVersion,
-                    });
+                    result = piiMap
+                        ? await runEditDocument({
+                              documentId: indexed.document_id,
+                              userId,
+                              edits: piiMap.restore(edits),
+                              db,
+                              reuseVersion,
+                          })
+                        : ({ ok: false, error: PII_RESTORE_FAILED } as Awaited<
+                              ReturnType<typeof runEditDocument>
+                          >);
                 } catch (editErr) {
                     // runEditDocument can throw (e.g. an unguarded GCS
                     // upload). Without this the exception unwound to
@@ -3038,7 +3022,9 @@ export async function runToolCalls(
                             version_id: result.version_id,
                             version_number: result.version_number,
                             applied: result.annotations.length,
-                            errors: result.errors,
+                            errors: (piiMap ?? EMPTY_PLACEHOLDER_MAP).mask(
+                                result.errors,
+                            ),
                         }),
                     });
                 } else {
@@ -3058,7 +3044,9 @@ export async function runToolCalls(
                         tool_call_id: tc.id,
                         content: JSON.stringify({
                             ok: false,
-                            error: result.error,
+                            error: (piiMap ?? EMPTY_PLACEHOLDER_MAP).mask(
+                                result.error,
+                            ),
                         }),
                     });
                 }
@@ -3066,10 +3054,11 @@ export async function runToolCalls(
 
         } else if (tc.function.name === "replicate_document" && docIndex) {
             const rawDocId = args.doc_id as string;
+            // Placeholders never become part of a filename (PII mode).
             const requestedFilename =
                 typeof args.new_filename === "string" &&
-                args.new_filename.trim()
-                    ? args.new_filename.trim()
+                stripPlaceholders(args.new_filename).trim()
+                    ? stripPlaceholders(args.new_filename).trim()
                     : null;
             const requestedCount =
                 typeof args.count === "number" && Number.isFinite(args.count)
@@ -3407,14 +3396,31 @@ export async function runToolCalls(
                 });
                 continue;
             }
-            const previewFilename = `${(title.replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 64) || "document")}.docx`;
+            // PII mode: the model wrote placeholders; the file gets the
+            // real values. The filename is built from the title WITHOUT
+            // placeholders — it is shown to the model again in later turns.
+            const piiMap = await restoreDocToolPii(
+                { title, sections: rawSections },
+                piiContext,
+            );
+            if (!piiMap) {
+                toolResults.push({
+                    role: "tool",
+                    tool_call_id: tc.id,
+                    content: PII_RESTORE_FAILED,
+                });
+                continue;
+            }
+            const restored = piiMap.restore({ title, sections: rawSections });
+            const filenameTitle = stripPlaceholders(title);
+            const previewFilename = generatedDocumentFilename(filenameTitle, "docx");
             write(`data: ${JSON.stringify({ type: "doc_created_start", filename: previewFilename })}\n\n`);
             const result = await generateDocx(
-                title,
-                rawSections as unknown[],
+                restored.title,
+                restored.sections as unknown[],
                 userId,
                 db,
-                { landscape, projectId: projectId ?? null },
+                { landscape, projectId: projectId ?? null, filenameTitle },
             );
             let newDocLabel: string | null = null;
             if ("filename" in result && "download_url" in result) {
@@ -4384,6 +4390,7 @@ export async function runLLMStream(params: {
                     params.piiContext ?? null,
                     scopeWhitelist,
                     docTexts,
+                    selectedModel,
                 );
             // Accumulate across every tool batch in this turn so the
             // chat handler can fold the total into `recordLlmUsage`.

@@ -5,6 +5,7 @@ import { syncSignupContact } from "../lib/brevoContacts";
 import { getPool } from "../lib/db";
 import { maskApiKey } from "../lib/crypto";
 import { deleteFile } from "../lib/storage";
+import { textCachePathsFor } from "../lib/documentText";
 import { safeErrorMessage, safeErrorLog } from "../lib/safeError";
 import {
     isSupabaseAdminConfigured,
@@ -548,7 +549,11 @@ userRouter.delete("/account", requireAuth, async (_req, res) => {
       [userId],
     );
     for (const row of versionPaths.rows) {
-      if (row.storage_path) storageKeys.add(row.storage_path);
+      if (row.storage_path) {
+        storageKeys.add(row.storage_path);
+        for (const derived of textCachePathsFor(row.storage_path))
+          storageKeys.add(derived);
+      }
       if (row.pdf_storage_path) storageKeys.add(row.pdf_storage_path);
     }
     await Promise.all([...storageKeys].map((key) => deleteFile(key)));
